@@ -16,6 +16,7 @@ import { around } from './creatures.js';
 import { gearGuardMul, gearWillDefend } from './gear.js';
 import { isBedridden } from './health.js';
 import { isRare, popTarget } from './fauna.js';
+import { dangerAt } from './danger.js';
 
 const VOICE = 12;                 // 叫び声の届く距離（マス）
 const TICK = 1;                   // 何分ごとに見回すか
@@ -112,6 +113,11 @@ function deadlyNear(sim, x, z, r = 16) {
     if (tooStrong(o, powerC(o))) return true;
   }
   return false;
+}
+// その人が相手のところまで行く道が、竜の縄張りのような所を通らないか（行き先と中間点の危険度で見る）
+function safeWay(sim, p, c) {
+  const mx = (p.pos.x + c.pos.x) / 2, mz = (p.pos.z + c.pos.z) / 2;
+  return dangerAt(sim, mx, mz) < 5 && !deadlyNear(sim, mx, mz, 12);
 }
 function nearestTown(sim, x, z) {
   let best = null, bd = Infinity;
@@ -218,7 +224,7 @@ function hear(sim, victim, c, inc) {
   const capable = [], weak = [];
   for (const q of hearers) (canFight(sim, q) ? capable : weak).push(q);
   const kinOf = (q) => !!sim.kinTerm(q, victim) || q.hh === victim.hh || (sim.rel(q, victim).a > 40);
-  const willing = strongFoe ? [] : capable.filter((q) => (bravery(q) >= 0.75 || combatOf(q) >= 1 || kinOf(q)) && gearWillDefend(q, rng))
+  const willing = strongFoe ? [] : capable.filter((q) => safeWay(sim, q, c) && (bravery(q) >= 0.75 || combatOf(q) >= 1 || kinOf(q)) && gearWillDefend(q, rng))
     .sort((a, b) => humanPower(b) * bravery(b) - humanPower(a) * bravery(a));
   const potential = committed + willing.slice(0, MAX_RESCUERS).reduce((t, q) => t + humanPower(q), 0);
   const joined = [];
@@ -421,7 +427,7 @@ function dispatch(sim, inc, c, starter, reporter) {
   const s = sim.town(inc.sid);
   let sum = inc.rescuers.map((id) => S.people[id]).filter((q) => alive(sim, q)).reduce((t, q) => t + humanPower(q), 0);
   const cands = sim.living().filter((q) => q !== starter && FIGHTERS.has(q.job) && canFight(sim, q) && !q.fight && !(['march', 'crusade', 'rescue', 'alert'].includes(q.mission?.type)) && !inc.rescuers.includes(q.id) && gearWillDefend(q, rng)
-    && (q.s === inc.sid || Math.hypot(q.pos.x - c.pos.x, q.pos.z - c.pos.z) < 20) && Math.hypot(q.pos.x - c.pos.x, q.pos.z - c.pos.z) < 45)
+    && (q.s === inc.sid || Math.hypot(q.pos.x - c.pos.x, q.pos.z - c.pos.z) < 20) && Math.hypot(q.pos.x - c.pos.x, q.pos.z - c.pos.z) < 45 && safeWay(sim, q, c))
     .sort((a, b) => dist(a, c) - dist(b, c));
   const team = [];
   if (starter && canFight(sim, starter) && !starter.fight && !inc.rescuers.includes(starter.id)) { team.push(starter); sum += humanPower(starter); }
