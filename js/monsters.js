@@ -157,7 +157,7 @@ function rebuildBands(sim) {
     sim.pushLog(`${sim.placeName(b.x, b.z)}で${FAM[fam].label}たちが「${band.name}」としてまとまった。`, 'event', [], b);
   }
   // 群れが空になったら消える
-  for (const band of Object.values(S.bands)) if (!band.members.length) delete S.bands[band.id];
+  for (const band of Object.values(S.bands)) if (!band.members.length) dropBand(sim, band);
 }
 
 // 長が倒れたら跡目を決める
@@ -170,8 +170,8 @@ function succession(sim, band) {
   const top = ms[0], second = ms[1];
   if (!second || power(second) / power(top) < 0.75 || ms.length < 3) {
     band.leader = top.id; band.loyalty = Math.max(20, band.loyalty - 10);
-    sim.pushLog(`${where}の「${band.name}」で、${top.name}が新しい${chiefTitle(band)}になった。`, 'event', [], base);
-    if (ms.length >= 4) sim.news(`「${band.name}」の${chiefTitle(band)}が倒れ、${top.name}が跡を継いだ`, 1, base);
+    sim.pushLog(`${where}の「${band.name}」で、${who(top)}が新しい${chiefTitle(band)}になった。`, 'event', [], base);
+    if (ms.length >= 4) sim.news(`「${band.name}」の${chiefTitle(band)}が倒れ、${who(top)}が跡を継いだ`, 1, base);
     return;
   }
   // 跡目争い
@@ -182,22 +182,22 @@ function succession(sim, band) {
   stat(sim, 'succession');
   if (R.chance(0.4) || ms.length < 4) {
     killCreature(sim, loser, winner);
-    sim.news(`${where}の「${band.name}」で跡目争い。${winner.name}が${loser.name}を討ち、新しい${chiefTitle(band)}となった`, 2, base);
-    sim.chron(`${where}の${FAM[band.fam].label}「${band.name}」で跡目争いが起き、${winner.name}が${chiefTitle(band)}の座を得た`);
+    sim.news(`${where}の「${band.name}」で跡目争い。${who(winner)}が${who(loser)}を討ち、新しい${chiefTitle(band)}となった`, 2, base);
+    sim.chron(`${where}の${FAM[band.fam].label}「${band.name}」で跡目争いが起き、${who(winner)}が${chiefTitle(band)}の座を得た`);
   } else {
     // 敗れた方が一党を率いて出ていく（群れの分裂）
     const rest = ms.filter((c) => c !== winner && c !== loser);
     const n = Math.max(1, Math.floor(rest.length / 3));
     const followers = R.shuffle(rest.slice()).slice(0, n);
     const home = findNewHome(sim, base, band.fam);
-    if (!home) { killCreature(sim, loser, winner); sim.news(`「${band.name}」の跡目争いで、${loser.name}が討たれた`, 2, base); return; }
+    if (!home) { killCreature(sim, loser, winner); sim.news(`「${band.name}」の跡目争いで、${who(loser)}が討たれた`, 2, base); return; }
     const out = [loser, ...followers];
     band.members = band.members.filter((id) => !out.some((c) => c.id === id));
     const nb = createBand(sim, out, { fam: band.fam, leader: loser, loyalty: 70, lair: home.lair, camp: { x: home.x, z: home.z }, rebel: band.rebel });
     relocate(sim, nb, home);
     const dest = home.lair != null ? sim.building(home.lair).name : sim.placeName(home.x, home.z);
-    sim.news(`${where}の「${band.name}」で跡目争い。敗れた${loser.name}は${out.length}体を連れて去り、${dest}で「${nb.name}」を名乗った`, 2, base);
-    sim.chron(`${FAM[band.fam].label}の「${band.name}」が跡目争いで割れ、${loser.name}が「${nb.name}」を興した`);
+    sim.news(`${where}の「${band.name}」で跡目争い。敗れた${who(loser)}は${out.length}体を連れて去り、${dest}で「${nb.name}」を名乗った`, 2, base);
+    sim.chron(`${FAM[band.fam].label}の「${band.name}」が跡目争いで割れ、${who(loser)}が「${nb.name}」を興した`);
   }
 }
 
@@ -211,10 +211,10 @@ function bandMood(sim, band) {
     if (rival && power(rival) > power(lead) * 1.2) band.loyalty -= 3;
     if (rival && band.loyalty < 20 && ms.length >= 4 && sim.rng.chance(0.3)) {
       const base = bandBase(sim, band);
-      sim.pushLog(`「${band.name}」で${rival.name}が${chiefTitle(band)}の${lead.name}に牙をむいた（下剋上）。`, 'event', [], base);
+      sim.pushLog(`「${band.name}」で${who(rival)}が${chiefTitle(band)}の${who(lead)}に牙をむいた（下剋上）。`, 'event', [], base);
       // 下剋上：いったん長を空位にして跡目争いへ
       if (sim.rng.chance(power(rival) / (power(rival) + power(lead)))) { killCreature(sim, lead, rival); band.leader = null; succession(sim, band); }
-      else { killCreature(sim, rival, lead); band.loyalty = 55; sim.news(`「${band.name}」の${chiefTitle(band)}${lead.name}が、下剋上をたくらんだ${rival.name}を返り討ちにした`, 1, base); }
+      else { killCreature(sim, rival, lead); band.loyalty = 55; sim.news(`「${band.name}」の${chiefTitle(band)}${who(lead)}が、下剋上をたくらんだ${who(rival)}を返り討ちにした`, 1, base); }
     }
   }
   band.loyalty = Math.max(0, Math.min(100, band.loyalty));
@@ -296,8 +296,18 @@ function fight(sim, A, B) {
       relocate(sim, win, { lair: lose.lair, x: b.door.x, z: b.door.z });
       sim.chron(`「${win.name}」が「${lose.name}」を滅ぼし、${b.name}を奪った`);
     } else sim.chron(`${FAM[lose.fam].label}の「${lose.name}」が「${win.name}」に滅ぼされた`);
-    delete S.bands[lose.id];
+    dropBand(sim, lose);
   }
+}
+// 群れが消える。攻め込みの途中なら、全滅として記録する
+function dropBand(sim, band) {
+  const S = sim.S;
+  if (band.war && band.war.stage === 'march') {
+    const town = sim.town(band.war.target);
+    const killed = Math.max(0, (band.war.pop0 || 0) - sim.living().filter((p) => p.s === town.id).length);
+    endWar(sim, band, 'defeat', [], { lost: band.war.start, killed });
+  }
+  delete S.bands[band.id];
 }
 
 // ---------- 魔王軍の指揮系統 ----------
@@ -721,7 +731,7 @@ export function monsterSay(sim, c, kind, force = false) {
   if (sim.isWatched(c)) sim.events.push({ type: 'say', id: c.id, text });
   return text;
 }
-const who = (c) => (!c.given || c.name.includes(c.given) ? c.name : `${c.name}の${c.given}`);
+function who(c) { return !c.given || c.name.includes(c.given) ? c.name : `${c.name}の${c.given}`; }
 
 // ---------- 個体の身元（毎日） ----------
 function ensureIdentity(sim, c) {
@@ -1364,7 +1374,7 @@ export function monstersDaily(sim) {
     if (!alive(S, lead) || lead.band !== band.id) succession(sim, band);
     else bandMood(sim, band);
   }
-  for (const band of Object.values(S.bands)) if (!band.members.length) delete S.bands[band.id];
+  for (const band of Object.values(S.bands)) if (!band.members.length) dropBand(sim, band);
   turfWars(sim);
   demonArmyDaily(sim);
   lifeDaily(sim);

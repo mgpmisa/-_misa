@@ -69,7 +69,7 @@ function electLeaders(sim, all) {
   const groups = {};
   for (const c of all) {
     if (c.role === 'overlord' || c.role === 'aide' || SPECIES[c.sp].kind === 'livestock' || c.role === 'pest') continue;
-    const key = c.lair != null ? 'L' + c.lair : SPECIES[c.sp].pack || c.role === 'member' || c.role === 'leader' ? c.sp + ':' + Math.floor(c.home.x / 12) + ',' + Math.floor(c.home.z / 12) : null;
+    const key = c.lair != null ? 'L' + c.lair : (SPECIES[c.sp].pack || c.role === 'member' || c.role === 'leader') && c.home ? c.sp + ':' + Math.floor(c.home.x / 12) + ',' + Math.floor(c.home.z / 12) : null;
     if (key) (groups[key] = groups[key] || []).push(c);
   }
   for (const g of Object.values(groups)) {

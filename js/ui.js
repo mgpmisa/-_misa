@@ -15,6 +15,7 @@ import { healthLabel } from './health.js';
 import { CIVIC_LABEL, CIVIC_GO, CIVIC_PREF } from './civic.js';
 import { convoyOf, convoyLabel } from './logistics.js';
 import { taxNationHTML } from './taxes.js';
+import { expansionNationHTML, drawTerritory } from './expansion.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -321,6 +322,7 @@ export class UI {
   drawMinimap() {
     const cv = $('minimap'), g = cv.getContext('2d');
     g.putImageData(this.miniBase.img, 0, 0);
+    try { drawTerritory(this.sim, g); } catch (e) { /* 国境の描画に失敗しても地図は出す */ }
     const S = this.sim.S;
     for (const s of S.world.settlements) {
       g.fillStyle = S.towns[s.id].occupied ? '#5a1a2a' : '#fff';
@@ -410,6 +412,7 @@ export class UI {
         <dl class="kv"><dt>${king?.sex === 'f' ? '女王' : '国王'}</dt><dd>${king ? `<span class="link" data-pid="${king.id}">${esc(this.sim.fullName(king))}</span>（${this.sim.ageOf(king)}歳）` : '空位'}</dd>
         <dt>人口</dt><dd>${pop}人・町${towns.length}つ・兵${army}人</dd>
         <dt>国庫</dt><dd>${Math.round(k.treasury)}銅貨</dd>
+        ${expansionNationHTML(this.sim, k, esc) || ''}
         ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
         <dt>技術</dt><dd>${k.techs.map((t) => esc(TECHS.find((x) => x.id === t)?.name)).join('、') || 'なし'}（研究${Math.round(k.research)}）</dd>
         <dt>関係</dt><dd>${rel}</dd>

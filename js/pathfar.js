@@ -164,6 +164,13 @@ export function markTilesChanged(world, list) {
   }
 }
 export function resetPathFar(world) { GRAPHS.delete(world); }
+// 前もって全部作っておく（読み込み直後など、ひまなときに。作らなくても使うときに少しずつ作る）
+export function prepPathFar(world) {
+  const g = graphOf(world);
+  components(world, g);
+  for (let c = 0; c < CW * CH; c++) intraEdges(world, g, c);
+  return pathFarStats(world);
+}
 export function pathFarStats(world) { const g = GRAPHS.get(world); return g ? { ...g.stats, borders: g.borders.size, clusters: g.intra.size } : null; }
 
 // ---------- 遠くまでの道探し ----------

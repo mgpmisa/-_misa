@@ -29,7 +29,7 @@ export function computeDanger(sim) {
   }
   for (const id of w.specials) {
     const b = sim.building(id);
-    if (LAIRS.has(b.type)) spread(b.door.x, b.door.z, b.type === 'demoncastle' ? 6 : 2.5);
+    if (LAIRS.has(b.type) && !b.sealed) spread(b.door.x, b.door.z, b.type === 'demoncastle' ? 6 : 2.5);
   }
   // 魔界そのもの
   for (let cz = 0; cz < CHH; cz++) for (let cx = 0; cx < CW; cx++) {

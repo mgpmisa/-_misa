@@ -1,5 +1,6 @@
 // 国と魔王：王の判断・戦争・研究・討伐隊・魔王の侵攻と復活・文化（ことわざ）の進化
 import { clamp } from './rng.js';
+import { expansionWarEnded, expansionWarReason } from './expansion.js';
 import { KINGDOMS, TECHS, SPECIES, JOBS, DEMON_REALM } from './data.js';
 import { makeCreature, applyStats } from './creatures.js';
 import { startFight, humanStats } from './society.js';
@@ -376,9 +377,10 @@ function armySize(sim, kid) {
 
 function declareWar(sim, a, b) {
   const S = sim.S, R = sim.rng;
-  const reason = R.pick(['国境の鉱山をめぐって', '交易路の通行税をめぐって', '食糧不足の打開のため', '王家の名誉をかけて', '国境の森の領有をめぐって']);
+  const ex = expansionWarReason(sim, a, b);
+  const reason = ex?.reason || R.pick(['国境の鉱山をめぐって', '交易路の通行税をめぐって', '食糧不足の打開のため', '王家の名誉をかけて', '国境の森の領有をめぐって']);
   const capA = sim.town(a.capital), capB = sim.town(b.capital);
-  const front = sim.randomNear((capA.x + capB.x) / 2, (capA.z + capB.z) / 2, 8) || { x: Math.round((capA.x + capB.x) / 2), z: Math.round((capA.z + capB.z) / 2) };
+  const front = ex?.front || sim.randomNear((capA.x + capB.x) / 2, (capA.z + capB.z) / 2, 8) || { x: Math.round((capA.x + capB.x) / 2), z: Math.round((capA.z + capB.z) / 2) };
   const name = `${a.name.replace('王国', '')}・${b.name.replace('王国', '')}戦争`;
   a.war = { with: b.id, since: sim.today, front, name, losses: 0 };
   b.war = { with: a.id, since: sim.today, front, name, losses: 0 };
@@ -439,6 +441,7 @@ function endWar(sim, winner, loser) {
   sim.chron(txt, winner.id);
   newSayingEverywhere(sim, `${name}を忘れるな`);
   for (const p of sim.living()) if (p.mission?.type === 'march') p.mission = null;
+  expansionWarEnded(sim, winner, loser);
 }
 
 function callHeroes(sim, k) {

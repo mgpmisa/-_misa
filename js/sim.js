@@ -27,6 +27,7 @@ import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, heal
 import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, civicFirstJob } from './civic.js';
 import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade } from './logistics.js';
 import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
+import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -74,6 +75,7 @@ export class Sim {
     ensureTaxes(this);
     for (let i = 0; i < 4; i++) partiesDaily(this);
     this.slimDead();
+    ensureExpansion(this);
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
     return this;
@@ -92,6 +94,7 @@ export class Sim {
     if (!data.uw) initUnderworld(this);
     ensureTaxes(this);
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
+    ensureExpansion(this);
     computeDanger(this);
     return true;
   }
@@ -453,6 +456,7 @@ export class Sim {
     return null;
   }
   placeFor(p, kind) {
+    const ex = expansionPlace(this, p, kind); if (ex) return ex;
     const R = this.rng, s = this.townOf(p), w = this.S.world;
     const cp = civicPlace(this, p, kind); if (cp) return cp;
     switch (kind) {
@@ -1613,6 +1617,7 @@ export class Sim {
     { const hh = Math.floor(this.hour()); if (hh === 7 || hh === 17) for (const q of this.living()) if (q.jail != null && q.needs.hunger < 70) q.needs.hunger = Math.min(100, q.needs.hunger + 50); }
     politicsHourly(this);
     taxesHourly(this);
+    expansionHourly(this);
     demonHourly(this);
     weatherHourly(this);
     choreHourly(this);
@@ -1730,6 +1735,7 @@ export class Sim {
     underworldDaily(this);
     politicsDaily(this);
     taxesDaily(this);
+    expansionDaily(this);
     for (const p of this.living()) this.trimMemories(p);
     this.save();
   }
