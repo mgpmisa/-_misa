@@ -567,7 +567,8 @@ function planWork(sim, k) {
       for (let j = 0; j < best.len; j++) tiles.push((best.z + best.dz * j) * W + best.x + best.dx * j);
       // 橋のたもとから道の網までもつなぐ
       const ends = [[best.x - best.dx, best.z - best.dz], [best.x + best.dx * best.len, best.z + best.dz * best.len]];
-      for (const [ex, ez] of ends) { const p2 = pathToNet(sim, ex, ez, net, 25); if (p2) { const t0 = tileAt(w, ex, ez); if (t0 !== T.ROAD) tiles.push(ez * W + ex); tiles.push(...p2); } }
+      for (const [ex, ez] of ends) { const p2 = pathToNet(sim, ex, ez, net, 8); if (p2) { const t0 = tileAt(w, ex, ez); if (t0 !== T.ROAD) tiles.push(ez * W + ex); tiles.push(...p2); } }
+      if (tiles.length > 16) continue;   // 大がかりすぎる橋は後回し
       const job = mk('bridge', `${s.name.replace(/^(王都|港町)/, '')}の${best.dx ? '東西' : '南北'}の渡しの橋`, [...new Set(tiles)], s);
       if (job) return job;
     }

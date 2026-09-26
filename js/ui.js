@@ -11,6 +11,7 @@ import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
 import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js';
+import { healthLabel } from './health.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -41,6 +42,7 @@ const PREF_LABEL = {
 Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来ている' }); Object.assign(ACTION_GO, { collect: '借金を取り立てに向かっている' }); Object.assign(PREF_LABEL, { collect: '取り立て' });
 Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
 Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
+Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -609,7 +611,7 @@ export class UI {
       h += `<div class="row-btns"><button id="followBtn" class="${this.follow === p.id ? 'on' : ''}">${this.follow === p.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">この人を見る</button></div>`;
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
       h += `<div class="section"><h4>7つの欲求（満たされ具合）</h4><div class="bars">${bar('気分', p.mood)}${Object.entries(DESIRES).map(([k, n]) => bar(n, p.needs[k])).join('')}</div>
-        <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd><dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
+        <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
         </dl></div>`;
       if (p.deathYear == null) h += growthHtml(sim, p) || '';
       // 装備と所持品

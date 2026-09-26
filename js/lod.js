@@ -8,9 +8,9 @@ import { W, H, T } from './world.js';
 // ---------------------------------------------------------------
 // 詳しさの段階（LOD）
 // ---------------------------------------------------------------
-export const LOD_CELL = 32;                       // 注意の地図の区画（マス）
+export const LOD_CELL = 16;                       // 注意の地図の区画（マス）
 const GW = Math.ceil(W / LOD_CELL), GH = Math.ceil(H / LOD_CELL);
-export const LOD_PERIOD = [1, 3, 8];              // 段階ごとに、何歩に1回動かすか（0：近い、1：中くらい、2：遠い荒野）
+export const LOD_PERIOD = [1, 3, 10];             // 段階ごとに、何歩に1回動かすか（0：近い、1：中くらい、2：遠い荒野）
 const REFRESH = 20;                               // 注意の地図を作り直す間隔（歩。20歩＝10分）
 
 // 既定では広い世界（W>200）だけで使う。今の 160 の世界は今までとまったく同じ動きになる。
@@ -35,10 +35,10 @@ export function lodBegin(sim) {
     for (let z = c; z <= d; z++) for (let x = a; x <= b; x++) src[z * GW + x] = 1;
   };
   for (const p of sim.living()) if (p.inside == null && p.pos) mark(p.pos.x, p.pos.z, p.pos.x, p.pos.z);
-  for (const s of sim.S.world.settlements) mark(s.x - s.r - 8, s.z - s.r - 8, s.x + s.r + 8, s.z + s.r + 8);
+  for (const s of sim.S.world.settlements) mark(s.x - s.r - 4, s.z - s.r - 4, s.x + s.r + 4, s.z + s.r + 4);
   const f = sim.focus;
-  if (f) mark(f.x - f.r - 8, f.z - f.r - 8, f.x + f.r + 8, f.z + f.r + 8);
-  // 源から1区画以内は段階0、3区画以内は段階1、それより遠い所は段階2
+  if (f) mark(f.x - f.r - 4, f.z - f.r - 4, f.x + f.r + 4, f.z + f.r + 4);
+  // 源から1区画（16〜32マス）以内は段階0、3区画（48〜64マス）以内は段階1、それより遠い所は段階2
   const g = L.grid;
   for (let z = 0; z < GH; z++) for (let x = 0; x < GW; x++) {
     let best = 9;

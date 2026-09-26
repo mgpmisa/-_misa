@@ -23,6 +23,7 @@ import { careerDaily, careerOptions, careerDo, careerWorkPlace } from './career.
 import { faunaDaily, faunaHourly } from './fauna.js';
 import { initUnderworld, underworldDaily, underworldHourly, underworldDecide, underworldArrive, underworldWorkMul } from './underworld.js';
 import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workMul, healMul, tradeMul } from './growth.js';
+import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, healthSpeedMul, healthWorkMul, onDeath } from './health.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -523,6 +524,8 @@ export class Sim {
       this.startAction(p, { type: h >= 21 || h < 6 ? 'sleep' : 'jail', place: { x: b.door.x, z: b.door.z, bld: b.id }, dur: 120 });
       return;
     }
+    const sick = sickAction(this, p);
+    if (sick) { this.startAction(p, sick); return; }
     // 特別な任務（行軍・討伐・逃走）
     if (p.mission) {
       const m = p.mission;
@@ -623,6 +626,7 @@ export class Sim {
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
+    healthDecide(this, p, cands, add);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -822,6 +826,7 @@ export class Sim {
       case 'buygear': this.buyGear(p); a.until = this.S.t + 10; break;
       case 'hunt': huntBounty(this, p, this.S.people[a.friend]); a.until = this.S.t + 5; break;
       case 'collect': financeArrive(this, p); break;
+      case 'housecall': case 'grave': healthArrive(this, p); break;
     }
     underworldArrive(this, p);
     choreArrive(this, p, a);
@@ -887,7 +892,7 @@ export class Sim {
     if (tool) { tool.dur -= 0.004 * hr; if (tool.dur <= 0) { p.inv.splice(p.inv.indexOf(tool), 1); p.eq.tool = null; this.remember(p, `長年使った${itemName(tool)}がとうとう壊れた`, { emo: -0.3, imp: 0.3 }); } }
     const si = this.seasonIdx();
     const sm = [0.5, 0.9, 2.4, 0.08][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
-    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p);
+    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p);
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
     switch (p.job) {
@@ -1359,7 +1364,7 @@ export class Sim {
 
   walk(p, dt) {
     const age = this.ageOf(p);
-    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' ? 1.2 : 1) * moveMul(p);
+    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p);
     const w = this.S.world;
     while (speed > 0 && p.path.length) {
       const t = p.path[0];
@@ -1588,6 +1593,7 @@ export class Sim {
     weatherHourly(this);
     choreHourly(this);
     growthHourly(this);
+    healthHourly(this);
     faunaHourly(this);
     financeHourly(this);
   }
@@ -1599,6 +1605,7 @@ export class Sim {
     const si = this.seasonIdx();
     weatherDaily(this);
     growthDaily(this);
+    healthDaily(this);
     if (doy === 0) this.newYear();
     // 町の蓄え：裕福な家から集め、困っている家に施す
     for (const hh of Object.values(S.households)) {
@@ -1664,7 +1671,7 @@ export class Sim {
       const age = this.ageOf(p);
       const hungerMul = p.needs.hunger < 5 ? 4 : 1;
       const med = this.hasTech(p, 'medicine') ? 0.7 : 1;
-      if (R.chance(mortY(age) / DAYS_PER_YEAR * hungerMul * med)) this.die(p, p.needs.hunger < 5 ? 'hunger' : age >= 70 ? 'old' : R.pick(['sick', 'sick', 'accident', 'winter']));
+      if (R.chance(mortY(age) / DAYS_PER_YEAR * hungerMul * med)) this.die(p, p.needs.hunger < 5 ? 'hunger' : age >= 70 ? 'old' : R.pick(['accident', 'winter', 'sick']));
     }
     // 妊娠・誕生
     const pop = this.living().length;
@@ -1784,6 +1791,7 @@ export class Sim {
   // ---------- 人生の節目 ----------
   die(p, cause, killer = null) {
     if (p.deathYear != null) return;
+    onDeath(this, p, cause, killer);
     const S = this.S, age = this.ageOf(p);
     p.deathYear = this.year(); p.deathCause = cause; p.deathDay = this.today;
     p.lastWords = p.thought;
