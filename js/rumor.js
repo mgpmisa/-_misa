@@ -208,8 +208,8 @@ export function rumorRelay(sim, from, to, g) {
   const firsthand = r0.hops === 0 && !r0.wide && isTrueVersion(g);
   const crossTown = to.s !== r0.town;
   // 大げさにする確率：外向的・神経質・想像力が強いほど高く、きちょうめんなほど低い
-  let pUp = 0.08 + P.E * 0.3 + P.N * 0.22 + P.O * 0.1 - P.C * 0.2 + (crossTown ? 0.15 : 0);
-  if (firsthand) pUp *= 0.4;
+  let pUp = 0.14 + P.E * 0.35 + P.N * 0.25 + P.O * 0.1 - P.C * 0.2 + (crossTown ? 0.15 : 0);
+  if (firsthand) pUp *= 0.6;
   pUp = Math.max(0.03, Math.min(0.75, pUp));
   let mag = r0.mag;
   if (R.chance(pUp)) mag = Math.min(MAX_MAG, mag + 1);
@@ -242,9 +242,9 @@ export function rumorCorrect(sim, a, b) {
       const g = m.g;
       if (!g || !g.r || isTrueVersion(g)) continue;
       if (!yTrue) { yTrue = new Set(); for (const ym of y.memories) if (ym.g && isTrueVersion(ym.g) && (!ym.g.r || (ym.g.r.hops === 0 && !ym.g.r.wide) || ym.g.r.fixed)) yTrue.add(ym.g.key); }
-      // 本人（取り違えられた人も含む）ならまず直る。目撃者や、すでに本当の話を知る人なら半々
+      // 本人（取り違えられた人も含む）ならまず直る。目撃者や、すでに本当の話を知る人なら3割
       const self = y.id === g.r.subj || (y.id === g.subj && g.subj !== g.r.subj);
-      if (!(self ? sim.rng.chance(0.9) : yTrue.has(g.key) && sim.rng.chance(0.5))) continue;
+      if (!(self ? sim.rng.chance(0.8) : yTrue.has(g.key) && sim.rng.chance(0.3))) continue;
       const subj = sim.S.people[g.r.subj];
       if (!subj) continue;
       const wrongWho = g.subj !== g.r.subj ? sim.S.people[g.subj] : null;

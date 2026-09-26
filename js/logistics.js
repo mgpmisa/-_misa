@@ -2,7 +2,7 @@
 // 商人の交易は、品物が瞬間移動するのではなく、荷車が道を実際に進み、港どうしは船が海を渡る。
 // 着いて初めて行き先の町の在庫と物価に反映される。道中では盗賊・魔物・嵐に遭うことがある。
 // 状態は S.convoys（隊商の一覧）と S.logi（通算の数字）。古いセーブで欠けていても ensureLogistics で作る。
-import { W, H, T, MinHeap } from './world.js';
+import { W, H, T, MinHeap, walkable } from './world.js';
 import { findPath } from './path.js';
 import { GOODS, JOBS } from './data.js';
 import { dangerAt } from './danger.js';
@@ -13,7 +13,7 @@ import { isAdventurer, advRank, RANKS_ADV, QUEST_TYPE_NAME } from './guild.js';
 export const MAX_CONVOYS = 14;          // 同時に走る隊商の上限
 const CHECK_EVERY = 10;                 // 道中の判定の間隔（分）
 const CART_SPEED = 0.8;                 // 荷車：道の上で1分あたり何マス進むか
-const SHIP_SPEED = 1.8;                 // 船：1分あたり何マス
+const SHIP_SPEED = 1.1;                 // 船：1分あたり何マス
 const SHIP_CAP = 30;                    // 船の積み荷の上限（個）
 const TILE_SLOW = { [T.FOREST]: 1.5, [T.DENSE]: 2, [T.JUNGLE]: 2, [T.DESERT]: 1.4, [T.SNOW]: 1.6, [T.ROCK]: 2.2, [T.SWAMP]: 2.2, [T.GRASS]: 1.25, [T.SAVANNA]: 1.25, [T.BEACH]: 1.3, [T.FIELD]: 1.3, [T.PASTURE]: 1.25, [T.WASTE]: 1.5 };
 const RIDE = new Set(['trade', 'escort', 'sail']);
@@ -153,6 +153,20 @@ function unboard(sim, p, c) {
 }
 const riders = (c) => [c.owner, ...c.guards, ...c.crew].filter((id) => id != null);
 
+// 町の中心に近い、荷車が止まれる地面（広場・道を優先）
+function landSpot(w, s) {
+  let best = null, bd = 1e9;
+  for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
+    const x = s.x + dx, z = s.z + dz;
+    if (x < 0 || z < 0 || x >= W || z >= H) continue;
+    const t = w.tiles[z * W + x];
+    if (!walkable(t)) continue;
+    const d = Math.abs(dx) + Math.abs(dz) + (t === T.PLAZA || t === T.ROAD ? 0 : 3);
+    if (d < bd) { bd = d; best = { x, z }; }
+  }
+  return best;
+}
+
 // 商人の交易を始める（startAction の頭で呼ぶ）。true なら隊商を出したので、元の処理はしない。
 export function startTradeConvoy(sim, p, tr) {
   const S = sim.S, R = sim.rng;
@@ -169,7 +183,8 @@ export function startTradeConvoy(sim, p, tr) {
   else {
     if (tr.sea) { p._tradeCd = S.t + 360; return false; }
     const sx = Math.round(p.inside != null ? sim.building(p.inside).door.x : p.pos.x), sz = Math.round(p.inside != null ? sim.building(p.inside).door.z : p.pos.z);
-    path = findPath(S.world, sx, sz, dest.x, dest.z, 26000);
+    const tgt = landSpot(S.world, dest);
+    path = tgt && findPath(S.world, sx, sz, tgt.x, tgt.z, 26000);
     if (!path || path.length < 4) { p._tradeCd = S.t + 600; return false; }
     path.unshift({ x: sx, z: sz });
   }
@@ -233,10 +248,10 @@ function hireEscort(sim, p, c, risk) {
 // ---------- 定期船（港どうし。船長の家の資金で荷を積み、往復する） ----------
 function pickCargo(sim, fromSid, toSid, budget) {
   const a = sim.market(fromSid), b = sim.market(toSid);
-  const opts = Object.keys(GOODS).map((g) => ({ g, r: b.price[g] / a.price[g] })).filter((o) => o.r > 1.15 && a.stock[o.g] > GOODS[o.g].target * 0.6).sort((x, y) => y.r - x.r);
+  const opts = Object.keys(GOODS).map((g) => ({ g, r: b.price[g] / a.price[g] })).filter((o) => o.r > 1.08 && a.stock[o.g] > GOODS[o.g].target * 0.45).sort((x, y) => y.r - x.r);
   const goods = {}; let n = 0, cost = 0;
   for (const { g } of opts) {
-    const q = Math.min(12, SHIP_CAP - n, Math.floor(a.stock[g] - GOODS[g].target * 0.5), Math.floor((budget - cost) / a.price[g]));
+    const q = Math.min(12, SHIP_CAP - n, Math.floor(a.stock[g] - GOODS[g].target * 0.35), Math.floor((budget - cost) / a.price[g]));
     if (q <= 0) continue;
     goods[g] = q; n += q; cost += q * a.price[g]; a.stock[g] -= q;
     if (n >= SHIP_CAP) break;
@@ -258,7 +273,7 @@ function launchLiner(sim, port) {
   board(sim, cap, c, 'sail');
   for (const q of crewAll.filter((x) => x !== cap).slice(0, 2)) { board(sim, q, c, 'sail'); c.crew.push(q.id); }
   sim.remember(cap, `定期船の船長として${dest.name}へ舵を取った`, { emo: 0.3, imp: 0.35, k: 'trade' });
-  sim.pushLog(`${port.name}の港から${dest.name}行きの定期船が出た（船長${cap.given}、積み荷：${goodsText(goods)}）。`, 'event', [cap.id, ...c.crew], c.pos);
+  sim.pushLog(`${port.name}の港から${dest.name}行きの定期船が出た（船長${cap.given}、積み荷：${Object.keys(goods).length ? goodsText(goods) : '旅人と手紙だけ'}）。`, 'event', [cap.id, ...c.crew], c.pos);
 }
 
 // ---------- 毎歩：位置を進めるだけ ----------
@@ -477,8 +492,9 @@ function arriveConvoy(sim, c) {
   }
   // 町の人は、荷が届いたことに気づく
   const locals = sim.living().filter((q) => q.s === c.to && sim.isAdult(q));
-  const newsTxt = c.kind === 'ship' ? `${sim.town(c.from).name}からの船が着き、${txt}が市場に並んだ` : `${sim.town(c.from).name}から荷車が着き、${txt}が市場に並んだ`;
-  for (const q of R.shuffle(locals).slice(0, 3)) sim.remember(q, newsTxt, { emo: 0.15, imp: 0.25, k: 'market' });
+  const empty = !Object.values(c.goods).some((n) => n > 0);
+  const newsTxt = `${sim.town(c.from).name}から${c.kind === 'ship' ? '船' : '荷車'}が着き、` + (empty ? (c.kind === 'ship' ? '旅人と手紙を降ろした' : '空の荷台で入ってきた') : `${txt}が市場に並んだ`);
+  if (!empty) for (const q of R.shuffle(locals).slice(0, 3)) sim.remember(q, newsTxt, { emo: 0.15, imp: 0.25, k: 'market' });
   sim.pushLog(`${to.name}：${newsTxt}${own ? `（${c.liner ? '船長' : '商人'}${own.given}）` : ''}。`, 'event', own ? [own.id] : [], c.pos);
   payEscort(sim, c);
   if (c.kind === 'ship' && c.roundTrip && c.leg === 1) {
@@ -546,6 +562,9 @@ export function logisticsHourly(sim) {
   const S = sim.S;
   ensureLogistics(sim);
   const h = Math.floor(sim.hour());
+  // 行き先を失った乗り手を降ろす（念のため）
+  const ids = new Set(S.convoys.map((c) => c.id));
+  for (const p of sim.living()) if (p.action?.convoy != null && !ids.has(p.action.convoy)) { p.action.until = S.t; p.action.convoy = null; if (p._spot > 1e6) p._spot = 0; }
   // 定期船：朝7時、港ごとに2日に1便（港の番号で日をずらす）
   if (h === 7 && S.convoys.length < MAX_CONVOYS) {
     for (const port of seaPorts(sim)) {
@@ -554,11 +573,51 @@ export function logisticsHourly(sim) {
       launchLiner(sim, port);
     }
   }
+  // 町の荷車：朝から昼まで、値の開いた品を近くの町へ運ぶ。町の商人が出すが、いなければ荷運びを請け負う人が出す
+  if (h >= 6 && h < 13) {
+    S.logi.lastDep = S.logi.lastDep || {};
+    for (const s of S.world.settlements) {
+      if (S.convoys.length >= MAX_CONVOYS - 2) break;           // 定期船の分を空けておく
+      if (S.towns[s.id].occupied || S.t - (S.logi.lastDep[s.id] ?? -1e9) < 8 * 60 || !sim.rng.chance(0.25)) continue;
+      const tr = bestLandTrade(sim, s);
+      if (!tr) continue;
+      const drv = pickCarter(sim, s);
+      if (!drv) continue;
+      if (startTradeConvoy(sim, drv, tr)) S.logi.lastDep[s.id] = S.t;
+    }
+  }
+}
+
+// その町から近くの町へ、いちばん値が開いている品
+function bestLandTrade(sim, s) {
+  const here = sim.market(s.id);
+  let best = null, bv = 1.3;
+  for (const d of sim.S.world.settlements) {
+    if (d.id === s.id || sim.S.towns[d.id].occupied || Math.hypot(d.x - s.x, d.z - s.z) > 60) continue;
+    const there = sim.market(d.id);
+    for (const g of Object.keys(GOODS)) {
+      if (here.stock[g] < Math.max(4, GOODS[g].target * 0.5)) continue;
+      const r = there.price[g] / here.price[g];
+      if (r > bv) { bv = r; best = { good: g, dest: d.id, place: { x: d.x, z: d.z } }; }
+    }
+  }
+  return best;
+}
+// 荷車を出す人：町の商人 → 両替商・密輸人 → 仕事のない大人（荷運びの仕事を請け負う）
+const CARTERS = ['merchant', 'changer', 'smuggler', 'peddler'];
+function pickCarter(sim, s) {
+  const C = sim.S.convoys;
+  const ok = (q) => q.s === s.id && q.jail == null && !q.fight && !q.bandit && sim.isAdult(q) && sim.ageOf(q) < 62 && q.hp > q.maxhp * 0.6
+    && !RIDE.has(q.action?.type) && q.action?.type !== 'sleep' && !C.some((c) => c.owner === q.id) && (sim.hh(q)?.money || 0) >= 25 && !((q._tradeCd || 0) > sim.S.t);
+  const pool = sim.living().filter(ok);
+  for (const j of CARTERS) { const q = pool.find((x) => x.job === j); if (q) return q; }
+  const idle = pool.filter((q) => !q.job && !q.quest);
+  return idle.length ? sim.rng.pick(idle) : null;
 }
 
 // ---------- 描画向け：隊商の見た目の情報 ----------
 export function convoyViews(sim) {
-  return (sim.S.convoys || []).map((c) => ({ id: 'v' + c.id, kind: c.kind, x: c.pos.x, z: c.pos.z, dir: c.dir, angle: Math.atan2(c.dir.z, c.dir.x), state: c.state, load: Object.values(c.goods).reduce((s, n) => s + n, 0) }));
+  return (sim.S.convoys || []).map((c) => ({ id: 'v' + c.id, kind: c.kind, home: c.home, x: c.pos.x, z: c.pos.z, dir: c.dir, angle: Math.atan2(c.dir.z, c.dir.x), state: c.state, load: Object.values(c.goods).reduce((s, n) => s + n, 0) }));
 }
 
 // ---------- 詳細欄向け：人がいま何の隊商に乗っているか ----------

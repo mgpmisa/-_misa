@@ -31,7 +31,7 @@ const TOWN_SHOPS = ['baker', 'merchant', 'butcher', 'tailor', 'cobbler', 'herbal
 // 弟子をとれる職人
 const CRAFTS = ['smith', 'carpenter', 'baker', 'tailor', 'cobbler', 'potter', 'weaver', 'jeweler', 'butcher', 'brewer', 'herbalist', 'shipwright', 'mason', 'miller', 'alchemist'];
 // 腕がなくても就ける、人の多い仕事（ここから転職・弟子入りしやすい）
-const COMMON = ['farmer', 'fisher', 'sailor', 'laundress', 'stablehand', 'gatherer', 'charcoal', 'woodcutter', 'maid', 'gardener', 'wanderer', 'messenger'];
+const COMMON = ['farmer', 'fisher', 'sailor', 'laundress', 'stablehand', 'gatherer', 'charcoal', 'woodcutter', 'maid', 'gardener', 'wanderer', 'messenger', 'gravedigger'];
 // 引退しない・計画を持たない職業
 const NO_RETIRE = ['king', 'royal', 'noble', 'elder', 'thief', 'beggar', 'banditchief', 'pickpocket', 'swindler', 'pirate', 'smuggler', 'wanderer', 'bard'];
 const NO_PLAN_RANK = ['king', 'royal', 'outlaw', 'prisoner'];
@@ -141,7 +141,7 @@ function candidates(sim, p, cnt) {
   if (p.job === 'farmer' && hh && (hh.land || 0) < 10 && age >= 20 && age <= 60) push('land', 1.5 + C, (hh.land || 0) > 0 ? '畑を広げる' : '自分の畑を持つ', 160);
   const home = sim.homeOf(p);
   if (home && home.type === 'house' && home.owner != null && home.owner !== p.hh && age >= 22 && age <= 60) push('house', 1.5 + p.values.family * 2, '自分の家を持つ', Math.round((home.value || houseValue(sim, home)) * 1.15));
-  if (hh && age >= 24 && age <= 55 && hh.members.some((id) => { const k = alive(sim, id); return k && (p.children || []).includes(k.id) && sim.ageOf(k) >= 5 && sim.ageOf(k) <= 12; })) push('tutor', 0.8 + p.values.family * 2, '子どもに読み書きを習わせる', 50);
+  if (hh && age >= 24 && age <= 55 && hh.members.some((id) => { const k = alive(sim, id); return k && !k.tutored && (p.children || []).includes(k.id) && sim.ageOf(k) >= 5 && sim.ageOf(k) <= 12; })) push('tutor', 0.8 + p.values.family * 2, '子どもに読み書きを習わせる', 50);
   if (age >= 44 && age <= 62) push('nest', 0.6 + C + (1 - amb), town.type === 'village' ? '老後は畑を眺めて静かに暮らす' : '老後は田舎で静かに暮らす', 130);
   return out;
 }
@@ -203,7 +203,7 @@ export function careerDaily(sim) {
     // 見習い：師匠の腕を少しずつ受け継ぐ
     if (p.master != null) apprenticeDay(sim, p, cnt);
     // 若者の弟子入り
-    else if (age <= 18 && !p.appr && R.chance(0.02)) seekMaster(sim, p, cnt);
+    else if (age <= 18 && !p.appr && R.chance(0.05)) seekMaster(sim, p, cnt);
     // 引退（誕生日に考える）
     if (p.birthDay === doy && age >= 55 && age < 68 && p.job && !p.retired) considerRetire(sim, p, cnt);
     if (age < 18 || NO_PLAN_RANK.includes(p.rank) || sim.hh(p)?.bandits) continue;
@@ -262,7 +262,7 @@ function giveUp(sim, p, plan) {
 // ---------- 達成 ----------
 function achieve(sim, p, plan, cnt) {
   const S = sim.S, st = state(sim), town = sim.townOf(p), hh = sim.hh(p), year = sim.year();
-  const done = (memo, deed, log, chron) => {
+  const done = (memo, deed, log, chron, quiet = false) => {
     plan.stage = 'done'; plan.doneDay = sim.today;
     st.achieved++; st.byGoal[plan.goal] = (st.byGoal[plan.goal] || 0) + 1;
     sim.remember(p, memo, { emo: 0.95, imp: 0.95, k: 'career' });
@@ -270,8 +270,10 @@ function achieve(sim, p, plan, cnt) {
     p.needs.esteem = 100;
     const fam = hh ? hh.members.map((id) => alive(sim, id)).filter((q) => q && q !== p && sim.ageOf(q) >= 8) : [];
     for (const q of fam) sim.remember(q, `${p.given}が${log}`, { emo: 0.7, imp: 0.6, about: [p.id], k: 'career' });
-    sim.gossip(p, log, 0.5, sim.living().filter((q) => q.s === p.s && q.hh !== p.hh && sim.rel(q, p).f > 20).slice(0, 30), { silent: true, congrat: 'おめでとう、念願がかなったんだってね' });
-    sim.pushLog(`${sim.fullName(p)}が${log}。`, 'event', [p.id], p.pos);
+    if (!quiet) {
+      sim.gossip(p, log, 0.5, sim.living().filter((q) => q.s === p.s && q.hh !== p.hh && sim.rel(q, p).f > 20).slice(0, 30), { silent: true, congrat: 'おめでとう、念願がかなったんだってね' });
+      sim.pushLog(`${sim.fullName(p)}が${log}。`, 'event', [p.id], p.pos);
+    }
     if (chron) sim.chron(chron, town.kingdom);
     p.planRest = sim.today + 20;
     if (plan.fromDream || p.dream === plan.txt) p._dreamFree = true;
@@ -358,21 +360,21 @@ function achieve(sim, p, plan, cnt) {
       return;
     }
     case 'tutor': {
-      const kids = (p.children || []).map((id) => alive(sim, id)).filter((k) => k && sim.ageOf(k) >= 5 && sim.ageOf(k) <= 14);
+      const kids = (p.children || []).map((id) => alive(sim, id)).filter((k) => k && !k.tutored && sim.ageOf(k) >= 5 && sim.ageOf(k) <= 14);
       if (!kids.length) { p.purse += plan.saved; plan.saved = 0; plan.stage = 'done'; p.planRest = sim.today + 10; return; }
       const teacher = sim.living().find((q) => q.job === 'teacher' && q.s === p.s) || sim.living().find((q) => q.job === 'priest' && q.s === p.s);
       if (teacher && sim.hh(teacher)) sim.hh(teacher).money += plan.saved; else S.towns[p.s].fund += plan.saved;
       plan.saved = 0;
       for (const k of kids) {
-        k.skill = k.skill || {}; k.skill.study = Math.min(1, (k.skill.study || 0) + 0.25);
+        k.tutored = true; k.skill = k.skill || {}; k.skill.study = Math.min(1, (k.skill.study || 0) + 0.25);
         sim.remember(k, `${teacher ? teacher.given + 'に' : ''}読み書きを習いはじめた`, { emo: 0.5, imp: 0.6, about: teacher ? [teacher.id] : [], k: 'career' });
       }
-      done(`子どもに${teacher ? teacher.given + 'のもとで' : ''}読み書きを習わせてやれた`, null, '子どもに読み書きを習わせはじめた', null);
+      done(`子どもに${teacher ? teacher.given + 'のもとで' : ''}読み書きを習わせてやれた`, null, '子どもに読み書きを習わせはじめた', null, true);
       return;
     }
     case 'nest': {
       p.nestEgg = (p.nestEgg || 0) + plan.saved; plan.saved = 0;
-      done('老後の蓄えができた。これでいつ仕事を退いても大丈夫だ', null, '老後の蓄えをこしらえた', null);
+      done('老後の蓄えができた。これでいつ仕事を退いても大丈夫だ', null, '老後の蓄えをこしらえた', null, true);
       return;
     }
   }
@@ -456,7 +458,7 @@ function seekMaster(sim, p, cnt) {
   if (!R.chance(drive * 0.8)) return;
   if (!canLeave(sim, cnt, p.s, cur)) return;
   const masters = sim.living().filter((q) => q.s === p.s && CRAFTS.includes(q.job) && !q.appr && q.id !== p.id && (q.skill?.[q.job] || 0) >= 0.45 && sim.ageOf(q) >= 25 && sim.ageOf(q) < 66
-    && (q.apprentices || []).filter((id) => alive(sim, id)?.master === q.id).length < 2 && canJoin(sim, cnt, p.s, q.job, 2) && !sim.isKin(q, p));
+    && (q.apprentices || []).filter((id) => alive(sim, id)?.master === q.id).length < 2 && canJoin(sim, cnt, p.s, q.job, 2) && q.id !== p.fatherId && q.id !== p.motherId);
   if (!masters.length) return;
   const m = R.weighted(masters, (q) => 1 + (q.skill[q.job] || 0) + (p.dream === '誰よりもうまいパンを焼く' && q.job === 'baker' ? 5 : 0) + Math.max(0, sim.rel(p, q).a) / 30);
   setJob(sim, p, m.job, 0.1);
@@ -560,8 +562,8 @@ export function careerWorkPlace(sim, p) {
 
 // ---------- 引退した人の過ごし方 ----------
 export function careerOptions(sim, p, add) {
-  if (!p.retired || p.job) return;
   const h = sim.hour(), age = sim.ageOf(p), R = sim.rng;
+  if (p.job || !(p.retired || (p.formerJob && age >= 55))) return;
   if (h < 8 || h >= 18) return;
   const hh = sim.hh(p);
   if (hh && hh.house != null) add(2 + p.pers.C * 1.5 + (sim.seasonIdx() < 3 ? 0.8 : -1), 'garden', sim.placeFor(p, 'home'), R.int(40, 90));

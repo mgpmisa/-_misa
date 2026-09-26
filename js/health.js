@@ -223,7 +223,7 @@ export function onDeath(sim, dead, cause, killer) {
     if (cause === 'murder' && killer?.given && !unsolved && killer.deathYear == null && lv >= 45 && q.revenge !== killer.id && R.chance(0.5)) {
       q.grudge = { who: killer.id, day: sim.today };
       const r = sim.relMut(q, killer); r.a = Math.min(r.a, -70);
-      sim.remember(q, `${dead.given}を殺した${killer.given}のことは、一生許さない`, { emo: -0.9, imp: 0.9, about: [killer.id, dead.id], k: 'grudge' });
+      sim.remember(q, `${dead.given}を殺した${killer.given}のことは、一生許さない`, { emo: -0.9, imp: 0.9, about: [killer.id, dead.id], k: 'hatred' });
     }
   }
 }
