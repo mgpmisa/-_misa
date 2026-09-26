@@ -265,7 +265,12 @@ function hear(sim, victim, c, inc) {
     const lead = joined[0];
     say(sim, lead, rng.pick(['今行くぞ！', '持ちこたえろ！', `${victim.given}、待ってろ！`, 'みんな、手を貸してくれ！']));
     if (joined.length >= 2) for (const a of joined) for (const b of joined) if (a !== b) sim.relMut(a, b).a = Math.min(100, sim.rel(a, b).a + 2);
-    addLog(sim, `${victim.given}の「助けて！」を聞き、${names(joined.map((q) => q.given))}が${c.name}に立ち向かいに駆けつけた。`, joined.map((q) => q.id).concat(victim.id), c.pos);
+    // 同じ人が同じ相手へ何度も駆けつけるときは、ログは1時間に1回だけ
+    const seen = sim._rescueSeen || (sim._rescueSeen = new Map());
+    const fresh = joined.filter((q) => !(seen.get(q.id + ':' + c.id) > S.t - 60));
+    for (const q of joined) seen.set(q.id + ':' + c.id, S.t);
+    if (seen.size > 400) seen.clear();
+    if (fresh.length) addLog(sim, `${victim.given}の「助けて！」を聞き、${names(fresh.map((q) => q.given))}が${c.name}に立ち向かいに駆けつけた。`, fresh.map((q) => q.id).concat(victim.id), c.pos);
   }
 }
 
