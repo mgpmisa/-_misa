@@ -4,6 +4,8 @@ import { JOBS, GOODS, DAYS_PER_YEAR, DAYS_PER_SEASON, SEASONS, DEATH_CAUSES, ERA
 import { generateHistory, createPersonFactory } from './history.js';
 import { generateWorld, openGates, makeHousePlacer, T, W, H, walkable, tileAt, heightAt, TILE_NAME } from './world.js';
 import { findPath } from './path.js';
+import { findPathFar } from './pathfar.js';
+import { lodWalkMul } from './lod.js';
 import { ancestors, kinTerm, isCloseKin, siblings } from './kin.js';
 import { composeConversation, innerThought, speechStyle } from './speech.js';
 import { spawnInitialCreatures, stepCreatures, creatureDaily } from './creatures.js';
@@ -753,7 +755,9 @@ export class Sim {
     this._noPath = this._noPath || new Map();
     const key = a.tx * 1000 + a.tz;
     const bad = this._noPath.get(key);
-    const path = bad && bad > this.S.t ? null : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, brave ? this.dangerHigh() : this.S.dangerMap);
+    const avoid = brave ? this.dangerHigh() : this.S.dangerMap;
+    // 広い世界の遠い目的地は二段構えの道探し（pathfar.js）。近い所と今の 160 の世界は今までどおり
+    const path = bad && bad > this.S.t ? null : W > 200 ? findPathFar(this.S.world, sx, sz, a.tx, a.tz, { maxIter: 26000, avoid }) : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, avoid);
     if (!path && !(bad > this.S.t)) { this._noPath.set(key, this.S.t + 120); if (this._noPath.size > 500) this._noPath.clear(); }
     if (!path) {
       // たどり着けない：近くの歩ける場所へ
@@ -1226,7 +1230,7 @@ export class Sim {
       if (!a) { this.decide(p); continue; }
       if (a.phase === 'walk') {
         if (!p.path) { if (this.pathBudget-- > 0) this.computePath(p); else continue; }
-        this.walk(p, dt);
+        const wk = lodWalkMul(this, p); if (wk) this.walk(p, dt * wk);   // 遠い荒野をひとりで旅する人は4歩に1回まとめて歩く（広い世界だけ）
       } else {
         this.doAction(p, dt);
       }

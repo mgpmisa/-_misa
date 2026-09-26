@@ -6,6 +6,7 @@ import { W, H, T } from './world.js';
 import { buildTextures, personTexture, TEX } from './textures.js';
 import { SPECIES, KINGDOMS } from './data.js';
 import * as SPR from './sprites.js';
+import { TerrainChunks } from './terrain_chunks.js';
 import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
 import { convoyViews } from './logistics.js';
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
@@ -30,7 +31,7 @@ export class Renderer {
     this.scene.background = new THREE.Color('#8fd0ff');
     this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -300, 600);
     this.controls = new OrbitControls(this.camera, canvas);
-    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.12, minZoom: 0.12, maxZoom: 8, minPolarAngle: 0.1, maxPolarAngle: 1.35, screenSpacePanning: false });
+    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.12, minZoom: 0.12 * 160 / W, maxZoom: 8, minPolarAngle: 0.1, maxPolarAngle: 1.35, screenSpacePanning: false });
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls.addEventListener('start', () => { this.userMoved = performance.now(); });
@@ -48,7 +49,6 @@ export class Renderer {
     this.ents = new Map();
     this.terrainMeshes = [];
     this.buildTerrain();
-    this.buildTrees();
     this.buildStructures();
     this.buildBuildings();
     this.buildMills();
@@ -131,89 +131,20 @@ export class Renderer {
   }
   buildTerrain() {
     const w = this.sim.S.world;
-    const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, -0.5, 0);
-    const L = (map, extra = {}) => new THREE.MeshLambertMaterial({ map, ...extra });
-    const side = L(TEX.dirt), sideSand = L(TEX.sand), sideRock = L(TEX.rock);
-    this.top = {
-      grassN: L(TEX.grass), grassS: L(TEX.grass), pasture: L(TEX.pasture), roadN: L(TEX.road), roadS: L(TEX.road), plaza: L(TEX.plaza), field: L(TEX.field[0]),
-      sand: L(TEX.sand), desert: L(TEX.desert), snow: L(TEX.snow), rock: L(TEX.rock), peak: L(TEX.peak), forestN: L(TEX.forestFloor), forestS: L(TEX.forestFloor),
-      dense: L(TEX.denseFloor), jungle: L(TEX.jungleFloor), savanna: L(TEX.savanna), swamp: L(TEX.swamp), waste: L(TEX.waste),
-      lava: L(TEX.lava, { emissive: '#ff5a1a', emissiveIntensity: 0.8, emissiveMap: TEX.lava }), seabed: L(TEX.sand, { color: '#6a8aa0' }), riverbed: L(TEX.sand, { color: '#8a9a88' }),
-    };
-    const sideFor = (k) => (['sand', 'desert', 'seabed', 'riverbed'].includes(k) ? sideSand : ['rock', 'peak', 'waste'].includes(k) ? sideRock : side);
-    const groups = {};
-    const water = [];
-    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-      const t = w.tiles[z * W + x];
-      const k = this.groundKey(t, x, z);
-      (groups[k] = groups[k] || []).push([x, z, t]);
-      if (t === T.RIVER || t === T.BRIDGE) water.push([x, z]);
-    }
-    const m4 = new THREE.Matrix4(), col = new THREE.Color();
-    for (const [k, list] of Object.entries(groups)) {
-      const mats = [sideFor(k), sideFor(k), this.top[k], sideFor(k), sideFor(k), sideFor(k)];
-      const mesh = new THREE.InstancedMesh(geo, mats, list.length);
-      list.forEach(([x, z, t], i) => {
-        const h = w.hgt[z * W + x];
-        let y = topY(h);
-        if (t === T.SEA) y = -0.35; else if (t === T.DEEP) y = -0.9; else if (t === T.RIVER || t === T.BRIDGE) y = topY(h) - 0.35; else if (t === T.DOCK) y = -0.35;
-        else if (t === T.ROAD || t === T.PLAZA) y -= 0.02;
-        m4.makeScale(1, y + 1.6, 1).setPosition(wx(x), y, wz(z));
-        mesh.setMatrixAt(i, m4);
-        const v = 0.92 + hsh(x, z, 1) * 0.12;
-        mesh.setColorAt(i, col.setRGB(v, v, v));
-      });
-      mesh.receiveShadow = true;
-      mesh.userData.tiles = list;
-      this.scene.add(mesh);
-      this.terrainMeshes.push(mesh);
-    }
+    // 地面・木・畑の作物・川は区画ごとに描く（terrain_chunks.js）
+    this.chunks = new TerrainChunks(this.scene, w, TEX, { groundKey: (t, x, z) => this.groundKey(t, x, z), crystalMat: this.mats.crystal, getExplored: () => this.sim.S.explored });
+    this.treeMats = this.chunks.treeMats;
     // 海
     this.waterTex = TEX.water.clone(); this.waterTex.needsUpdate = true;
     this.waterTex.wrapS = this.waterTex.wrapT = THREE.RepeatWrapping; this.waterTex.repeat.set(W / 2, H / 2);
     const sea = new THREE.Mesh(new THREE.PlaneGeometry(W + 80, H + 80), new THREE.MeshLambertMaterial({ map: this.waterTex, transparent: true, opacity: 0.86 }));
     sea.rotation.x = -Math.PI / 2; sea.position.y = SEA_Y; sea.receiveShadow = true;
     this.scene.add(sea);
-    // 川
-    const rgeo = new THREE.BoxGeometry(1, 0.05, 1);
-    const rmat = new THREE.MeshLambertMaterial({ map: TEX.water, transparent: true, opacity: 0.9 });
-    const rm = new THREE.InstancedMesh(rgeo, rmat, water.length);
-    water.forEach(([x, z], i) => { rm.setMatrixAt(i, m4.makeTranslation(wx(x), topY(w.hgt[z * W + x]) - 0.12, wz(z))); });
-    this.scene.add(rm);
-    // 作物
-    const cropGeo = new THREE.BoxGeometry(0.82, 1, 0.82); cropGeo.translate(0, 0.5, 0);
-    this.cropMat = new THREE.MeshLambertMaterial({ color: '#d9b24a' });
-    this.cropTiles = (groups.field || []).map(([x, z]) => [x, z]);
-    this.crops = new THREE.InstancedMesh(cropGeo, this.cropMat, Math.max(1, this.cropTiles.length));
-    this.crops.castShadow = true;
-    this.scene.add(this.crops);
   }
 
   applySeason(si) {
-    const T_ = this.top;
-    T_.grassN.map = [TEX.grass, TEX.grass, TEX.grassAutumn, TEX.snow][si];
-    T_.forestN.map = [TEX.forestFloor, TEX.forestFloor, TEX.grassAutumn, TEX.snow][si];
-    T_.roadN.map = si === 3 ? TEX.roadSnow : TEX.road;
-    T_.grassS.map = si === 2 ? TEX.savanna : TEX.grass;
-    T_.field.map = TEX.field[si];
-    for (const m of Object.values(T_)) m.needsUpdate = true;
-    const h = [0.1, 0.32, 0.4, 0.0][si];
-    this.cropMat.color.set(['#79c24e', '#4f9a32', '#e0b84a', '#ffffff'][si]);
-    const m4 = new THREE.Matrix4();
-    const w = this.sim.S.world;
-    this.cropTiles.forEach(([x, z], i) => {
-      const hh = h * (0.8 + hsh(x, z, 2) * 0.4);
-      m4.makeScale(1, Math.max(0.001, hh), 1).setPosition(wx(x), topY(w.hgt[z * W + x]), wz(z));
-      this.crops.setMatrixAt(i, m4);
-    });
-    this.crops.visible = h > 0;
-    this.crops.instanceMatrix.needsUpdate = true;
+    this.chunks.applySeason(si);
     for (const mt of this.snowable) { mt.map = si === 3 ? TEX.snowRoof : mt.userData.base; mt.needsUpdate = true; }
-    if (this.treeMats) {
-      this.treeMats.round.color.set(['#4d9a3c', '#3f8a32', '#d0822e', '#b8c4b8'][si]);
-      this.treeMats.pine.color.set(si === 3 ? '#cfe0d8' : '#2f6b3a');
-      this.treeMats.pine2.color.set(si === 3 ? '#ffffff' : '#3d8247');
-    }
   }
 
   // ---------- 木・岩 ----------
@@ -396,26 +327,9 @@ export class Renderer {
   }
   // 地形のマスが変わったとき（道普請・開拓・野火のあとなど）に、上から新しい地面を重ねて描き直す
   refreshTiles(list) {
-    const w = this.sim.S.world, m4 = new THREE.Matrix4(), col = new THREE.Color();
-    if (!this.patches) { this.patches = {}; this.patchGeo = new THREE.BoxGeometry(1, 0.06, 1); }
-    for (const i of list) {
-      const x = i % W, z = (i / W) | 0, t = w.tiles[i];
-      // その場所の木を消す
-      for (const [mesh, k] of this.treeAt?.[i] || []) { mesh.setMatrixAt(k, m4.makeScale(0, 0, 0)); mesh.instanceMatrix.needsUpdate = true; }
-      if (this.treeAt) delete this.treeAt[i];
-      if (t === T.BRIDGE) { this.addBridge(x, z); continue; }
-      const key = this.groundKey(t, x, z);
-      const mat = this.top?.[key];
-      if (!mat) continue;
-      let pm = this.patches[key];
-      if (!pm) { pm = this.patches[key] = new THREE.InstancedMesh(this.patchGeo, mat, 1024); pm.count = 0; pm.receiveShadow = true; this.scene.add(pm); }
-      if (pm.count >= 1024) continue;
-      const y = topY(w.hgt[i]) - (t === T.ROAD || t === T.PLAZA ? 0.02 : 0) + 0.005;
-      pm.setMatrixAt(pm.count, m4.makeTranslation(wx(x), y - 0.03, wz(z)));
-      const v = 0.92 + hsh(x, z, 1) * 0.12; pm.setColorAt(pm.count, col.setRGB(v, v, v));
-      pm.count++;
-      pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
-    }
+    const w = this.sim.S.world;
+    for (const i of list) if (w.tiles[i] === T.BRIDGE) this.addBridge(i % W, (i / W) | 0);
+    this.chunks.rebuildTiles(list);
   }
 
   // ---------- 建物 ----------
@@ -697,7 +611,7 @@ export class Renderer {
       else { const m = new THREE.Mesh(g, mat); m.castShadow = m.receiveShadow = true; this.scene.add(m); }
     }
   }
-  addBuilding(id) { this.addBuildingParts(this.sim.building(id), null); }
+  addBuilding(id) { const b = this.sim.building(id); this.addBuildingParts(b, null); this.chunks.rebuildRect(b.x - 1, b.z - 1, b.x + b.w, b.z + b.d); }
   // 風車の羽根（回る）
   buildMills() {
     this.mills = [];
@@ -1026,6 +940,7 @@ export class Renderer {
     const wantShadow = this.shadowsOn !== false && this.camera.zoom > 0.7;
     if (this.sun.castShadow !== wantShadow) this.sun.castShadow = wantShadow;
     this.controls.update();
+    this.chunks.update(this.camera, this.controls.target, this.renderer);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -1056,12 +971,10 @@ export class Renderer {
       if (d < bd) { bd = d; best = r.sprite.userData.id; }
     }
     if (best != null) return { entity: best };
-    const th = this.raycaster.intersectObjects(this.terrainMeshes, false);
-    if (th.length) {
-      const it = th[0];
-      const tile = it.object.userData.tiles[it.instanceId];
+    const tile = this.chunks.raycastTile(this.raycaster.ray);
+    {
       if (tile) {
-        const [x, z] = tile;
+        const { x, z } = tile;
         const w = this.sim.S.world;
         // 建物は地面の上に立っているので、少し手前（カメラ側）も調べる
         for (const [ddx, ddz] of [[0, 0], [0, -1], [-1, 0], [0, 1], [1, 0]]) {
@@ -1086,5 +999,5 @@ export class Renderer {
   topView() { const t = this.controls.target; this.camera.position.set(t.x + 0.01, t.y + 50, t.z + 0.01); }
   isoView() { const t = this.controls.target; this.camera.position.set(t.x + 26, t.y + 30, t.z + 26); }
   lowView() { const t = this.controls.target, c = this.camera.position; const off = c.clone().sub(t); off.y = 0; off.normalize().multiplyScalar(40); this.camera.position.set(t.x + off.x, t.y + 9, t.z + off.z); }
-  worldView() { this.lookAt(W / 2, H / 2, 0.18); this.topView(); }
+  worldView() { this.lookAt(W / 2, H / 2, 0.18 * 160 / W); this.topView(); }
 }

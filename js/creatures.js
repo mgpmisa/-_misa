@@ -2,6 +2,8 @@
 import { SPECIES } from './data.js';
 import { T, W, H, walkable, tileAt, biomeOf, isWater } from './world.js';
 import { findPath } from './path.js';
+import { findPathFar } from './pathfar.js';
+import { lodBegin, lodDue, lodCreatureGrid, creatureArray } from './lod.js';
 import { clamp } from './rng.js';
 import { startFight } from './society.js';
 import { DROPS, addItem, makeItem } from './items.js';
@@ -179,29 +181,39 @@ export function buildGrid(list) {
 export function around(grid, x, z, r) {
   const out = [];
   const cx0 = Math.floor((x - r) / 8), cx1 = Math.floor((x + r) / 8), cz0 = Math.floor((z - r) / 8), cz1 = Math.floor((z + r) / 8);
-  for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++) { const a = grid.get((cx << 8) | cz); if (a) for (const e of a) out.push(e); }
+  const far = grid.far;   // 広い世界：遠い生き物の升目（lod.js）
+  for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++) {
+    const a = grid.get((cx << 8) | cz); if (a) for (const e of a) out.push(e);
+    if (far) { const f = far.get((cx << 8) | cz); if (f) for (const e of f) if (e.hp > 0) out.push(e); }
+  }
   return out;
 }
 
 export function stepCreatures(sim, dt) {
   const S = sim.S, R = sim.rng, w = S.world;
   const hr = dt / 60;
-  const all = Object.values(S.creatures);
-  const cgrid = sim._cgrid = buildGrid(all.filter((c) => !c.dormant && c.hp > 0 && !c.inDungeon));
+  const L = lodBegin(sim);
+  const all = L.on ? creatureArray(sim) : Object.values(S.creatures);
+  const due = lodDue(sim, all);   // 広い世界だけ。160 の世界では null
+  const cgrid = sim._cgrid = due ? lodCreatureGrid(sim, buildGrid) : buildGrid(all.filter((c) => !c.dormant && c.hp > 0 && !c.inDungeon));
   const hgrid = buildGrid(sim.living().filter((h) => h.inside == null && h.jail == null));
-  for (const c of all) {
+  // 遠い荒野の生き物は数歩に1回、まとめた時間で動かす（LOD。広い世界だけ。160 の世界では due は null で今までどおり）
+  const n = due ? due.length : all.length;
+  for (let i = 0; i < n; i += due ? 2 : 1) {
+    const c = due ? due[i] : all[i], k = due ? due[i + 1] : 1;
     if (c.dormant || c.hp <= 0) continue;
+    const cdt = dt * k, chr = cdt / 60;
     const def = SPECIES[c.sp];
-    if (c.inDungeon && !c.fight) { if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * hr); continue; }
-    c.hunger = clamp(c.hunger - (PREDATOR.has(c.sp) ? 1.6 : 1) * hr, 0, 100);
-    if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * hr);
+    if (c.inDungeon && !c.fight) { if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * chr); continue; }
+    c.hunger = clamp(c.hunger - (PREDATOR.has(c.sp) ? 1.6 : 1) * chr, 0, 100);
+    if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * chr);
     if (c.fight) continue;
-    c.think = (c.think || 0) - dt;
+    c.think = (c.think || 0) - cdt;
     if (c.think <= 0) {
       c.think = R.range(1.5, 3);
       think(sim, c, def, around(cgrid, c.pos.x, c.pos.z, 12), around(hgrid, c.pos.x, c.pos.z, 9));
     }
-    move(sim, c, def, dt);
+    move(sim, c, def, cdt);
   }
 }
 
@@ -384,7 +396,7 @@ function move(sim, c, def, dt) {
   const g = c.goal;
   // 遠い目的地は経路を使う
   if (g.path && !c.path && !def.flies && !def.swims) {
-    if (sim.pathBudget-- > 0) c.path = findPath(sim.S.world, Math.round(c.pos.x), Math.round(c.pos.z), Math.round(g.x), Math.round(g.z), 12000) || [];
+    if (sim.pathBudget-- > 0) c.path = (W > 200 ? findPathFar(sim.S.world, Math.round(c.pos.x), Math.round(c.pos.z), Math.round(g.x), Math.round(g.z), { maxIter: 12000 }) : findPath(sim.S.world, Math.round(c.pos.x), Math.round(c.pos.z), Math.round(g.x), Math.round(g.z), 12000)) || [];
     else return;
   }
   const speed = (def.speed || 0.8) * dt * (g.run ? 1.3 : 0.5);
@@ -401,12 +413,16 @@ function move(sim, c, def, dt) {
   }
   const dx = g.x - c.pos.x, dz = g.z - c.pos.z, d = Math.hypot(dx, dz);
   if (d < 0.3) { c.goal = null; c.path = null; return; }
-  const m = Math.min(speed, d);
-  const nx = c.pos.x + (dx / d) * m, nz = c.pos.z + (dz / d) * m;
-  if (canStand(sim, c, def, Math.round(nx), Math.round(nz))) { c.pos.x = nx; c.pos.z = nz; }
-  else if (canStand(sim, c, def, Math.round(nx), Math.round(c.pos.z))) c.pos.x = nx;
-  else if (canStand(sim, c, def, Math.round(c.pos.x), Math.round(nz))) c.pos.z = nz;
-  else c.goal = null;
+  // まとめて動かすとき（LOD）も川や壁を飛び越えないよう、1マスほどずつ確かめながら進む（ふだんの1歩は1回で終わる）
+  let rem = Math.min(speed, d);
+  while (rem > 1e-9) {
+    const m = Math.min(rem, 1.05); rem -= m;
+    const nx = c.pos.x + (dx / d) * m, nz = c.pos.z + (dz / d) * m;
+    if (canStand(sim, c, def, Math.round(nx), Math.round(nz))) { c.pos.x = nx; c.pos.z = nz; }
+    else if (canStand(sim, c, def, Math.round(nx), Math.round(c.pos.z))) c.pos.x = nx;
+    else if (canStand(sim, c, def, Math.round(c.pos.x), Math.round(nz))) c.pos.z = nz;
+    else { c.goal = null; break; }
+  }
   c.face = dx < 0 ? -1 : 1;
 }
 

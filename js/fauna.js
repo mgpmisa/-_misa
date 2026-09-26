@@ -666,7 +666,8 @@ function foodFactor(sim, c, def, si, drought) {
 
 function speciesCount(sim, sp) {
   const S = sim.S;
-  if (!sim._faCount || sim._faCountT !== S.t) {
+  // 広い世界では数え直しを15分ごとに（生き物が多いと毎歩の数え直しが重い）
+  if (!sim._faCount || (W > 200 ? S.t - sim._faCountT >= 15 || S.t < sim._faCountT : sim._faCountT !== S.t)) {
     sim._faCount = {}; sim._faCountT = S.t;
     for (const o of Object.values(S.creatures)) if (o.hp > 0) sim._faCount[o.sp] = (sim._faCount[o.sp] || 0) + 1;
   }

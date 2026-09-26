@@ -1308,7 +1308,7 @@ function keepAlive(sim) {
   const mask = townMask(sim);
   for (const [sp, d] of Object.entries(MIN_DENS)) {
     const min = Math.max(1, Math.round(d * AREA()));
-    if ((count[sp] || 0) >= min) continue;
+    if ((count[sp] || 0) >= min || !R.chance((count[sp] || 0) === 0 ? 0.8 : 0.3)) continue; // 絶えかけたら急いで、少ないだけならゆっくり
     const def = SPECIES[sp];
     const lairs = (SPRING[sp] || []).flatMap((t) => w.specials.map((id) => sim.building(id)).filter((b) => b && b.type === t));
     let p = null, lair = null, how;

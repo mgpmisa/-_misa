@@ -1,6 +1,7 @@
 import { Sim } from './sim.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
+import { markTilesChanged } from './pathfar.js';
 
 const MIN_PER_SEC = 2; // 1倍速のとき、現実の1秒 = 世界の2分
 
@@ -15,7 +16,7 @@ async function boot() {
   if (!loaded) {
     await Sim.clearSave();
     msg('大陸を形づくっています……'); await tick();
-    sim.newWorld(undefined, (m) => msg(m));
+    sim.newWorld(+(new URLSearchParams(location.search).get('seed')) || undefined, (m) => msg(m));
     await sim.save();
   }
   msg('景色を描いています……'); await tick();
@@ -49,7 +50,7 @@ function frame(now) {
       case 'died': if (ui.follow === e.id) ui.follow = null; break;
       case 'hit': if (ui.ivOpen != null) ui.iv.hit(e.id); renderer.hit(e.id); if (ui.bubblesOn) ui.floatHit(e.id, e.dmg); break;
       case 'building': renderer.addBuilding(e.id); break;
-      case 'tiles': renderer.refreshTiles?.(e.list); ui.redrawMinimapBase(); break;
+      case 'tiles': renderer.refreshTiles?.(e.list); markTilesChanged(sim.S.world, e.list); ui.redrawMinimapBase(); break;
       case 'borders': ui.redrawMinimapBase(); break;
     }
   }

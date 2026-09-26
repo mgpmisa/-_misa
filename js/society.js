@@ -3,6 +3,7 @@ import { clamp } from './rng.js';
 import { growthStats, growthAttack } from './growth.js';
 import { JOBS, SPECIES } from './data.js';
 import { killCreature } from './creatures.js';
+import { W } from './world.js';
 import { equipBonus, countItem, takeItem } from './items.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
@@ -36,6 +37,7 @@ export function startFight(sim, a, b, lethal = true) {
   if (isHuman(b) && b.deathYear != null) return;
   a.fight = { target: b.id, cd: 0, lethal };
   if (!b.fight) b.fight = { target: a.id, cd: 0.5, lethal };
+  if (W > 200) { const F = sim._fighting || (sim._fighting = new Set()); for (const e of [a, b]) if (typeof e.id !== 'number') F.add(e); }
   const dungeon = a.inDungeon || b.inDungeon;
   for (const e of [a, b]) if (isHuman(e)) { e.talk = null; if (e.inside != null && !dungeon) { const bl = sim.building(e.inside); e.pos = { ...bl.door }; e.inside = null; } }
   const watched = (isHuman(a) && sim.isWatched(a)) || (isHuman(b) && sim.isWatched(b));
@@ -45,7 +47,11 @@ export function startFight(sim, a, b, lethal = true) {
 export function stepCombat(sim, dt) {
   const all = [];
   for (const p of sim.living()) if (p.fight) all.push(p);
-  for (const c of Object.values(sim.S.creatures)) if (c.fight) all.push(c);
+  if (W > 200) {
+    // 広い世界：戦っている生き物だけを覚えておき、全員をなめない
+    const F = sim._fighting || (sim._fighting = new Set());
+    for (const c of F) { if (c.fight && c.hp > 0 && sim.S.creatures[c.id] === c) all.push(c); else F.delete(c); }
+  } else for (const c of Object.values(sim.S.creatures)) if (c.fight) all.push(c);
   for (const e of all) {
     if (!e.fight || e.hp <= 0) continue;
     const t = sim.entity(e.fight.target);

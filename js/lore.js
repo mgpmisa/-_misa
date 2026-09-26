@@ -144,7 +144,7 @@ export const TRIBES = [
     history: [
       { y: -300, text: '最初の長アイノが凍えた氷の巨人の子を焚き火で温め、霜の翁ホルミと「九頭の約束」を交わした' },
       { y: 38, k: 1, text: 'ヴェルムント王国が北の鉄を求めて雪原に「北の砦」を築いた。ヤルヴィ族が道案内をした' },
-      { y: 71, text: '{demon64}の戦乱で魔界から逃げ出した魔物が雪原に入り込み、霜の翁が吹雪で追い払ったと伝わる' },
+      { y: 66, text: '{demon64}の戦乱で魔界から逃げ出した魔物が雪原に入り込み、霜の翁が吹雪で追い払ったと伝わる' },
       { y: 157, k: 1, text: 'ヴェルムントの徴税騎士が白いトナカイを税として取り上げ、九日続く吹雪が起きた。北の砦は雪に埋もれて捨てられた' },
       { y: 262, k: 1, text: '雪原の南の端で、ヤルヴィ族とヴェルムントの「氷の市」が百年ぶりに開かれた' },
     ],
@@ -493,7 +493,7 @@ export const TRIBES = [
     },
     history: [
       { y: 64, text: '{demon64}が現れて魔界ネクロスが広がり、灰の谷の民は谷を捨てて南西の火の山へ逃れた。そこで炉の主ウルグと出会い、約束を結んだ（ハルン族の始まり）' },
-      { y: 69, text: 'ハルン族の火の番が、勇者の一行に魔王城への抜け道を教えたと伝わる。王国の記録には残っていない' },
+      { y: 67, text: 'ハルン族の火の番が、勇者の一行に魔王城への抜け道を教えたと伝わる。王国の記録には残っていない' },
       { y: 181, text: '{demon181}の戦乱で魔物の群れが火の山に押し寄せ、ウルグが溶岩の川で押し返した' },
       { y: 226, text: 'ハルン族の黒曜の刃が魔族兵を斬れると知った王国の商人が、刃を買いに火の山へ来た' },
       { y: 279, text: '魔界ネクロスの空が赤く染まり、火の番たちは「ウルグが落ち着かない」とささやいた' },
@@ -1392,7 +1392,7 @@ export const LEGENDS = [
   {
     id: 'escape_path', name: '灰の谷の抜け道', kind: 'ruin', site: '魔王城', biome: 'WASTE', tribe: 'harn',
     prize: '抜け道の地図', keeper: 'demonsoldier', danger: 9,
-    text: 'ハルン族がまだ灰の谷にいたころ、谷から北の山を抜ける古い坑道があった。いま、その出口は魔王城の北壁の下にある。69年ごろ、ハルン族の火の番が勇者の一行にこの道を教えたという。',
+    text: 'ハルン族がまだ灰の谷にいたころ、谷から北の山を抜ける古い坑道があった。いま、その出口は魔王城の北壁の下にある。67年ごろ、ハルン族の火の番が勇者の一行にこの道を教えたという。',
     rumors: ['魔王城には、北の壁の下に抜け道があるらしい', '火の山の民なら、魔界の古い道を知ってるはずだ'],
     quest: '魔王城への抜け道の地図を手に入れろ',
   },
@@ -1686,7 +1686,7 @@ export const STORY_ARCS = [
         lines: { envoy: ['灰の谷を失ったとき、わたしたちは魔王から逃げた。今度は、ともに戦いたい'], king: ['奥地の民が、何を差し出せる？'] },
         next: [{ to: 'gift', w: 3, cond: '王が使者に会った（態度が−30より良い）' }, { to: 'end_scorn', w: 1 }] },
       { id: 'gift', text: '{envoy}は、魔王城への抜け道の地図と黒曜の刃を王に差し出した',
-        lines: { envoy: ['この道は、69年ごろに一度だけ使われた'], hero: ['これがあれば、城の北壁から入れる'] },
+        lines: { envoy: ['この道は、第一の魔王のときに一度だけ使われた'], hero: ['これがあれば、城の北壁から入れる'] },
         next: [{ to: 'end_ally', w: 1 }] },
     ],
     endings: {
@@ -1820,7 +1820,7 @@ export function loreText(text, ctx = {}) {
   if (!lords.length && ctx.chronicle) {
     lords = ctx.chronicle.map((c) => { const m = /第\d+代(魔王[^がの]+)が魔界ネクロスに現れ/.exec(c.text || ''); return m ? { name: m[1], from: c.y } : null; }).filter(Boolean);
   }
-  const at = (y) => { const d = lords.find((x) => x.from === y) || lords.find((x) => x.from <= y && (x.until ?? 9999) >= y); return d ? d.name : '魔王'; };
+  const at = (y) => { const d = lords.find((x) => x.from === y) || lords.filter((x) => x.from <= y).sort((a, b) => b.from - a.from)[0]; return d ? d.name : '魔王'; };
   const lookup = { demon64: at(64), demon181: at(181), hero64: ctx.hero64 || '勇者', ...ctx };
   return text.replace(/\{(\w+)\}/g, (m, k) => (lookup[k] != null ? String(lookup[k]) : m));
 }
