@@ -2302,11 +2302,13 @@ function crumble(P, t, bs, An) {
   const out = new Array(P.w * P.h).fill(null);
   for (const k of blocks) {
     const jit = Math.round((hash01(k.bx, k.by) - 0.5) * 8);
-    const nx = Math.max(1, Math.min(P.w - bs - 1, k.bx + Math.round((k.bx + bs / 2 - CX) * 1.2) + jit));
+    const nx0 = k.bx + Math.round((k.bx + bs / 2 - CX) * 1.2) + jit;
     const low = new Array(bs).fill(-1), high = new Array(bs).fill(99);
     for (const [i, j] of k.px) { if (j > low[i]) low[i] = j; if (j < high[i]) high[i] = j; }
-    let ny = 999; for (let i = 0; i < bs; i++) if (low[i] >= 0) ny = Math.min(ny, top[nx + i] - 1 - low[i]);
-    ny = Math.min(ny, GROUND - Math.max(...low));
+    const land = (x) => { let y = 999; for (let i = 0; i < bs; i++) if (low[i] >= 0) y = Math.min(y, top[x + i] - 1 - low[i]); return Math.min(y, GROUND - Math.max(...low)); };
+    // 積もる山が塔にならないよう、低い方へ転がり落ちる（砂山のように広がる）
+    let nx = Math.max(1, Math.min(P.w - bs - 1, nx0)), ny = land(nx);
+    for (const o of [-bs, bs, -2 * bs, 2 * bs]) { const x = Math.max(1, Math.min(P.w - bs - 1, nx0 + o)); const y = land(x); if (y > ny + 1) { ny = y; nx = x; } }
     for (let i = 0; i < bs; i++) if (low[i] >= 0) top[nx + i] = Math.min(top[nx + i], ny + high[i]);
     const cx2 = Math.round(k.bx + (nx - k.bx) * e), cy2 = Math.round(k.by + (ny - k.by) * e);
     for (const [i, j, c] of k.px) { const x = cx2 + i, y = cy2 + j; if (x >= 0 && y >= 0 && x < P.w && y < P.h) out[y * P.w + x] = c; }
@@ -2883,7 +2885,7 @@ function specSpider(anim, x) {
     case 'dying': return { loop: true, frames: [f(1, { curl: 0.3 }, { pre: [['shake', 1]], fx: [['dizzy']], d: 280 }), f(1, { curl: 0.4, eyes: 'closed' }, { fx: [['dizzy']], d: 280 }), f(1, { curl: 0.3 }, { pre: [['shake', -1]], fx: [['dizzy']], d: 280 })] };
     case 'dead': return ar
       ? { loop: false, frames: [f(1, { curl: 0.3, eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { curl: 0.6, eyes: 'closed' }, { pre: [['rot', 30, 'b']], d: 150 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 90, 'b'], ['settle']], fx: [['dust']], d: 170 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 90, 'b'], ['settle']], post: [['gray', 0.35]], d: HOLD })] }
-      : { loop: false, frames: [f(1, { curl: 0.3, eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { curl: 0.7, eyes: 'closed' }, { pre: [['lift', 3]], d: 140 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], fx: [['dust']], d: 170 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+      : { loop: false, frames: [f(1, { curl: 0.3, eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { curl: 0.7, eyes: 'closed' }, { pre: [['lift', 3]], d: 140 }), f(1, { curl: 0.65, eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], fx: [['dust']], d: 170 }), f(1, { curl: 0.65, eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
     case 'graze': case 'eat': return { loop: true, frames: [f(1, { mouth: true, rear: 0.2 }, { fx: [['cocoon']], d: 240 }), f(1, { rear: 0.1 }, { fx: [['cocoon']], d: 200 }), f(1, { mouth: true, rear: 0.2 }, { fx: [['cocoon']], d: 240 })] };
     case 'drink': return { loop: true, frames: [f(1, { mouth: true }, { pre: [['lift', -1]], fx: [['water']], d: 300 }), f(1, {}, { pre: [['lift', -1]], fx: [['water']], d: 300 })] };
     case 'sleep': return { loop: true, frames: [f(1, { curl: 0.25, eyes: 'closed' }, { fx: [['zzz']], d: 700 }), f(1, { curl: 0.25, eyes: 'closed' }, { pre: [['breathe', 1]], fx: [['zzz']], d: 700 })] };

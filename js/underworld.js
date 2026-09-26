@@ -20,9 +20,9 @@ const CROOK_JOBS = new Set(['thief', 'pickpocket', 'swindler', 'smuggler', 'pira
 
 // ---------- 禁制の薬 ----------
 export const DRUGS = {
-  dream: { name: '夢見草', price: 6, hook: 9 },
-  lotus: { name: '黒蓮の粉', price: 10, hook: 14 },
-  mana: { name: '魔薬', price: 16, hook: 20 },
+  dream: { name: '夢見草', price: 6, hook: 14 },
+  lotus: { name: '黒蓮の粉', price: 10, hook: 20 },
+  mana: { name: '魔薬', price: 16, hook: 28 },
 };
 
 // ---------- 罪の重さの表 ----------
@@ -130,7 +130,7 @@ function seedRoles(sim) {
     sim.remember(p, why, { emo: 0.1, imp: 0.6, k: 'uwcrime' });
     return p;
   };
-  const has = (role, pred) => sim.living().some((p) => p.uwRole === role && p.jail == null && pred(p));
+  const has = (role, pred) => sim.living().some((p) => p.uwRole === role && pred(p));
   for (let k = 0; k < S.kingdoms.length; k++) {
     const towns = setl.filter((s) => s.kingdom === k && !S.towns[s.id].occupied);
     const inK = pool.filter((p) => sim.townOf(p).kingdom === k);
@@ -364,7 +364,7 @@ function drugsDaily(sim) {
     if (!p.addiction) continue;
     if (!adult(sim, p)) { p.addiction = 0; continue; }
     const used = p.uwLastUse >= sim.today - 1;
-    p.addiction = clamp(p.addiction - (p.uwRehab ? 7 : 2.5), 0, 100);
+    p.addiction = clamp(p.addiction - (p.uwRehab ? 7 : 2), 0, 100);
     if (!used && p.addiction > 25) {
       p.uwWithdraw = Math.round(p.addiction);
       p.hp = Math.max(1, p.hp - p.addiction / 12);
@@ -439,7 +439,7 @@ function dealHourly(sim) {
     const buyers = sim.living().filter((q) => q !== d && q.jail == null && (d.inside != null ? q.inside === d.inside : !q.inside && dist(q, d) < 4) && adult(sim, q) && !LAWFUL.has(q.job) && !ELITE.has(q.rank));
     for (const q of buyers) {
       if ((uw.stock[k] || 0) < 1) break;
-      const addicted = (q.addiction || 0) >= 15;
+      const addicted = (q.addiction || 0) >= 8;
       if (addicted && q.uwRehab && R.chance(0.8)) continue;
       const curious = !addicted && R.chance(0.025 * rate * clamp((100 - q.mood) / 50 + q.pers.N + q.pers.O - q.pers.C - q.values.faith * 0.5, 0, 2));
       if (!addicted && !curious) continue;
@@ -872,7 +872,7 @@ function corruptionDaily(sim) {
   }
   // 財務大臣などの横領
   for (const p of sim.living()) {
-    if (!['treasurer', 'chancellor', 'scribe', 'elder'].includes(p.job) || !free(p) || p.pers.A > 0.4 || p.values.ambition < 0.55) continue;
+    if (!['treasurer', 'chancellor', 'scribe', 'elder'].includes(p.job) || !free(p) || p.pers.A > 0.45 || p.values.ambition < 0.5) continue;
     const town = S.towns[p.s];
     if (!town || town.fund < 50 || !R.chance(0.08)) continue;
     const amt = Math.round(Math.min(30, town.fund * 0.02));
@@ -972,9 +972,9 @@ function assassinDaily(sim) {
   // 依頼人を探す：強い恨みと金を持つ者（王族を狙う依頼はごく稀）
   const clients = [];
   for (const p of sim.living()) {
-    if (!adult(sim, p) || !free(p) || p === a || p.pers.A > 0.35 || sim.householdMoney(p) < 120) continue;
+    if (!adult(sim, p) || !free(p) || p === a || p.pers.A > 0.4 || sim.householdMoney(p) < 80) continue;
     let t = p.revenge != null ? S.people[p.revenge] : null;
-    if (!alive(t)) { t = null; for (const [id, r] of Object.entries(p.rel)) if (r.a < -80) { const q = S.people[id]; if (alive(q) && q !== a) { t = q; break; } } }
+    if (!alive(t)) { t = null; for (const [id, r] of Object.entries(p.rel)) if (r.a < -70) { const q = S.people[id]; if (alive(q) && q !== a) { t = q; break; } } }
     if (!t && p.rank === 'noble' && p.values.ambition > 0.8 && R.chance(0.05)) { const king = sim.living().find((q) => q.rank === 'king' && sim.townOf(q).kingdom === sim.townOf(p).kingdom); if (king) t = king; }
     if (t && t !== a && t.jail == null && adult(sim, t)) clients.push([p, t]);
   }
@@ -1142,7 +1142,7 @@ export function underworldDecide(sim, p, cands, add) {
   if (age < 18) return;
   const m = mature(sim);
   // 薬が欲しい
-  if (m && (p.addiction || 0) >= 20 && p.uwLastUse !== sim.today && !(p.uwRehab && R.chance(0.8))) {
+  if (m && (p.addiction || 0) >= 10 && p.uwLastUse !== sim.today && !(p.uwRehab && R.chance(0.8))) {
     const dealer = sim.living().find((q) => q.uwRole === 'dealer' && q.s === p.s && free(q));
     const price = DRUGS[p.uwDrug || 'dream'].price;
     if (dealer && h >= 18 && h < 23.5 && spendable(sim, p) >= price) add(3 + p.addiction / 18, 'uw_buy', sim.placeFor(p, 'tavern'), 40, { friend: dealer.id });
@@ -1156,7 +1156,7 @@ export function underworldDecide(sim, p, cands, add) {
   switch (p.uwRole) {
     case 'dealer': if (m && h >= 18 && h < 23.5 && !S.wanted[p.id]) add(6, 'uw_deal', sim.placeFor(p, 'tavern'), 120); break;
     case 'grower': if (m && h >= 5 && h < 9 && p.uwGrewToday !== sim.today) add(5, 'uw_grow', sim.placeFor(p, 'forest'), 90); break;
-    case 'graverobber': if ((h >= 0.5 && h < 3.5) && sim.today - (p.uwLastJob ?? -99) >= 5 && !S.wanted[p.id]) add(7, 'uw_graverob', sim.placeFor(p, 'church'), 20); break;
+    case 'graverobber': if ((h >= 0.5 && h < 3.5) && sim.today - (p.uwLastJob ?? -99) >= 5 && !S.wanted[p.id]) add(12, 'uw_graverob', sim.placeFor(p, 'church'), 20); break;
     case 'poacher': if (h >= 5 && h < 8 && sim.today - (p.uwLastJob ?? -99) >= 3 && !S.wanted[p.id]) { const pl = royalForest(sim, p); if (pl) add(6, 'uw_poach', pl, 60); } break;
   }
   // つきまとい
