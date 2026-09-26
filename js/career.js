@@ -37,7 +37,7 @@ const NO_RETIRE = ['king', 'royal', 'noble', 'elder', 'thief', 'beggar', 'bandit
 const NO_PLAN_RANK = ['king', 'royal', 'outlaw', 'prisoner'];
 // 欠員を埋めない職業（身分や悪事で決まるもの）
 const SKILLED = ['doctor', 'priest', 'teacher', 'scribe', 'alchemist', 'jeweler', 'captain', 'shipwright', 'cook', 'butler', 'herbalist', 'nun', 'midwife'];
-const NO_VACANCY = [...SKILLED, 'king', 'noble', 'royal', 'thief', 'beggar', 'pickpocket', 'swindler', 'banditchief', 'pirate', 'smuggler', 'chancellor', 'treasurer', 'general', 'courtmage', 'guildmaster', 'knight', 'royalguard', 'paladin', 'sage', 'wizard', 'scholar', 'elder'];
+const NO_VACANCY = [...SKILLED, 'messenger', 'king', 'noble', 'royal', 'thief', 'beggar', 'pickpocket', 'swindler', 'banditchief', 'pirate', 'smuggler', 'chancellor', 'treasurer', 'general', 'courtmage', 'guildmaster', 'knight', 'royalguard', 'paladin', 'sage', 'wizard', 'scholar', 'elder'];
 
 // 既存の夢の文 → 計画の種類
 const DREAM_GOAL = {

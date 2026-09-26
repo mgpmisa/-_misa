@@ -29,7 +29,7 @@ const WATER_PER_DAY = 3;          // 1家族が1日に使う水
 const MAX_WATER = 10, MAX_LAUNDRY = 10;
 // 季節ごとの傷みやすさ（春・夏・秋・冬）：家の食糧・保存食・市場
 const HOME_SPOIL = [0.035, 0.07, 0.035, 0.012];
-const MARKET_SPOIL = { bread: [0.04, 0.07, 0.04, 0.02], fish: [0.05, 0.09, 0.05, 0.02], meat: [0.04, 0.08, 0.04, 0.015] };
+const MARKET_SPOIL = { bread: [0.03, 0.05, 0.03, 0.015], fish: [0.04, 0.07, 0.04, 0.015], meat: [0.03, 0.06, 0.03, 0.01] };
 const PRESERVED_SPOIL = 0.003;
 const NIGHT_JOBS = { innkeeper: 1.5, bard: 1.5, thief: 1.8, jailer: 0.5 };
 const EARLY_JOBS = { farmer: -0.5, rancher: -0.6, fisher: -0.8, priest: -0.5, servant: -0.5 };
@@ -165,13 +165,14 @@ export function choreOptions(sim, p, add) {
   // 水くみ
   if (age >= 10 && h >= 6 && h < 19.5 && hh.water < 5 && !familyDoing(sim, hh, 'water', p.id)) {
     const urgent = hh.water < 1.5;
-    let sc = mine('water') ? 3 + (5 - hh.water) * 0.7 + p.pers.C : urgent ? 1.5 + (1.5 - hh.water) * 1.5 : -99;
+    let sc = mine('water') ? 3 + (5 - hh.water) * 0.7 + p.pers.C : urgent ? 3 + (1.5 - hh.water) * 2 : -99;
     if (workHour && !mine('water')) sc -= 1.5;
     if (sc > -50) { const sp = wellSpot(sim, p); if (sp) add(sc + (urgent ? 2.5 : 0), 'water', sp, R.int(15, 25)); }
   }
-  // 洗濯：晴れた日、井戸端・川辺で
-  if (age >= 12 && sim.S.weather === 'sunny' && h >= 8 && h < 15 && hh.laundry >= 4 && !familyDoing(sim, hh, 'laundry', p.id)) {
-    let sc = mine('laundry') ? 2.5 + (hh.laundry - 4) * 0.45 + p.pers.C : hh.laundry >= 8 ? 1.5 : -99;
+  // 洗濯：雨や雪でない日（晴れならなおよい）、井戸端・川辺で
+  const dryDay = sim.S.weather === 'sunny' || sim.S.weather === 'cloudy';
+  if (age >= 12 && dryDay && h >= 7 && h < 16 && hh.laundry >= 4 && !familyDoing(sim, hh, 'laundry', p.id)) {
+    let sc = mine('laundry') ? 3 + (hh.laundry - 4) * 0.6 + p.pers.C + (sim.S.weather === 'sunny' ? 1 : 0) : hh.laundry >= 8 ? 2.5 : -99;
     if (sc > -50) { const sp = wellSpot(sim, p); if (sp) add(sc, 'laundry', sp, R.int(40, 70)); }
   }
   // 食事の支度（夕方）
@@ -209,7 +210,7 @@ export function choreArrive(sim, p, a) {
     case 'laundry': {
       if (!doesChores(hh)) return;
       ensureHh(hh);
-      hh.laundry = Math.max(0, hh.laundry - 7);
+      hh.laundry = Math.max(0, hh.laundry - 8);
       break;
     }
     case 'cook': {
@@ -228,7 +229,7 @@ export function choreArrive(sim, p, a) {
       const m = sim.market(p.s);
       for (const g of ['fish', 'meat']) {
         if (hh.preserved + made >= cap || hh.money < 60 + m.price[g]) break;
-        if (m.stock[g] < GOODS[g].target * 0.9) continue;
+        if (m.stock[g] < GOODS[g].target * 1.2) continue;
         if (sim.buy(p, g, 1)) made += GOODS[g].meals * 0.85;
       }
       hh.preserved = Math.min(cap, hh.preserved + made);
@@ -303,7 +304,7 @@ export function choreHourly(sim) {
       for (const id of hh.members) {
         const q = S.people[id];
         if (!q || q.deathYear != null) continue;
-        if (dry) { q.needs.pleasure = Math.max(0, q.needs.pleasure - 1.5); q.needs.hunger = Math.max(0, q.needs.hunger - 0.8); }
+        if (dry) q.needs.pleasure = Math.max(0, q.needs.pleasure - 1.5);
         if (dirty && sim.ageOf(q) >= 12) q.needs.esteem = Math.max(0, q.needs.esteem - 1);
       }
     }
@@ -325,10 +326,10 @@ export function choreHourly(sim) {
 // ---------- 1日ごと（newDay から呼ぶ） ----------
 export function choreDaily(sim) {
   const S = sim.S, si = sim.seasonIdx();
-  // 市場の生鮮品が傷む（目安量の3割より下は減らさない）
+  // 市場の生鮮品が傷む（目安量の6割より下は減らさない）
   for (const m of Object.values(S.towns)) {
     for (const [g, rates] of Object.entries(MARKET_SPOIL)) {
-      const floor = GOODS[g].target * 0.3;
+      const floor = GOODS[g].target * 0.6;
       if (m.stock[g] > floor) m.stock[g] = Math.max(floor, m.stock[g] * (1 - rates[si]));
     }
   }
@@ -338,7 +339,8 @@ export function choreDaily(sim) {
     const members = hh.members.map((id) => S.people[id]).filter((q) => q && q.deathYear == null);
     if (!members.length) continue;
     // 食べ物が傷む（夏は早く、冬は遅く）。保存食はほとんど傷まない
-    if (hh.food > 2) hh.food -= (hh.food - 2) * HOME_SPOIL[si];
+    const keep = members.length * 2; // 2日分の手持ちはすぐ食べるので傷まない扱い
+    if (hh.food > keep) hh.food -= (hh.food - keep) * HOME_SPOIL[si];
     hh.preserved *= 1 - PRESERVED_SPOIL;
     // 洗濯物がたまる
     hh.laundry = Math.min(MAX_LAUNDRY, hh.laundry + 0.8 + members.length * 0.45);

@@ -9,7 +9,7 @@ import { humanStats, markWanted } from './society.js';
 
 const LENDER_JOBS = { changer: 0.05, merchant: 0.06, jeweler: 0.05 };
 const CROOKS = new Set(['swindler', 'pickpocket', 'thief', 'smuggler', 'pirate']);
-const WHY = { rent: '家賃', food: '食べ物代', gear: '装備の代金', capital: '商売の元手', gamble: '賭けの負け', debt: '別の借金の返済' };
+const WHY = { rent: '家賃', food: '食べ物代', gear: '装備の代金', tool: '仕事道具の代金', capital: '商売の元手', gamble: '賭けの負け', wedding: '婚礼の費用', funeral: '弔いの費用', land: '畑を買う元手', house: '家を借りる元手', debt: '別の借金の返済' };
 
 // ---------- 状態 ----------
 export function initFinance(sim) {
@@ -81,16 +81,20 @@ export function borrow(sim, p, amt, why) {
   const q = f.q;
   const got = take(sim, q, amt, 40);
   if (got < amt * 0.8) { if (got > 0) { q.purse = (q.purse || 0) + got; } return null; }
-  const weeks = amt < 25 ? 1 : amt < 70 ? 2 : 3;
-  const owed = r1(got * (1 + f.rate * weeks));
-  const loan = { id: S.finance.seq++, from: q.id, to: p.id, amt: r1(got), owed, rate: f.rate, day: sim.today, due: sim.today + weeks * 7, paid: 0, late: 0, why, kind: f.kind, state: 'open' };
+  const days = amt < 25 ? 7 : amt < 70 ? 10 : 14;
+  const owed = r1(got * (1 + f.rate * days / 7));
+  const loan = { id: S.finance.seq++, from: q.id, to: p.id, amt: r1(got), owed, rate: f.rate, day: sim.today, due: sim.today + days, paid: 0, late: 0, why, kind: f.kind, state: 'open' };
   S.loans.push(loan);
   const hh = sim.hh(p);
-  if ((why === 'rent' || why === 'food' || why === 'capital') && hh) hh.money += got; else p.purse = (p.purse || 0) + got;
+  if (why === 'wedding' || why === 'funeral') {
+    // 式の費用はそのまま教会（司祭の家）へ払われる
+    const priest = sim.living().find((x) => x.job === 'priest' && x.s === p.s && sim.hh(x));
+    if (priest) sim.hh(priest).money += got; else S.towns[p.s].fund += got;
+  } else if (['rent', 'food', 'capital', 'land', 'house'].includes(why) && hh) hh.money += got; else p.purse = (p.purse || 0) + got;
   st(sim, 'made');
   const rateTxt = f.rate === 0 ? '利子なしで' : `週${Math.round(f.rate * 100)}分の利子で`;
   const whoTxt = f.kind === 'pro' ? `${JOBS[q.job]?.name || '金持ち'}の${q.given}` : q.given;
-  sim.remember(p, `${WHY[why] || 'お金'}に困り、${whoTxt}から${r1(got)}銅貨を${rateTxt}借りた。期日は${weeks * 7}日後`, { emo: -0.3, imp: 0.65, about: [q.id], k: 'debt' });
+  sim.remember(p, `${WHY[why] || 'お金'}に困り、${whoTxt}から${r1(got)}銅貨を${rateTxt}借りた。期日は${days}日後`, { emo: -0.3, imp: 0.65, about: [q.id], k: 'debt' });
   sim.remember(q, `${p.given}に${r1(got)}銅貨を貸した（${WHY[why] || '入り用'}だそうだ）`, { emo: f.kind === 'pro' ? 0.2 : 0.1, imp: 0.5, about: [p.id], k: 'loan' });
   if (f.kind !== 'pro') sim.relMut(p, q).a += 6;
   sim.pushLog(`${sim.fullName(p)}が${WHY[why] || 'お金'}に困り、${whoTxt}から${r1(got)}銅貨を借りた。`, 'event', [p.id, q.id], p.pos);
@@ -115,24 +119,43 @@ function seekLoans(sim) {
     if (need > 3 && R.chance(0.35 + b.arrears * 0.2)) borrow(sim, head, need, 'rent');
   }
   for (const hh of Object.values(S.households)) {
-    if (hh.bandits || hh.royal || hh.money >= 6 || hh.food >= hh.members.length) continue;
+    if (hh.bandits || hh.royal || hh.wander) continue;
     const head = headOf(sim, hh);
     if (!head || sim.ageOf(head) < 16 || head.jail != null || weeklyCheck.has(head.id)) continue;
-    if ((head.purse || 0) > 8 || debtsOf(sim, head).some((l) => l.why === 'food')) continue;
-    if (R.chance(0.4)) { weeklyCheck.add(head.id); borrow(sim, head, 12 + hh.members.length * 5, 'food'); }
+    const mine = debtsOf(sim, head);
+    if (mine.length >= 2) continue;
+    const has = (w) => mine.some((l) => l.why === w);
+    const mems = hh.members.map((id) => alive(sim, id)).filter(Boolean);
+    const recent = (k, d) => mems.some((q) => q.memories?.some((m) => m.k === k && m.src === 'self' && sim.today - m.t <= d));
+    let need = 0, why = null;
+    // 食べ物代：家計が底をつきかけ、食べ物も少ない
+    if (hh.money < 25 && hh.food < mems.length * 2 && (head.purse || 0) < 10 && !has('food') && R.chance(0.3)) { need = 10 + mems.length * 5; why = 'food'; }
+    // 弔いの費用：身内を亡くしたばかり
+    else if (recent('death', 1) && hh.money < 70 && !has('funeral') && R.chance(0.35)) { need = R.int(20, 40); why = 'funeral'; }
+    // 婚礼の費用：婚約したばかり
+    else if (recent('engage', 3) && hh.money < 90 && !has('wedding') && R.chance(0.4)) { need = R.int(30, 60); why = 'wedding'; }
+    // 家を借りる元手：宿なし・宿住まい
+    else if ((hh.street || hh.inn) && !has('house') && R.chance(0.2)) { need = R.int(20, 45); why = 'house'; }
+    // 畑を買う元手：小作が自作農になりたい（あと少しで届く）
+    else if (!hh.land && hh.money >= 150 && hh.money < 260 && mems.some((q) => q.job === 'farmer') && head.values.ambition > 0.5 && !has('land') && R.chance(0.1)) { need = 265 - hh.money; why = 'land'; }
+    if (why) { weeklyCheck.add(head.id); borrow(sim, head, need, why); }
   }
   // 一人ひとり：装備の代金・商売の元手・賭けの負け
   for (const p of sim.living()) {
     if (p.jail != null || weeklyCheck.has(p.id) || sim.ageOf(p) < 16) continue;
     const J = JOBS[p.job];
-    if (J?.combat && (p.rank === 'adventurer' || p.job === 'adventurer') && R.chance(0.08) && !debtsOf(sim, p).length) {
+    if (J?.combat && R.chance(0.1) && !debtsOf(sim, p).length) {
       const shop = sim.S.towns[p.s]?.shop || [];
       const up = shop.filter((it) => sim.isUpgrade(p, it)).map((it) => Math.round(itemValue(it) * 1.2)).sort((a, b) => a - b)[0];
       const have = spendable(sim, p) - 10;
-      if (up && up > have && up - have < 90 && p.values.ambition > 0.45) borrow(sim, p, up - have + 5, 'gear');
-    } else if (p.job === 'merchant' && (sim.hh(p)?.money || 0) < 50 && R.chance(0.15) && !debtsOf(sim, p).length) {
+      if (up && up > have && up - have < 90 && p.values.ambition > 0.35) borrow(sim, p, up - have + 5, 'gear');
+    } else if (J && !J.combat && sim.ageOf(p) < 60 && !p.eq?.tool && (sim.hh(p)?.money || 0) <= 25 && R.chance(0.1) && !debtsOf(sim, p).length) {
+      const shop = sim.S.towns[p.s]?.shop || [];
+      const tool = shop.find((it) => ITEMS[it.id].type === 'tool' && ITEMS[it.id].jobs?.includes(p.job));
+      if (tool) borrow(sim, p, Math.round(itemValue(tool) * 1.2) + 5, 'tool');
+    } else if ((p.job === 'merchant' || J?.goods) && (sim.hh(p)?.money || 0) < 90 && p.values.ambition > 0.55 && R.chance(p.job === 'merchant' ? 0.08 : 0.015) && !debtsOf(sim, p).length) {
       borrow(sim, p, R.int(40, 90), 'capital');
-    } else if (p.gamble && p.gamble.net < -20 && (p.purse || 0) < 4 && p.pers.C < 0.55 && R.chance(0.25 + p.pers.N * 0.2) && debtsOf(sim, p).length < 2) {
+    } else if (p.gamble && p.gamble.net < -10 && (p.purse || 0) < 5 && p.pers.C < 0.6 && R.chance(0.25 + p.pers.N * 0.2) && debtsOf(sim, p).length < 2) {
       borrow(sim, p, R.int(10, 30), 'gamble');
     }
   }
@@ -177,7 +200,7 @@ function dueCheck(sim) {
     // 一部だけでも返す
     if (cash > l.owed * 0.3 && p.pers.C > 0.3) repay(sim, l, cash * 0.8);
     if (l.state !== 'open') continue;
-    l.late++; l.due = sim.today + 7;
+    l.late++; l.due = sim.today + 5;
     st(sim, 'late');
     // 遅れた分の利息（金貸しだけ）
     if (l.kind === 'pro') l.owed = r1(l.owed * (1 + l.rate));
@@ -234,7 +257,7 @@ function seize(sim, l, p, q) {
     sim.gossip(p, `借金のかたに${taken[0]}を取られた`, -0.4, sim.living().filter((x) => x.s === p.s && x.id !== q.id && R.chance(0.15)), { silent: true });
   }
   if (need <= 0) { l.owed = 0; l.state = 'seized'; l.closed = sim.today; return; }
-  if (taken.length) { l.owed = r1(need); l.late = 1; l.due = sim.today + 7; return; }
+  if (taken.length) { l.owed = r1(need); l.late = 1; l.due = sim.today + 5; return; }
   // 取れるものが何もない：踏み倒し。恨みと不仲が残る
   l.state = 'defaulted'; l.closed = sim.today; st(sim, 'defaulted');
   p.badDebt = true;
@@ -394,7 +417,7 @@ const GAMES = [
 ];
 function joinChance(sim, p) {
   const n = p.needs;
-  let c = 0.12 + (p.pers.N - 0.5) * 0.35 + (0.5 - p.pers.C) * 0.45 + (100 - n.pleasure) / 350 + (100 - n.sloth) / 500 + (p.gamble?.taste || 0);
+  let c = 0.3 + (p.pers.N - 0.5) * 0.35 + (0.5 - p.pers.C) * 0.45 + (100 - n.pleasure) / 350 + (100 - n.sloth) / 500 + (p.gamble?.taste || 0);
   if (CROOKS.has(p.job)) c += 0.45;
   if (p.gamble && p.gamble.net < -15) c += p.pers.N > 0.6 ? 0.15 : -0.1; // 取り返したい／こりた
   if (p.rank === 'king' || p.rank === 'royal' || p.job === 'priest') c -= 0.4;
