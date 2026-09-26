@@ -3,7 +3,7 @@ import { W, H, walkable, MOVE_COST, MinHeap } from './world.js';
 
 let BUF = null;
 
-export function findPath(world, sx, sz, tx, tz, maxIter = 20000) {
+export function findPath(world, sx, sz, tx, tz, maxIter = 20000, avoid = null) {
   const tiles = world.tiles;
   const ok = (x, z) => x >= 0 && z >= 0 && x < W && z < H && walkable(tiles[z * W + x]);
   if (sx === tx && sz === tz) return [];
@@ -25,7 +25,7 @@ export function findPath(world, sx, sz, tx, tz, maxIter = 20000) {
       const nx = x + (k === 0 ? 1 : k === 1 ? -1 : 0), nz = z + (k === 2 ? 1 : k === 3 ? -1 : 0);
       if (!ok(nx, nz)) continue;
       const j = nz * W + nx;
-      const ng = g[i] + (MOVE_COST[tiles[j]] || 2);
+      const ng = g[i] + (MOVE_COST[tiles[j]] || 2) + (avoid ? Math.min(6, avoid[((nz >> 3) * (W >> 3)) + (nx >> 3)] || 0) * 1.5 : 0);
       if (ng < G(j)) { stamp[j] = gen; g[j] = ng; came[j] = i; heap.push(ng + Math.abs(nx - tx) + Math.abs(nz - tz), j); }
     }
   }

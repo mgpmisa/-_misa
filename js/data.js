@@ -92,6 +92,8 @@ export const JOBS = {
   cook:       { name: '宮廷料理人',   place: 'castle',    rank: 'citizen', pay: 1.1, svc: 'feed' },
   gardener:   { name: '庭師',         place: 'castle',    rank: 'commoner', pay: 0.8 },
   jester:     { name: '道化師',       place: 'castle',    rank: 'citizen', pay: 0.8, svc: 'entertain' },
+  gatekeeper: { name: '門番',         place: 'gate',      rank: 'citizen', combat: 2, pay: 1, guardTown: true },
+  militia:    { name: '自警団員',     place: 'gate',      rank: 'commoner', combat: 1, pay: 0.5, guardTown: true },
   // 町
   doctor:     { name: '医者',         place: 'clinic',    rank: 'citizen', svc: 'heal', pay: 1.5 },
   herbalist:  { name: '薬師',         place: 'clinic',    rank: 'citizen', goods: 'medicine' },
@@ -285,15 +287,15 @@ export const SPECIES = {
 export const JOB_QUOTA = {
   capital: {
     king: 1, beggar: 2, thief: 1, pickpocket: 1, swindler: 1, knight: 2, soldier: 3, guard: 2, jailer: 1, watchman: 1,
-    chancellor: 1, treasurer: 1, general: 1, royalguard: 2, courtmage: 1, butler: 1, maid: 2, cook: 1, gardener: 1, jester: 1,
+    gatekeeper: 4, chancellor: 1, treasurer: 1, general: 1, royalguard: 2, courtmage: 1, butler: 1, maid: 2, cook: 1, gardener: 1, jester: 1,
     scholar: 1, wizard: 1, alchemist: 1, scribe: 1, doctor: 1, herbalist: 1, midwife: 1, teacher: 1, nun: 1,
     adventurer: 1, warrior: 1, archer: 1, cleric: 1, sage: 1, paladin: 1, guildmaster: 1,
     merchant: 1, changer: 1, butcher: 1, brewer: 1, cobbler: 1, potter: 1, weaver: 1, jeweler: 1, tailor: 1,
     priest: 1, baker: 1, smith: 1, innkeeper: 1, carpenter: 1, fortune: 1, painter: 1, musician: 1, dancer: 1,
     stablehand: 1, messenger: 1, gravedigger: 1, laundress: 1, nanny: 1, barber: 1, noble: 2,
   },
-  village: { elder: 1, farmer: 5, rancher: 1, shepherd: 1, beekeeper: 1, miller: 1, hunter: 1, woodcutter: 1, charcoal: 1, gatherer: 1, mason: 1, innkeeper: 1, priest: 1, smith: 1, miner: 1, storyteller: 1, midwife: 1 },
-  port: { fisher: 3, sailor: 2, captain: 1, shipwright: 1, keeper: 1, diver: 1, pirate: 1, smuggler: 1, merchant: 1, innkeeper: 1, priest: 1, guard: 2, baker: 1, laundress: 1, musician: 1 },
+  village: { elder: 1, militia: 3, farmer: 5, rancher: 1, shepherd: 1, beekeeper: 1, miller: 1, hunter: 1, woodcutter: 1, charcoal: 1, gatherer: 1, mason: 1, innkeeper: 1, priest: 1, smith: 1, miner: 1, storyteller: 1, midwife: 1 },
+  port: { militia: 2, fisher: 3, sailor: 2, captain: 1, shipwright: 1, keeper: 1, diver: 1, pirate: 1, smuggler: 1, merchant: 1, innkeeper: 1, priest: 1, guard: 2, baker: 1, laundress: 1, musician: 1 },
 };
 
 // 性格の特徴ラベル

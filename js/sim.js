@@ -10,6 +10,8 @@ import { spawnInitialCreatures, stepCreatures, creatureDaily } from './creatures
 import { stepCombat, startFight, humanStats, crimeHourly, justiceDaily, tryCrime, crimeArrive, markWanted } from './society.js';
 import { initPolitics, politicsDaily, politicsHourly, demonHourly, addSaying } from './politics.js';
 import { saveWorld, loadWorld, clearWorld } from './store.js';
+import { computeDanger, tooDangerous, defendTowns, spotThreats, dangerAt } from './danger.js';
+import { around } from './creatures.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
 const mortY = (a) => { for (const [x, p] of MORT_Y) if (a <= x) return p; return 0.3; };
@@ -51,6 +53,7 @@ export class Sim {
     progress('生き物たちを放っています……');
     spawnInitialCreatures(this);
     this.slimDead();
+    computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
     return this;
   }
@@ -64,6 +67,7 @@ export class Sim {
     this.placeHouse = makeHousePlacer(data.world, this.rng);
     for (const p of this.living()) { p.talk = null; p.fight = null; p.path = p.path || []; }
     for (const c of Object.values(data.creatures)) c.fight = null;
+    computeDanger(this);
     return true;
   }
   async save() {
@@ -434,11 +438,15 @@ export class Sim {
         return f.length ? { ...R.pick(f) } : this.placeFor(p, 'plaza');
       }
       case 'ranch': return s.ranch ? { x: R.int(s.ranch.x0, s.ranch.x1), z: R.int(s.ranch.z0, s.ranch.z1) } : this.placeFor(p, 'field');
-      case 'forest': return this.randomNear(s.x, s.z, s.r + 12, (t) => t === T.FOREST || t === T.DENSE || t === T.JUNGLE) || this.placeFor(p, 'field');
-      case 'wild': return this.randomNear(s.x, s.z, s.r + 16, (t, x, z) => !this.dangerous(p, x, z) && (t === T.FOREST || t === T.GRASS || t === T.DENSE || t === T.SAVANNA)) || this.placeFor(p, 'field');
+      case 'forest': return this.randomNear(s.x, s.z, s.r + 12, (t, x, z) => (t === T.FOREST || t === T.DENSE || t === T.JUNGLE) && !tooDangerous(this, p, x, z)) || this.placeFor(p, 'field');
+      case 'wild': return this.randomNear(s.x, s.z, s.r + 16, (t, x, z) => !tooDangerous(this, p, x, z) && (t === T.FOREST || t === T.GRASS || t === T.DENSE || t === T.SAVANNA)) || this.placeFor(p, 'field');
+      case 'gate': {
+        if (s.gates?.length) { const g = s.gates[(p.id + Math.floor(this.today / 3)) % s.gates.length]; return { x: g.x - g.dx, z: g.z - g.dz }; }
+        return this.placeFor(p, 'patrol');
+      }
       case 'shore': {
         if (s.dock) return { ...R.pick(s.dock) };
-        return this.randomNear(s.x, s.z, s.r + 10, (t, x, z) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => { const tt = tileAt(w, x + a, z + b); return tt === T.RIVER || tt === T.SEA; })) || this.placeFor(p, 'field');
+        return this.randomNear(s.x, s.z, s.r + 10, (t, x, z) => !tooDangerous(this, p, x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => { const tt = tileAt(w, x + a, z + b); return tt === T.RIVER || tt === T.SEA; })) || this.placeFor(p, 'field');
       }
       case 'dock': return s.dock ? { ...R.pick(s.dock) } : this.placeFor(p, 'shore');
       case 'mine': {
@@ -523,7 +531,9 @@ export class Sim {
     const workHours = h >= 7 && h < 17;
     if (workAge && job !== 'thief' && job !== 'beggar' && workHours && (!rest || ['innkeeper', 'guard', 'knight', 'soldier', 'jailer', 'king', 'servant'].includes(job)) && p.workedToday < 9 * 60 && n.sleep > 15) {
       const skill = p.skill[job] || 0.3;
-      add(3 + p.pers.C * 3 + p.values.ambition + skill - (100 - n.sloth) / 30, 'work', this.placeFor(p, JOBS[job].place), R.int(60, 150));
+      const wp = this.placeFor(p, JOBS[job].place);
+      const unsafe = wp && !JOBS[job].combat && tooDangerous(this, p, wp.x, wp.z);
+      add(3 + p.pers.C * 3 + p.values.ambition + skill - (100 - n.sloth) / 30 - (unsafe ? 8 : 0), 'work', unsafe ? this.placeFor(p, 'plaza') : wp, R.int(60, 150));
     }
     if (job === 'innkeeper' && h >= 17 && h < 23) add(5, 'work', this.placeFor(p, 'tavern'), 90);
     if ((job === 'guard' || job === 'knight') && (h >= 20 || h < 2) && R.chance(0.3)) add(4, 'work', this.placeFor(p, 'patrol'), 60);
@@ -585,8 +595,7 @@ export class Sim {
   strollSpot(p) {
     const s = this.townOf(p);
     const r = s.r + 3 + p.pers.O * 6 * p.values.courage;
-    const lairs = this.S.world.specials.map((id) => this.building(id)).filter((b) => ['cave', 'pyramid', 'ruins', 'hideout', 'demoncastle'].includes(b.type));
-    return this.randomNear(s.x, s.z, r, (t, x, z) => !this.dangerous(p, x, z) && t !== T.BLD && lairs.every((b) => Math.hypot(b.x - x, b.z - z) > 14)) || this.placeFor(p, 'plaza');
+    return this.randomNear(s.x, s.z, r, (t, x, z) => t !== T.BLD && !tooDangerous(this, p, x, z)) || this.placeFor(p, 'plaza');
   }
 
   crushOf(p) {
@@ -675,7 +684,8 @@ export class Sim {
   computePath(p) {
     const a = p.action;
     const sx = Math.round(p.pos.x), sz = Math.round(p.pos.z);
-    const path = findPath(this.S.world, sx, sz, a.tx, a.tz, 26000);
+    const brave = (JOBS[p.job]?.combat || 0) >= 2 || ['quest', 'crusade', 'march', 'defend'].includes(a.type);
+    const path = findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, brave ? null : this.S.dangerMap);
     if (!path) {
       // たどり着けない：近くの歩ける場所へ
       const alt = this.randomNear(a.tx, a.tz, 2);
@@ -1054,6 +1064,8 @@ export class Sim {
       if (sleeping) p.hp = Math.min(p.maxhp, p.hp + 4 * hr);
       p.cooldown = Math.max(0, p.cooldown - dt);
       if (p.fight) continue; // 戦闘中は society.js が処理
+      p._spot = (p._spot || 0) - dt;
+      if (p._spot <= 0 && this._cgrid) { p._spot = 1; if (spotThreats(this, p, this._cgrid, around)) continue; }
       if (p.talk) { this.stepTalk(p); continue; }
       if (!a) { this.decide(p); continue; }
       if (a.phase === 'walk') {
@@ -1064,6 +1076,8 @@ export class Sim {
       }
     }
     stepCreatures(this, dt);
+    this._defend = (this._defend || 0) - dt;
+    if (this._defend <= 0) { this._defend = 5; defendTowns(this); }
     stepCombat(this, dt);
     this.checkEncounters(people, dt);
   }
@@ -1406,6 +1420,7 @@ export class Sim {
       }
     }
     this.S.gatherings = this.S.gatherings.filter((g) => g.to > this.S.t);
+    computeDanger(this);
     crimeHourly(this);
     politicsHourly(this);
     demonHourly(this);

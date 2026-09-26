@@ -7,7 +7,7 @@ import { startFight } from './society.js';
 
 // 生息数の目安
 const POP = {
-  rat: 16, crow: 10, owl: 6, frog: 8, snake: 6, turtle: 5, bat: 6,
+  rat: 8, crow: 10, owl: 6, frog: 8, snake: 6, turtle: 5, bat: 6,
   deer: 14, boar: 8, wolf: 10, bear: 5, fox: 7, rabbit: 16, squirrel: 8, camel: 6, scorpion: 8, croc: 5, monkey: 8, tiger: 4, parrot: 6,
   reindeer: 8, polarbear: 3, penguin: 8, seagull: 10, eagle: 4, dolphin: 8, whale: 3,
   slime: 12, unicorn: 2, golem: 3, goblin: 10, orc: 6, skeleton: 8, mummy: 6, spider: 6, wyvern: 2, imp: 8, demonsoldier: 4,
@@ -28,6 +28,16 @@ export function makeCreature(sim, sp, x, z, extra = {}) {
     owner: extra.owner ?? null, range: extra.range ?? 10, kills: 0, lair: extra.lair ?? null, dormant: extra.dormant || false,
   };
   c.role = extra.role || defaultRole(sim, c);
+  // 町の中に生まれてしまったら、町の外へ出す
+  if (!allowedInTown(c) && townMask(sim)[Math.round(z) * W + Math.round(x)]) {
+    const s = sim.S.world.settlements.reduce((b, q) => (Math.hypot(q.x - x, q.z - z) < Math.hypot(b.x - x, b.z - z) ? q : b));
+    const a = Math.atan2(z - s.z, x - s.x) || sim.rng.next() * 6.28;
+    for (let r = s.r + 4; r < s.r + 14; r++) {
+      const nx = Math.round(s.x + Math.cos(a) * r), nz = Math.round(s.z + Math.sin(a) * r);
+      if (nx > 1 && nz > 1 && nx < W - 2 && nz < H - 2 && canStand(sim, c, def, nx, nz)) { c.pos = { x: nx, z: nz }; c.home = { x: nx, z: nz }; break; }
+    }
+    if (townMask(sim)[Math.round(c.pos.z) * W + Math.round(c.pos.x)]) { c.hp = 0; return c; } // 置き場所がなければ生まれない
+  }
   applyStats(c);
   c.hp = c.maxhp;
   S.creatures[id] = c;
@@ -98,21 +108,22 @@ export function spawnInitialCreatures(sim) {
   // 家畜
   for (const s of w.settlements) {
     if (s.ranch) {
-      const herd = s.kingdom === 2 ? { goat: 3, camel: 0, chicken: 4, sheep: 2, cow: 1 } : { cow: 3, sheep: 4, pig: 2, chicken: 4 };
+      const herd = s.kingdom === 2 ? { goat: 3, chicken: 3, sheep: 2, cow: 1, donkey: 1 } : { cow: 3, sheep: 4, pig: 2, chicken: 3, duck: 2, donkey: 1 };
       for (const [sp, n] of Object.entries(herd)) for (let i = 0; i < n; i++) {
         const x = R.int(s.ranch.x0, s.ranch.x1), z = R.int(s.ranch.z0, s.ranch.z1);
         makeCreature(sim, sp, x, z, { owner: s.id, range: 0 });
       }
     }
-    if (s.type === 'capital') for (let i = 0; i < 3; i++) { const p = sim.randomNear(s.x, s.z, s.r - 2); if (p) makeCreature(sim, 'horse', p.x, p.z, { owner: s.id, range: 3 }); }
-    if (s.type === 'village') for (let i = 0; i < 3; i++) { const p = sim.randomNear(s.x, s.z, s.r); if (p) makeCreature(sim, 'chicken', p.x, p.z, { owner: s.id, range: 3 }); }
+    // 馬は厩舎の前だけ
+    const stable = sim.townBuilding(s, 'stable');
+    if (stable) for (let i = 0; i < 3; i++) makeCreature(sim, 'horse', stable.door.x, stable.door.z, { owner: s.id, range: 1.2, hx: stable.door.x, hz: stable.door.z });
     // 町の犬・猫・アヒル・ロバ・ネズミ
-    const pets = { dog: s.type === 'capital' ? 3 : 2, cat: s.type === 'capital' ? 3 : 2, rat: s.type === 'capital' ? 4 : 2 };
-    if (s.type === 'village') { pets.duck = 3; pets.donkey = 1; }
+    // 町の中の動物は常識的な数に（犬・猫は数匹、ネズミは物陰に少し）
+    const pets = { dog: s.type === 'capital' ? 2 : 1, cat: s.type === 'capital' ? 2 : 1, rat: 1 };
     for (const [sp, n] of Object.entries(pets)) for (let i = 0; i < n; i++) {
       const p = sim.randomNear(s.x, s.z, s.r - 1);
       if (!p) continue;
-      const extra = { owner: s.id, range: sp === 'dog' ? 2 : s.r - 1 };
+      const extra = { owner: s.id, range: sp === 'dog' ? 2 : sp === 'rat' ? 2 : Math.floor(s.r / 2) };
       if (sp === 'dog' && s.ranch && i === 0) { extra.role = 'herder'; extra.range = 0; }
       if (sp === 'dog' && !extra.role) { const house = sim.S.world.buildings.find((b) => b.settlement === s.id && b.type === 'house' && sim.rng.chance(0.3)); if (house) Object.assign(p, house.door); }
       if (sp === 'rat' || sp === 'cat') { extra.hx = s.x; extra.hz = s.z; }
@@ -152,7 +163,7 @@ export function spawnInitialCreatures(sim) {
 }
 
 // ---------- 毎ステップ ----------
-function buildGrid(list) {
+export function buildGrid(list) {
   const g = new Map();
   for (const e of list) {
     const k = (Math.floor(e.pos.x / 8) << 8) | Math.floor(e.pos.z / 8);
@@ -160,7 +171,7 @@ function buildGrid(list) {
   }
   return g;
 }
-function around(grid, x, z, r) {
+export function around(grid, x, z, r) {
   const out = [];
   const cx0 = Math.floor((x - r) / 8), cx1 = Math.floor((x + r) / 8), cz0 = Math.floor((z - r) / 8), cz1 = Math.floor((z + r) / 8);
   for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++) { const a = grid.get((cx << 8) | cz); if (a) for (const e of a) out.push(e); }
@@ -171,7 +182,7 @@ export function stepCreatures(sim, dt) {
   const S = sim.S, R = sim.rng, w = S.world;
   const hr = dt / 60;
   const all = Object.values(S.creatures);
-  const cgrid = buildGrid(all.filter((c) => !c.dormant && c.hp > 0));
+  const cgrid = sim._cgrid = buildGrid(all.filter((c) => !c.dormant && c.hp > 0 && !c.inDungeon));
   const hgrid = buildGrid(sim.living().filter((h) => h.inside == null && h.jail == null));
   for (const c of all) {
     if (c.dormant || c.hp <= 0) continue;
@@ -331,8 +342,21 @@ function nearestHuman(sim, c, humans, r, inTownOk) {
 
 function startFightLazy(sim, c, t) { startFight(sim, c, t); }
 
+// 町（城壁の内側と村の周り）に入れるのは、飼われている動物・ネズミ・町を襲う魔物だけ
+export function allowedInTown(c) {
+  return c.owner != null || c.sp === 'rat' || c.raid != null || c.occupier != null || SPECIES[c.sp].flies && !SPECIES[c.sp].monster;
+}
+export function townMask(sim) {
+  const w = sim.S.world;
+  if (sim._townMask && sim._townMaskN === w.settlements.length) return sim._townMask;
+  const m = new Uint8Array(W * H);
+  for (const s of w.settlements) for (let z = s.z - s.r - 2; z <= s.z + s.r + 2; z++) for (let x = s.x - s.r - 2; x <= s.x + s.r + 2; x++) if (x >= 0 && z >= 0 && x < W && z < H) m[z * W + x] = 1;
+  sim._townMask = m; sim._townMaskN = w.settlements.length;
+  return m;
+}
 function canStand(sim, c, def, x, z) {
   if (x < 0 || z < 0 || x >= W || z >= H) return false;
+  if (!allowedInTown(c) && townMask(sim)[z * W + x]) return false;
   if (def.flies) return true;
   const t = tileAt(sim.S.world, x, z);
   if (def.swims) return t === T.SEA || t === T.DEEP;
@@ -341,6 +365,13 @@ function canStand(sim, c, def, x, z) {
 }
 
 function move(sim, c, def, dt) {
+  if (!allowedInTown(c) && townMask(sim)[Math.round(c.pos.z) * W + Math.round(c.pos.x)]) {
+    const s = sim.S.world.settlements.reduce((b, q) => (Math.hypot(q.x - c.pos.x, q.z - c.pos.z) < Math.hypot(b.x - c.pos.x, b.z - c.pos.z) ? q : b));
+    const dx = c.pos.x - s.x || 0.1, dz = c.pos.z - s.z, d = Math.hypot(dx, dz) || 1;
+    c.pos.x += (dx / d) * 0.6 * dt; c.pos.z += (dz / d) * 0.6 * dt;
+    c.goal = null;
+    return;
+  }
   if (!c.goal) return;
   const g = c.goal;
   // 遠い目的地は経路を使う

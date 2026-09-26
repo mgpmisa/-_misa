@@ -270,6 +270,8 @@ export class UI {
       this.r.lookAt(x, z, Math.max(1.2, this.r.camera.zoom));
     });
     $('miniToggle').onclick = () => $('mini').classList.toggle('small');
+    this.showDanger = true;
+    $('dangerToggle').onclick = () => { this.showDanger = !this.showDanger; $('dangerToggle').classList.toggle('on', this.showDanger); };
   }
   redrawMinimapBase() {
     const w = this.sim.S.world, { img, col } = this.miniBase;
@@ -293,6 +295,15 @@ export class UI {
       g.fillStyle = S.towns[s.id].occupied ? '#5a1a2a' : '#fff';
       g.fillRect(s.x - 2, s.z - 2, 4, 4);
       g.strokeStyle = KINGDOMS[s.kingdom].color; g.strokeRect(s.x - 2.5, s.z - 2.5, 5, 5);
+    }
+    // 魔物の分布（危険区域）
+    if (this.showDanger && S.dangerMap) {
+      for (let i = 0; i < S.dangerMap.length; i++) {
+        const v = S.dangerMap[i];
+        if (v < 0.8) continue;
+        g.fillStyle = `rgba(230,40,40,${Math.min(0.55, v / 12)})`;
+        g.fillRect((i % (W / 8)) * 8, Math.floor(i / (W / 8)) * 8, 8, 8);
+      }
     }
     const d = S.world.demon;
     g.fillStyle = S.demon?.active ? '#ff2a3a' : '#8a3a5a'; g.fillRect(d.x - 3, d.z - 3, 6, 6);
@@ -593,7 +604,7 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    const typeLabel = { clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    const typeLabel = { watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     const hh = b.hh != null ? S.households[b.hh] : null;
     if (hh) h += `<div class="section"><h4>暮らしている家族</h4><dl class="kv"><dt>蓄え</dt><dd>${Math.round(hh.money)}銅貨</dd><dt>食糧</dt><dd>${Math.floor(hh.food)}食分</dd></dl><ul class="rels" style="margin-top:6px">${hh.members.map((id) => S.people[id]).filter(Boolean).map((q) => `<li><span>${this.pLink(q, `${q.given}・${q.family}`)}</span><span class="dead">${sim.ageOf(q)}歳</span></li>`).join('')}</ul></div>`;

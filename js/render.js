@@ -305,6 +305,22 @@ export class Renderer {
     walls.forEach(([x, z], i) => { const y = topY(w.hgt[z * W + x]); wall.setMatrixAt(i, m4.makeTranslation(wx(x), y, wz(z))); cren.setMatrixAt(i, m4.makeTranslation(wx(x) + ((x + z) % 2 ? 0.25 : -0.25), y, wz(z))); });
     wall.castShadow = cren.castShadow = true; wall.receiveShadow = true;
     this.scene.add(wall, cren);
+    // 城門（王都の城壁の切れ目）
+    const gateGeos = new Map();
+    const gpush = (mat, g) => { if (!gateGeos.has(mat)) gateGeos.set(mat, []); gateGeos.get(mat).push(g); };
+    for (const s of w.settlements) {
+      if (s.type !== 'capital' || !s.gates) continue;
+      for (const g of s.gates) {
+        const y = topY(w.hgt[g.z * W + g.x]);
+        const side = g.dx !== 0 ? [0, 1] : [1, 0];
+        for (const k of [-1, 1]) {
+          const t = new THREE.CylinderGeometry(0.55, 0.6, 2.4, 8).toNonIndexed(); t.translate(wx(g.x) + side[0] * k * 1.1, y + 1.2, wz(g.z) + side[1] * k * 1.1); gpush(M.stone, t);
+          const c = new THREE.ConeGeometry(0.75, 0.9, 8).toNonIndexed(); c.translate(wx(g.x) + side[0] * k * 1.1, y + 2.85, wz(g.z) + side[1] * k * 1.1); gpush(M.slate, c);
+        }
+        const arch = this.box(side[0] ? 2.8 : 0.9, 0.6, side[1] ? 2.8 : 0.9); arch.translate(wx(g.x), y + 1.9, wz(g.z)); gpush(M.stone, arch);
+      }
+    }
+    for (const [mat, geos] of gateGeos) { const m = new THREE.Mesh(mergeGeometries(geos.map((g) => { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); return g; })), mat); m.castShadow = true; this.scene.add(m); }
     // 桟橋
     const dock = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.12, 0.9), M.planks, Math.max(1, docks.length));
     docks.forEach(([x, z], i) => dock.setMatrixAt(i, m4.makeTranslation(wx(x), SEA_Y + 0.12, wz(z))));
@@ -492,6 +508,12 @@ export class Renderer {
       case 'ruins':
         for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, h = 0.4 + hsh(b.x, b.z, i) * 1.6; add(this.cyl(0.18, 0.2, h, 6), M.stone, Math.cos(a) * 1.1, h / 2, Math.sin(a) * 1.1); }
         add(this.box(1.2, 0.3, 0.5), M.stone, 0.2, 0.15, -0.2, 0.4);
+        break;
+      case 'watchtower':
+        for (const [x, z] of [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]]) add(this.box(0.1, 2.2, 0.1), M.wood, x, 1.1, z);
+        add(this.box(0.9, 0.1, 0.9), M.planks, 0, 2.2, 0);
+        for (const [x, z, w2, d2] of [[0, -0.45, 0.9, 0.06], [0, 0.45, 0.9, 0.06], [-0.45, 0, 0.06, 0.9], [0.45, 0, 0.06, 0.9]]) add(this.box(w2, 0.35, d2), M.wood, x, 2.42, z);
+        add(this.cone(0.75, 0.6, 4), M.thatch, 0, 2.95, 0, Math.PI / 4);
         break;
       case 'clinic':
         houseLike(1.2, M.timber, M.tileRoof);

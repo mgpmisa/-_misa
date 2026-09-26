@@ -350,12 +350,24 @@ export function generateWorld(rng, seed) {
       place('smithy', '鍛冶場', 3, 3);
       place('well', '井戸', 1, 1, { extra: { open: true } });
       place('mill', '風車小屋', 2, 2, { far: true });
+      place('watchtower', '見張り櫓', 1, 1, { far: true, extra: { open: true } });
     } else {
       place('market', '魚市場', 4, 2, { extra: { open: true } });
       place('tavern', '船乗りの酒場', 4, 3);
       place('church', '海の礼拝堂', 3, 3);
       place('workshop', '造船所', 4, 3);
       place('bakery', 'パン屋', 3, 3);
+      place('watchtower', '見張り櫓', 1, 1, { far: true, extra: { open: true } });
+    }
+    // 町の出入口（門）：町の外周と道が交わるところ
+    s.gates = [];
+    const RR = s.type === 'capital' ? R + 1 : R;
+    for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      for (let k = RR; k >= RR - 2; k--) {
+        const x = s.x + dx * k, z = s.z + dz * k;
+        const t = get(x, z);
+        if (t === T.ROAD || t === T.BRIDGE) { s.gates.push({ x, z, dx, dz }); break; }
+      }
     }
   }
   function placeOnStreet(s, type, name, w, d, opt = {}) {

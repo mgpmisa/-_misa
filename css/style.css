@@ -194,3 +194,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .mini canvas { width: 110px; height: 110px; }
   .mini.small canvas { width: 64px; height: 64px; }
 }
+
+#dangerToggle { position: absolute; left: -26px; top: 28px; width: 24px; height: 24px; background: var(--wood); color: var(--parch); border: 2px solid var(--line); cursor: pointer; padding: 0; font-size: 11px; }
+#dangerToggle.on { background: #8a1a1a; color: #fff; }
