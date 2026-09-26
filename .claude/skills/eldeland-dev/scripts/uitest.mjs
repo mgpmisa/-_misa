@@ -1,0 +1,32 @@
+import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs'  // グローバルの playwright;
+const browser = await chromium.launch({ args: ['--use-gl=swiftshader','--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+const errs = [];
+page.on('pageerror', (e) => errs.push('pageerror: ' + e.message + '\n' + e.stack));
+page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+await page.goto('http://127.0.0.1:8124/index.html?fresh');
+await page.waitForFunction(() => window.__world, null, { timeout: 180000 });
+await page.evaluate(async () => { const { sim } = window.__world; for (let i = 0; i < 2000; i++) sim.step?.(0.5); });
+const out = await page.evaluate(() => {
+  const { sim, ui } = window.__world; const res = {};
+  const tabs = [...document.querySelectorAll('[data-tab]')];
+  for (const t of tabs) { t.click(); }
+  document.querySelector('[data-tab="guild"]')?.click();
+  res.guild = document.getElementById('guildBoard')?.innerText.slice(0, 600);
+  const adv = sim.living().find((p) => ['adventurer','warrior'].includes(p.job));
+  ui.select(adv.id); ui.renderInspector(true);
+  res.insp = document.getElementById('inspector').innerText.slice(0, 1500);
+  const house = sim.S.world.buildings.find((b) => b.type === 'house' && b.hh != null && b.owner !== b.hh && b.owner != null) || sim.S.world.buildings.find((b) => b.type === 'house');
+  ui.selectBuilding(house.id); ui.openInterior(house.id);
+  res.house = document.getElementById('inspector').innerText.slice(0, 400);
+  res.ivTitle = document.getElementById('ivTitle').textContent + ' / ' + document.getElementById('ivSub').textContent;
+  return res;
+});
+console.log(JSON.stringify(out, null, 1));
+await page.waitForTimeout(1500);
+await page.screenshot({ path: 'ui.png' });
+await page.evaluate(() => { const { sim, ui } = window.__world; const c = sim.S.world.buildings.find((b) => b.type === 'cave'); ui.openInterior(c.id); });
+await page.waitForTimeout(1500);
+await page.screenshot({ path: 'ui2.png' });
+console.log(errs.join('\n') || 'no errors');
+await browser.close();
