@@ -64,12 +64,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   position: fixed; background: var(--wood); border: 2px solid var(--line); box-shadow: inset 0 0 0 2px var(--wood3), 4px 4px 0 rgba(0, 0, 0, .35);
   color: var(--parch);
 }
-#side { left: 12px; top: 96px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); width: 330px; display: flex; flex-direction: column; transition: transform .2s steps(4); }
+#side { left: 12px; top: 128px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); width: 330px; display: flex; flex-direction: column; transition: transform .2s steps(4); }
 #side.closed { transform: translateX(calc(-100% - 14px)); }
 #side .toggle { position: absolute; right: -32px; top: 8px; width: 28px; height: 36px; background: var(--wood); color: var(--parch); border: 2px solid var(--line); cursor: pointer; }
 #side.closed .toggle { transform: scaleX(-1); }
 .tabs { display: flex; border-bottom: 2px solid var(--line); }
-.tabs button { flex: 1; background: var(--wood2); color: var(--parch2); border: 0; padding: 8px 4px; cursor: pointer; }
+.tabs { flex-wrap: wrap; }
+.tabs button { flex: 1 0 25%; background: var(--wood2); color: var(--parch2); border: 0; padding: 7px 2px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--line); }
 .tabs button + button { border-left: 2px solid var(--line); }
 .tabs button.on { background: var(--wood); color: var(--amber); }
 .tabbody { flex: 1; overflow-y: auto; padding: 8px 10px; min-height: 0; }
@@ -94,7 +95,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 #peopleList .sub { color: var(--muted); font-size: 12px; }
 
 /* 住人の詳細 */
-#inspector { right: 12px; top: 96px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); width: 360px; overflow-y: auto; padding: 14px 14px 18px; }
+#inspector { right: 12px; top: 128px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); width: 360px; overflow-y: auto; padding: 14px 14px 18px; }
 .close { position: absolute; right: 8px; top: 8px; background: var(--wood2); color: var(--parch); border: 2px solid var(--line); width: 30px; height: 30px; cursor: pointer; }
 .pname { font-size: 20px; color: var(--amber); margin: 0 36px 2px 0; text-shadow: 2px 2px 0 var(--line); }
 .psub { color: var(--parch2); font-size: 13px; margin-bottom: 10px; }
@@ -131,7 +132,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .row-btns button { background: var(--wood2); color: var(--parch); border: 2px solid var(--line); padding: 4px 10px; cursor: pointer; }
 .row-btns button.on { background: var(--amber); color: var(--ink); }
 
-.menu { right: 12px; top: 96px; width: 300px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.menu { right: 12px; top: 128px; width: 300px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .menu h3 { margin: 0; color: var(--amber); font-weight: normal; }
 .menu label { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .menu select { background: var(--parch); color: var(--ink); border: 2px solid var(--line); }
@@ -162,3 +163,34 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .bubble { max-width: 170px; font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .bubble { animation: none; } #side { transition: none; } }
+
+.ticker { position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 84px); z-index: 2; background: rgba(42, 31, 23, .92); border: 2px solid var(--line); color: var(--amber); padding: 5px 10px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; max-width: 900px; }
+.ticker.flash { animation: flash 1.2s steps(6); }
+@keyframes flash { 0%, 50% { background: #7a2a1a; color: #fff; } 100% { background: rgba(42, 31, 23, .92); } }
+.mini { right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); padding: 4px; z-index: 1; }
+.mini canvas { display: block; width: 200px; height: 200px; image-rendering: pixelated; cursor: crosshair; }
+.mini.small canvas { width: 110px; height: 110px; }
+.mini button { position: absolute; left: -26px; top: 0; width: 24px; height: 24px; background: var(--wood); color: var(--parch); border: 2px solid var(--line); cursor: pointer; padding: 0; }
+#inspector:not([hidden]) ~ .mini { display: none; }
+.hitnum { position: absolute; transform: translate(-50%, -100%); color: #ff5a4a; font-size: 13px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+.nation { border-left: 4px solid var(--amber); padding: 6px 8px; margin-bottom: 10px; background: var(--wood2); }
+.nation.demon { border-left-color: #a0203a; }
+.nname { color: var(--amber); margin-bottom: 4px; cursor: pointer; }
+.kdot { display: inline-block; width: 8px; height: 8px; margin-right: 5px; vertical-align: middle; }
+.plist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.plist li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 4px 6px; cursor: pointer; font-size: 13px; }
+#graves li { grid-template-columns: 1fr; }
+.plist li:hover { background: var(--wood2); }
+.plist .sub { color: var(--muted); font-size: 12px; }
+.kind { font-size: 11px; padding: 0 5px; border: 1px solid var(--line); }
+.k-livestock { background: #6a5a3a; } .k-wild { background: #3a6a3a; } .k-neutral { background: #3a5a7a; } .k-hostile { background: #7a3a2a; } .k-demon { background: #5a1a3a; }
+.rank { color: var(--amber); font-size: 12px; }
+#econTown { width: 100%; margin-bottom: 8px; background: var(--parch); color: var(--ink); border: 2px solid var(--line); padding: 4px; }
+.hint { color: var(--parch2); font-size: 12px; line-height: 1.6; margin: 0 0 6px; }
+[data-goto] { cursor: pointer; }
+@media (max-width: 760px) {
+  .ticker { top: calc(env(safe-area-inset-top, 0px) + 96px); left: 8px; right: 8px; font-size: 12px; }
+  .mini { right: 8px; top: calc(env(safe-area-inset-top, 0px) + 128px); bottom: auto; }
+  .mini canvas { width: 110px; height: 110px; }
+  .mini.small canvas { width: 64px; height: 64px; }
+}

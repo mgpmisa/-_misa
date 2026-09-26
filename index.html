@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>リンデンベルク村</title>
+<title>エルデラント年代記</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
 <link rel="stylesheet" href="css/style.css">
@@ -15,7 +15,7 @@
 
 <header id="topbar">
   <div class="brand">
-    <span class="village">リンデンベルク村</span>
+    <span class="village">エルデラント年代記</span>
     <span id="clock" class="clock">—</span>
   </div>
   <div class="controls">
@@ -32,23 +32,29 @@
       <button id="viewIso" title="斜め見下ろし">斜</button>
       <button id="viewTop" title="真上から">上</button>
       <button id="viewLow" title="低い視点">横</button>
+      <button id="viewWorld" title="大陸全体">全</button>
     </div>
     <button id="menuBtn" class="plain">≡</button>
   </div>
 </header>
 
+<div id="ticker" class="ticker" title="クリックで現場へ">大陸に朝が来た。</div>
+
 <aside id="side" class="panel">
   <nav class="tabs" role="tablist">
     <button data-tab="log" class="on">出来事</button>
     <button data-tab="people">住人</button>
+    <button data-tab="nations">国々</button>
     <button data-tab="chron">年代記</button>
     <button data-tab="econ">暮らし</button>
+    <button data-tab="bestiary">図鑑</button>
+    <button data-tab="graves">墓地</button>
   </nav>
   <div class="tabbody" id="tab-log">
     <div class="chips">
-      <button data-filter="all" class="on">すべて</button>
-      <button data-filter="talk">会話</button>
-      <button data-filter="event">出来事</button>
+      <button data-filter="near" class="on">この近く</button>
+      <button data-filter="all">大陸すべて</button>
+      <button data-filter="news">速報だけ</button>
     </div>
     <ol id="log"></ol>
   </div>
@@ -56,8 +62,11 @@
     <input id="search" type="search" placeholder="名前で探す">
     <ul id="peopleList"></ul>
   </div>
+  <div class="tabbody" id="tab-nations" hidden><div id="nations"></div></div>
   <div class="tabbody" id="tab-chron" hidden><ol id="chron"></ol></div>
-  <div class="tabbody" id="tab-econ" hidden><div id="econ"></div></div>
+  <div class="tabbody" id="tab-econ" hidden><select id="econTown"></select><div id="econ"></div></div>
+  <div class="tabbody" id="tab-bestiary" hidden><p class="hint">名前を押すと、いちばん近くにいる個体へ移動します。</p><ul id="bestiary" class="plist"></ul></div>
+  <div class="tabbody" id="tab-graves" hidden><ul id="graves" class="plist"></ul></div>
   <button id="sideToggle" class="toggle" aria-label="パネルを閉じる">‹</button>
 </aside>
 
@@ -66,19 +75,23 @@
   <div id="inspBody"></div>
 </aside>
 
+<div id="mini" class="panel mini"><button id="miniToggle" aria-label="地図の大きさ">▣</button><canvas id="minimap"></canvas></div>
+
 <div id="menu" class="panel menu" hidden>
   <h3>設定</h3>
   <label>ドットの粗さ
     <select id="pixelSel"><option value="1">細かい</option><option value="2" selected>ふつう</option><option value="3">粗い</option><option value="4">とても粗い</option></select>
   </label>
   <label><input type="checkbox" id="bubbleChk" checked> 吹き出しを表示</label>
+  <label><input type="checkbox" id="shadowChk" checked> 影を描く（重いときは外す）</label>
+  <label><input type="checkbox" id="attnChk" checked> 注目カメラ（大事件の現場へ自動で移動）</label>
   <button id="newWorld" class="danger">新しい世界をつくる</button>
   <p id="newWorldConfirm" hidden>いまの村と住人の記録は消えます。<button id="newWorldYes" class="danger">消して作り直す</button></p>
   <p class="hint">左ドラッグ：回転 ／ 右ドラッグ：移動 ／ ホイール：拡大<br>スマホ：1本指で回転、2本指で移動・拡大<br>住人や建物をタップすると詳しく見られます。</p>
-  <p class="hint">村は自動で保存され、次に開いたときも続きから始まります。</p>
+  <p class="hint">世界は自動で保存され、次に開いたときも続きから始まります。</p>
 </div>
 
-<div id="loading"><div><div class="ltitle">リンデンベルク村</div><div id="loadMsg">三百年の歴史を紡いでいます……</div></div></div>
+<div id="loading"><div><div class="ltitle">エルデラント年代記</div><div id="loadMsg">世界を創っています……</div></div></div>
 
 <script type="module" src="js/main.js"></script>
 </body>

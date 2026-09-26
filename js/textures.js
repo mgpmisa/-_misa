@@ -121,6 +121,33 @@ export function buildTextures() {
   }, true);
   TEX.awning = canvasTex(8, 8, (g) => { for (let x = 0; x < 8; x++) { g.fillStyle = x % 4 < 2 ? '#c93a32' : '#f2ead8'; g.fillRect(x, 0, 1, 8); } }, true);
   TEX.awning2 = canvasTex(8, 8, (g) => { for (let x = 0; x < 8; x++) { g.fillStyle = x % 4 < 2 ? '#2f6ab0' : '#f2ead8'; g.fillRect(x, 0, 1, 8); } }, true);
+
+  // 各地の地面
+  TEX.desert = noiseTex('#e3c47e', 40, 0.06, (g) => { for (let i = 0; i < 4; i++) { const x = (hash(i, 1, 41) * 12) | 0, y = (hash(i, 2, 41) * 16) | 0; g.fillStyle = '#d2ae66'; g.fillRect(x, y, 4, 1); } });
+  TEX.snow = noiseTex('#eef3f8', 42, 0.035, (g) => { for (let i = 0; i < 4; i++) px(g, (hash(i, 3, 43) * 16) | 0, (hash(i, 5, 43) * 16) | 0, '#c9d8e8'); });
+  TEX.rock = noiseTex('#8a8580', 44, 0.08, (g) => { for (let i = 0; i < 5; i++) { const x = (hash(i, 1, 45) * 14) | 0, y = (hash(i, 2, 45) * 14) | 0; px(g, x, y, '#5e5a55'); px(g, x + 1, y, '#a8a39c'); } });
+  TEX.peak = noiseTex('#dfe6ee', 46, 0.05, (g) => { for (let i = 0; i < 6; i++) px(g, (hash(i, 3, 47) * 16) | 0, (hash(i, 5, 47) * 16) | 0, '#8a8580'); });
+  TEX.forestFloor = noiseTex('#4f8f34', 48, 0.07, (g) => { for (let i = 0; i < 6; i++) px(g, (hash(i, 3, 49) * 16) | 0, (hash(i, 5, 49) * 16) | 0, '#6b4a2a'); });
+  TEX.denseFloor = noiseTex('#3d6f2c', 50, 0.08, (g) => { for (let i = 0; i < 6; i++) px(g, (hash(i, 3, 51) * 16) | 0, (hash(i, 5, 51) * 16) | 0, '#5a3e24'); });
+  TEX.jungleFloor = noiseTex('#3f8a3a', 52, 0.09, (g) => { for (let i = 0; i < 7; i++) px(g, (hash(i, 3, 53) * 16) | 0, (hash(i, 5, 53) * 16) | 0, hash(i, 1, 5) > 0.5 ? '#e05a8a' : '#2f6a2a'); });
+  TEX.savanna = noiseTex('#b8b04a', 54, 0.07, (g) => { for (let i = 0; i < 6; i++) px(g, (hash(i, 3, 55) * 16) | 0, (hash(i, 5, 55) * 16) | 0, '#8e8a36'); });
+  TEX.swamp = noiseTex('#4e6a3a', 56, 0.08, (g) => { for (let i = 0; i < 4; i++) { const x = (hash(i, 1, 57) * 12) | 0, y = (hash(i, 2, 57) * 14) | 0; g.fillStyle = '#3a5a58'; g.fillRect(x, y, 3, 2); } });
+  TEX.waste = noiseTex('#4a3a40', 58, 0.08, (g) => { for (let i = 0; i < 6; i++) px(g, (hash(i, 3, 59) * 16) | 0, (hash(i, 5, 59) * 16) | 0, hash(i, 1, 6) > 0.6 ? '#8a2a2a' : '#2a2026'); });
+  TEX.lava = canvasTex(16, 16, (g) => { g.fillStyle = '#d9401e'; g.fillRect(0, 0, 16, 16); for (let i = 0; i < 12; i++) { g.fillStyle = hash(i, 2, 60) > 0.5 ? '#ffb030' : '#8a1a0e'; g.fillRect((hash(i, 1, 60) * 14) | 0, (hash(i, 3, 60) * 16) | 0, 3, 1); } }, true);
+  TEX.pasture = noiseTex('#6db446', 61, 0.06);
+  TEX.sandstone = canvasTex(16, 16, (g) => {
+    g.fillStyle = '#d9b77a'; g.fillRect(0, 0, 16, 16);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const edge = y % 4 === 0 || (x + (Math.floor(y / 4) % 2) * 4) % 8 === 0; if (edge) px(g, x, y, '#b8945a'); else if (hash(x, y, 62) > 0.9) px(g, x, y, '#ecd09a'); }
+  }, true);
+  TEX.adobe = noiseTex('#e0c69a', 63, 0.05, (g) => { g.fillStyle = '#c9a878'; g.fillRect(0, 15, 16, 1); });
+  TEX.flatRoof = noiseTex('#c9a878', 64, 0.05, (g) => { g.fillStyle = '#a88858'; g.fillRect(0, 0, 16, 1); g.fillRect(0, 0, 1, 16); });
+  TEX.darkBrick = canvasTex(16, 16, (g) => {
+    g.fillStyle = '#2e2433'; g.fillRect(0, 0, 16, 16);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) { const edge = y % 4 === 0 || (x + (Math.floor(y / 4) % 2) * 4) % 8 === 0; if (edge) px(g, x, y, '#1a141e'); else if (hash(x, y, 65) > 0.93) px(g, x, y, '#6a2a3a'); }
+  }, true);
+  TEX.demonRoof = canvasTex(16, 16, (g) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(g, x, y, y % 4 === 0 ? '#2a0e18' : hash(x, y, 66) > 0.8 ? '#8a1a2a' : '#5a1020'); }, true);
+  TEX.planks = canvasTex(16, 16, (g) => { for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) px(g, x, y, y % 4 === 0 ? '#5a3a22' : hash(x, y, 67) > 0.85 ? '#a8784a' : '#8a603a'); }, true);
+  TEX.cloth = canvasTex(8, 8, (g) => { g.fillStyle = '#d8c8a0'; g.fillRect(0, 0, 8, 8); g.fillStyle = '#b8a47c'; g.fillRect(0, 7, 8, 1); }, true);
   return TEX;
 }
 

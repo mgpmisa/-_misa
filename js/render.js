@@ -1,65 +1,87 @@
-// 3D描画：見下ろし型のドット絵ボクセル世界（角度・ズーム自由）
+// 3D描画：広大な大陸を見下ろすドット絵ボクセル世界（角度・ズーム自由、4方向歩行）
 import * as THREE from 'three';
 import { OrbitControls } from '../vendor/OrbitControls.js';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
 import { W, H, T } from './world.js';
 import { buildTextures, personTexture, TEX } from './textures.js';
+import { SPECIES, KINGDOMS } from './data.js';
+import * as SPR from './sprites.js';
 
 const wx = (x) => x - W / 2 + 0.5;
 const wz = (z) => z - H / 2 + 0.5;
+export const topY = (h) => 0.3 + h * 0.4;
+const SEA_Y = 0.12;
+const NORTH = H * 0.62;
+const hsh = (x, z, s = 0) => { let h = (x * 73856093) ^ (z * 19349663) ^ (s * 83492791); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 
 export class Renderer {
   constructor(canvas, sim) {
     this.sim = sim;
     this.canvas = canvas;
-    this.pixel = 2;
+    this.pixel = window.innerWidth < 700 ? 2 : 2;
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
     r.setPixelRatio(1);
-    r.shadowMap.enabled = true;
+    r.shadowMap.enabled = window.innerWidth >= 700;
     r.shadowMap.type = THREE.PCFShadowMap;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#8fd0ff');
-    this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -200, 400);
-    this.camera.position.set(26, 30, 26);
-    this.camera.zoom = 1.6;
+    this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -300, 600);
     this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.12;
-    this.controls.minZoom = 0.6; this.controls.maxZoom = 7;
-    this.controls.minPolarAngle = 0.12; this.controls.maxPolarAngle = 1.32;
-    this.controls.screenSpacePanning = false;
-    this.controls.target.set(0, 0, 0);
+    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.12, minZoom: 0.12, maxZoom: 8, minPolarAngle: 0.1, maxPolarAngle: 1.35, screenSpacePanning: false });
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-    this.controls.addEventListener('start', () => { this.userMoved = true; });
+    this.controls.addEventListener('start', () => { this.userMoved = performance.now(); });
 
     this.hemi = new THREE.HemisphereLight('#dff1ff', '#5d7a3a', 1.2);
-    this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#fff2d6', 2.2);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    const sc = this.sun.shadow.camera; sc.left = -34; sc.right = 34; sc.top = 34; sc.bottom = -34; sc.near = 1; sc.far = 140;
+    const sc = this.sun.shadow.camera; sc.left = -30; sc.right = 30; sc.top = 30; sc.bottom = -30; sc.near = 1; sc.far = 160;
     this.sun.shadow.bias = -0.0008;
-    this.scene.add(this.sun, this.sun.target);
+    this.scene.add(this.hemi, this.sun, this.sun.target);
 
     buildTextures();
-    this.people = new Map();
-    this.nightMats = [];
+    this.mats = this.makeMaterials();
+    this.ents = new Map();
+    this.terrainMeshes = [];
     this.buildTerrain();
-    this.buildBuildings();
     this.buildTrees();
-    this.buildFences();
-    this.buildLamps();
-    this.buildSheep();
+    this.buildStructures();
+    this.buildBuildings();
     this.buildWeather();
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
     this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false;
     this.scene.add(this.selRing);
     this.raycaster = new THREE.Raycaster();
     this.lastSeason = -1;
+    const cap = sim.S.world.settlements[0];
+    this.lookAt(cap.x, cap.z, 2.2);
     this.resize();
   }
 
+  // ---------- 材質 ----------
+  makeMaterials() {
+    const L = (o) => new THREE.MeshLambertMaterial(o);
+    const m = {
+      timber: L({ map: TEX.timber }), timber2: L({ map: TEX.timber2 }), stone: L({ map: TEX.stone }), sandstone: L({ map: TEX.sandstone }), adobe: L({ map: TEX.adobe }),
+      darkBrick: L({ map: TEX.darkBrick }), darkStone: L({ map: TEX.darkStone }), planks: L({ map: TEX.planks }), wood: L({ map: TEX.wood }),
+      thatch: L({ map: TEX.thatch, side: THREE.DoubleSide }), tileRoof: L({ map: TEX.tileRoof, side: THREE.DoubleSide }), slate: L({ map: TEX.slate, side: THREE.DoubleSide }), greyRoof: L({ map: TEX.greyRoof, side: THREE.DoubleSide }),
+      tileRoofS: L({ map: TEX.tileRoof, side: THREE.DoubleSide }), flatRoof: L({ map: TEX.flatRoof }), demonRoof: L({ map: TEX.demonRoof, side: THREE.DoubleSide }),
+      win: L({ color: '#3a2f28', emissive: '#ffcf6a', emissiveIntensity: 0 }), redGlow: L({ color: '#3a0a10', emissive: '#ff2a3a', emissiveIntensity: 1.2 }),
+      door: L({ color: '#4a2c18' }), black: L({ color: '#141014' }), gold: L({ color: '#e0b84a' }), cloth: L({ map: TEX.cloth, side: THREE.DoubleSide }),
+      awning: L({ map: TEX.awning }), awning2: L({ map: TEX.awning2 }), white: L({ color: '#f2f0ea' }), red: L({ color: '#c93a32' }), fire: L({ color: '#ff9a2a', emissive: '#ff7a1a', emissiveIntensity: 1.5 }),
+      lamp: L({ color: '#40362c', emissive: '#ffd27a', emissiveIntensity: 0 }), crystal: L({ color: '#8a1a3a', emissive: '#ff3a5a', emissiveIntensity: 0.6 }),
+      sail: L({ color: '#f0ead8', side: THREE.DoubleSide }), hull: L({ color: '#6b4226' }), dome: L({ color: '#b8c0c8' }), purple: L({ map: TEX.slate, color: '#b070e0', side: THREE.DoubleSide }),
+    };
+    for (const k of KINGDOMS) m['banner' + k.color] = L({ color: k.color, side: THREE.DoubleSide });
+    this.nightMats = [m.win, m.lamp];
+    this.snowable = [m.thatch, m.tileRoof, m.slate, m.greyRoof];
+    for (const x of this.snowable) x.userData.base = x.map;
+    return m;
+  }
+
   setPixel(n) { this.pixel = n; this.resize(); }
+  setShadows(on) { this.shadowsOn = on; this.renderer.shadowMap.enabled = on; this.scene.traverse((o) => { if (o.material) o.material.needsUpdate = true; }); }
   resize() {
     const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
     this.renderer.setSize(Math.max(1, Math.floor(w / this.pixel)), Math.max(1, Math.floor(h / this.pixel)), false);
@@ -69,384 +91,553 @@ export class Renderer {
   }
 
   // ---------- 地形 ----------
+  groundKey(t, x, z) {
+    const n = z < NORTH;
+    switch (t) {
+      case T.GRASS: case T.FENCE: case T.BLD: return n ? 'grassN' : 'grassS';
+      case T.PASTURE: return 'pasture';
+      case T.ROAD: return n ? 'roadN' : 'roadS';
+      case T.PLAZA: case T.WALL: return 'plaza';
+      case T.FIELD: return 'field';
+      case T.BEACH: return 'sand';
+      case T.DESERT: return 'desert';
+      case T.SNOW: return 'snow';
+      case T.ROCK: return 'rock';
+      case T.PEAK: return 'peak';
+      case T.FOREST: return n ? 'forestN' : 'forestS';
+      case T.DENSE: return 'dense';
+      case T.JUNGLE: return 'jungle';
+      case T.SAVANNA: return 'savanna';
+      case T.SWAMP: return 'swamp';
+      case T.WASTE: return 'waste';
+      case T.LAVA: return 'lava';
+      case T.DOCK: case T.BRIDGE: return 'riverbed';
+      case T.SEA: case T.DEEP: return 'seabed';
+      case T.RIVER: return 'riverbed';
+      default: return 'grassN';
+    }
+  }
   buildTerrain() {
-    const world = this.sim.S.world;
-    const geo = new THREE.BoxGeometry(1, 0.6, 1);
-    geo.translate(0, -0.3, 0);
-    const side = new THREE.MeshLambertMaterial({ map: TEX.dirt });
-    const mk = (tex) => new THREE.MeshLambertMaterial({ map: tex });
-    this.topMats = { grass: mk(TEX.grass), road: mk(TEX.road), plaza: mk(TEX.plaza), field: mk(TEX.field[0]), sand: mk(TEX.sand) };
-    const groups = { grass: [], road: [], plaza: [], field: [], sand: [] };
+    const w = this.sim.S.world;
+    const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, -0.5, 0);
+    const L = (map, extra = {}) => new THREE.MeshLambertMaterial({ map, ...extra });
+    const side = L(TEX.dirt), sideSand = L(TEX.sand), sideRock = L(TEX.rock);
+    this.top = {
+      grassN: L(TEX.grass), grassS: L(TEX.grass), pasture: L(TEX.pasture), roadN: L(TEX.road), roadS: L(TEX.road), plaza: L(TEX.plaza), field: L(TEX.field[0]),
+      sand: L(TEX.sand), desert: L(TEX.desert), snow: L(TEX.snow), rock: L(TEX.rock), peak: L(TEX.peak), forestN: L(TEX.forestFloor), forestS: L(TEX.forestFloor),
+      dense: L(TEX.denseFloor), jungle: L(TEX.jungleFloor), savanna: L(TEX.savanna), swamp: L(TEX.swamp), waste: L(TEX.waste),
+      lava: L(TEX.lava, { emissive: '#ff5a1a', emissiveIntensity: 0.8, emissiveMap: TEX.lava }), seabed: L(TEX.sand, { color: '#6a8aa0' }), riverbed: L(TEX.sand, { color: '#8a9a88' }),
+    };
+    const sideFor = (k) => (['sand', 'desert', 'seabed', 'riverbed'].includes(k) ? sideSand : ['rock', 'peak', 'waste'].includes(k) ? sideRock : side);
+    const groups = {};
     const water = [];
     for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-      const t = world.tiles[z * W + x];
-      if (t === T.WATER) water.push([x, z]);
-      else if (t === T.ROAD) groups.road.push([x, z]);
-      else if (t === T.PLAZA) groups.plaza.push([x, z]);
-      else if (t === T.FIELD) groups.field.push([x, z]);
-      else if (t === T.SAND) groups.sand.push([x, z]);
-      else groups.grass.push([x, z]);
+      const t = w.tiles[z * W + x];
+      const k = this.groundKey(t, x, z);
+      (groups[k] = groups[k] || []).push([x, z, t]);
+      if (t === T.RIVER || t === T.BRIDGE) water.push([x, z]);
     }
-    const m = new THREE.Matrix4(), col = new THREE.Color();
+    const m4 = new THREE.Matrix4(), col = new THREE.Color();
     for (const [k, list] of Object.entries(groups)) {
-      const mats = [side, side, this.topMats[k], side, side, side];
+      const mats = [sideFor(k), sideFor(k), this.top[k], sideFor(k), sideFor(k), sideFor(k)];
       const mesh = new THREE.InstancedMesh(geo, mats, list.length);
-      list.forEach(([x, z], i) => {
-        m.makeTranslation(wx(x), k === 'road' || k === 'plaza' ? -0.02 : 0, wz(z));
-        mesh.setMatrixAt(i, m);
-        const v = 0.93 + ((x * 7 + z * 13) % 10) / 70;
+      list.forEach(([x, z, t], i) => {
+        const h = w.hgt[z * W + x];
+        let y = topY(h);
+        if (t === T.SEA) y = -0.35; else if (t === T.DEEP) y = -0.9; else if (t === T.RIVER || t === T.BRIDGE) y = topY(h) - 0.35; else if (t === T.DOCK) y = -0.35;
+        else if (t === T.ROAD || t === T.PLAZA) y -= 0.02;
+        m4.makeScale(1, y + 1.6, 1).setPosition(wx(x), y, wz(z));
+        mesh.setMatrixAt(i, m4);
+        const v = 0.92 + hsh(x, z, 1) * 0.12;
         mesh.setColorAt(i, col.setRGB(v, v, v));
       });
       mesh.receiveShadow = true;
+      mesh.userData.tiles = list;
       this.scene.add(mesh);
+      this.terrainMeshes.push(mesh);
     }
-    // 水
-    const wgeo = new THREE.BoxGeometry(1, 0.45, 1); wgeo.translate(0, -0.37, 0);
-    this.waterTex = TEX.water;
-    const wmat = new THREE.MeshLambertMaterial({ map: TEX.water, transparent: true, opacity: 0.92 });
-    const wm = new THREE.InstancedMesh(wgeo, wmat, water.length);
-    water.forEach(([x, z], i) => { m.makeTranslation(wx(x), 0, wz(z)); wm.setMatrixAt(i, m); });
-    wm.receiveShadow = true;
-    this.scene.add(wm);
-    // 桟橋
-    const pond = world.pond;
-    const dock = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 2.2), new THREE.MeshLambertMaterial({ map: TEX.wood }));
-    dock.position.set(wx(Math.round(pond.cx + pond.rx - 1)), 0.02, wz(Math.round(pond.cz)));
-    dock.rotation.y = Math.PI / 2; dock.castShadow = true;
-    this.scene.add(dock);
+    // 海
+    this.waterTex = TEX.water.clone(); this.waterTex.needsUpdate = true;
+    this.waterTex.wrapS = this.waterTex.wrapT = THREE.RepeatWrapping; this.waterTex.repeat.set(W / 2, H / 2);
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(W + 80, H + 80), new THREE.MeshLambertMaterial({ map: this.waterTex, transparent: true, opacity: 0.86 }));
+    sea.rotation.x = -Math.PI / 2; sea.position.y = SEA_Y; sea.receiveShadow = true;
+    this.scene.add(sea);
+    // 川
+    const rgeo = new THREE.BoxGeometry(1, 0.05, 1);
+    const rmat = new THREE.MeshLambertMaterial({ map: TEX.water, transparent: true, opacity: 0.9 });
+    const rm = new THREE.InstancedMesh(rgeo, rmat, water.length);
+    water.forEach(([x, z], i) => { rm.setMatrixAt(i, m4.makeTranslation(wx(x), topY(w.hgt[z * W + x]) - 0.12, wz(z))); });
+    this.scene.add(rm);
     // 作物
     const cropGeo = new THREE.BoxGeometry(0.82, 1, 0.82); cropGeo.translate(0, 0.5, 0);
     this.cropMat = new THREE.MeshLambertMaterial({ color: '#d9b24a' });
-    this.crops = new THREE.InstancedMesh(cropGeo, this.cropMat, groups.field.length);
-    this.cropTiles = groups.field;
-    this.crops.castShadow = true; this.crops.receiveShadow = true;
+    this.cropTiles = (groups.field || []).map(([x, z]) => [x, z]);
+    this.crops = new THREE.InstancedMesh(cropGeo, this.cropMat, Math.max(1, this.cropTiles.length));
+    this.crops.castShadow = true;
     this.scene.add(this.crops);
-    // 地面の下の板（マップの外側）
-    const base = new THREE.Mesh(new THREE.BoxGeometry(W + 0.2, 1.2, H + 0.2), new THREE.MeshLambertMaterial({ color: '#4a3220' }));
-    base.position.y = -1.2; this.scene.add(base);
   }
 
   applySeason(si) {
-    this.topMats.grass.map = [TEX.grass, TEX.grass, TEX.grassAutumn, TEX.grassSnow][si];
-    this.topMats.road.map = si === 3 ? TEX.roadSnow : TEX.road;
-    this.topMats.field.map = TEX.field[si];
-    for (const mat of Object.values(this.topMats)) mat.needsUpdate = true;
+    const T_ = this.top;
+    T_.grassN.map = [TEX.grass, TEX.grass, TEX.grassAutumn, TEX.snow][si];
+    T_.forestN.map = [TEX.forestFloor, TEX.forestFloor, TEX.grassAutumn, TEX.snow][si];
+    T_.roadN.map = si === 3 ? TEX.roadSnow : TEX.road;
+    T_.grassS.map = si === 2 ? TEX.savanna : TEX.grass;
+    T_.field.map = TEX.field[si];
+    for (const m of Object.values(T_)) m.needsUpdate = true;
     const h = [0.1, 0.32, 0.4, 0.0][si];
-    const c = ['#79c24e', '#4f9a32', '#e0b84a', '#ffffff'][si];
-    this.cropMat.color.set(c);
-    const m = new THREE.Matrix4();
+    this.cropMat.color.set(['#79c24e', '#4f9a32', '#e0b84a', '#ffffff'][si]);
+    const m4 = new THREE.Matrix4();
+    const w = this.sim.S.world;
     this.cropTiles.forEach(([x, z], i) => {
-      const hh = h * (0.8 + ((x * 3 + z * 5) % 5) / 12);
-      m.makeScale(1, Math.max(0.001, hh), 1).setPosition(wx(x), 0, wz(z));
-      this.crops.setMatrixAt(i, m);
+      const hh = h * (0.8 + hsh(x, z, 2) * 0.4);
+      m4.makeScale(1, Math.max(0.001, hh), 1).setPosition(wx(x), topY(w.hgt[z * W + x]), wz(z));
+      this.crops.setMatrixAt(i, m4);
     });
     this.crops.visible = h > 0;
     this.crops.instanceMatrix.needsUpdate = true;
-    for (const r of this.roofs) r.material.map = si === 3 ? TEX.snowRoof : r.userData.roofTex;
-    for (const r of this.roofs) r.material.needsUpdate = true;
-    const crown = ['#4d9a3c', '#3f8a32', '#d0822e', '#e8eef2'][si];
-    this.crownMat.color.set(crown);
-    this.pineMat.color.set(si === 3 ? '#cfe0d8' : '#2f6b3a');
-    this.pineMat2.color.set(si === 3 ? '#ffffff' : '#3d8247');
+    for (const mt of this.snowable) { mt.map = si === 3 ? TEX.snowRoof : mt.userData.base; mt.needsUpdate = true; }
+    if (this.treeMats) {
+      this.treeMats.round.color.set(['#4d9a3c', '#3f8a32', '#d0822e', '#b8c4b8'][si]);
+      this.treeMats.pine.color.set(si === 3 ? '#cfe0d8' : '#2f6b3a');
+      this.treeMats.pine2.color.set(si === 3 ? '#ffffff' : '#3d8247');
+    }
+  }
+
+  // ---------- 木・岩 ----------
+  buildTrees() {
+    const S = this.sim.S, w = S.world;
+    const inTown = (x, z) => w.settlements.some((s) => Math.abs(s.x - x) <= s.r + 1 && Math.abs(s.z - z) <= s.r + 1);
+    const L = (o) => new THREE.MeshLambertMaterial({ flatShading: true, ...o });
+    const tm = this.treeMats = {
+      trunk: L({ color: '#6b4226' }), pine: L({ color: '#2f6b3a' }), pine2: L({ color: '#3d8247' }), round: L({ color: '#4d9a3c' }), jungle: L({ color: '#2f7a2a' }),
+      palm: L({ color: '#4f9a2a' }), cactus: L({ color: '#4f8a3a' }), acacia: L({ color: '#7a8a2a' }), dead: L({ color: '#3a2a26' }), boulder: L({ color: '#8a8580' }), crystal: this.mats.crystal,
+      snowPine: L({ color: '#e8f0f0' }),
+    };
+    const parts = {};
+    const put = (name, geo, mat) => { parts[name] = parts[name] || { geo, mat, list: [] }; return parts[name].list; };
+    const G = {
+      trunk: new THREE.BoxGeometry(0.16, 0.5, 0.16).translate(0, 0.25, 0),
+      tallTrunk: new THREE.BoxGeometry(0.14, 1.2, 0.14).translate(0, 0.6, 0),
+      pine1: new THREE.ConeGeometry(0.5, 0.9, 6).translate(0, 0.8, 0), pine2: new THREE.ConeGeometry(0.36, 0.75, 6).translate(0, 1.3, 0),
+      round: new THREE.IcosahedronGeometry(0.48, 0).translate(0, 0.85, 0),
+      jungle: new THREE.IcosahedronGeometry(0.7, 0).scale(1, 0.6, 1).translate(0, 1.5, 0),
+      palm: new THREE.ConeGeometry(0.75, 0.25, 6).translate(0, 1.3, 0),
+      cactus: new THREE.BoxGeometry(0.2, 0.8, 0.2).translate(0, 0.4, 0), cactusArm: new THREE.BoxGeometry(0.5, 0.14, 0.14).translate(0, 0.5, 0),
+      acacia: new THREE.CylinderGeometry(0.75, 0.6, 0.18, 7).translate(0, 1.0, 0),
+      dead: new THREE.BoxGeometry(0.1, 0.9, 0.1).translate(0, 0.45, 0), deadBranch: new THREE.BoxGeometry(0.5, 0.07, 0.07).translate(0.1, 0.7, 0),
+      boulder: new THREE.DodecahedronGeometry(0.38, 0).translate(0, 0.15, 0), crystal: new THREE.OctahedronGeometry(0.25, 0).scale(0.6, 1.6, 0.6).translate(0, 0.35, 0),
+    };
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const t = w.tiles[z * W + x];
+      const r = hsh(x, z, 7), r2 = hsh(x, z, 8);
+      const y = topY(w.hgt[z * W + x]);
+      const item = { x: wx(x) + (r2 - 0.5) * 0.3, y, z: wz(z) + (r - 0.5) * 0.3, s: 0.8 + r2 * 0.45, rot: r * 6.28 };
+      if (inTown(x, z) && t !== T.FOREST && t !== T.DENSE) continue;
+      switch (t) {
+        case T.FOREST:
+          if (r < 0.75) { if (r2 < 0.5) { put('trunk', G.trunk, tm.trunk).push(item); put('round', G.round, tm.round).push(item); } else { put('trunk', G.trunk, tm.trunk).push(item); put('pine1', G.pine1, tm.pine).push(item); put('pine2', G.pine2, tm.pine2).push(item); } }
+          break;
+        case T.DENSE:
+          if (r < 0.9) { put('trunk', G.trunk, tm.trunk).push(item); put('pine1', G.pine1, tm.pine).push(item); put('pine2', G.pine2, tm.pine2).push(item); }
+          break;
+        case T.SNOW:
+          if (r < 0.12) { put('trunk', G.trunk, tm.trunk).push(item); put('snowPine', G.pine1, tm.snowPine).push(item); put('pine2', G.pine2, tm.pine2).push(item); }
+          break;
+        case T.JUNGLE:
+          if (r < 0.8) {
+            if (r2 < 0.7) { put('tallTrunk', G.tallTrunk, tm.trunk).push(item); put('jungle', G.jungle, tm.jungle).push(item); }
+            else { put('tallTrunk', G.tallTrunk, tm.trunk).push(item); put('palm', G.palm, tm.palm).push(item); }
+          }
+          break;
+        case T.GRASS: if (r < 0.03) { put('trunk', G.trunk, tm.trunk).push(item); put('round', G.round, tm.round).push(item); } break;
+        case T.SAVANNA: if (r < 0.05) { put('tallTrunk', G.tallTrunk, tm.trunk).push({ ...item, s: item.s * 0.8 }); put('acacia', G.acacia, tm.acacia).push({ ...item, s: item.s * 0.8 }); } break;
+        case T.DESERT: if (r < 0.04) { put('cactus', G.cactus, tm.cactus).push(item); put('cactusArm', G.cactusArm, tm.cactus).push(item); } else if (r < 0.06) put('boulder', G.boulder, tm.boulder).push(item); break;
+        case T.BEACH: if (z > H * 0.5 && r < 0.08) { put('tallTrunk', G.tallTrunk, tm.trunk).push(item); put('palm', G.palm, tm.palm).push(item); } break;
+        case T.ROCK: case T.PEAK: if (r < 0.22) put('boulder', G.boulder, tm.boulder).push({ ...item, s: item.s * 1.3 }); break;
+        case T.SWAMP: if (r < 0.2) { put('dead', G.dead, tm.dead).push(item); put('deadBranch', G.deadBranch, tm.dead).push(item); } break;
+        case T.WASTE: if (r < 0.08) { put('dead', G.dead, tm.dead).push(item); put('deadBranch', G.deadBranch, tm.dead).push(item); } else if (r < 0.13) put('crystal', G.crystal, tm.crystal).push(item); break;
+      }
+    }
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    for (const p of Object.values(parts)) {
+      const mesh = new THREE.InstancedMesh(p.geo, p.mat, p.list.length);
+      p.list.forEach((it, i) => { q.setFromEuler(e.set(0, it.rot, 0)); m4.compose(v.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s)); mesh.setMatrixAt(i, m4); });
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      this.scene.add(mesh);
+    }
+  }
+
+  // ---------- 柵・城壁・桟橋・街灯・船 ----------
+  buildStructures() {
+    const w = this.sim.S.world, M = this.mats;
+    const m4 = new THREE.Matrix4();
+    const fences = [], walls = [], docks = [];
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const t = w.tiles[z * W + x];
+      if (t === T.FENCE) fences.push([x, z]); else if (t === T.WALL) walls.push([x, z]); else if (t === T.DOCK) docks.push([x, z]);
+    }
+    const fset = new Set(fences.map(([x, z]) => x + ',' + z));
+    const post = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.45, 0.1).translate(0, 0.22, 0), M.wood, Math.max(1, fences.length));
+    const rails = [];
+    fences.forEach(([x, z], i) => {
+      const y = topY(w.hgt[z * W + x]);
+      post.setMatrixAt(i, m4.makeTranslation(wx(x), y, wz(z)));
+      if (fset.has(x + 1 + ',' + z)) rails.push([wx(x) + 0.5, y, wz(z), 0]);
+      if (fset.has(x + ',' + (z + 1))) rails.push([wx(x), y, wz(z) + 0.5, 1]);
+    });
+    const rail = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.06, 0.05), M.wood, Math.max(1, rails.length * 2));
+    rails.forEach(([x, y, z, r], i) => { for (let k = 0; k < 2; k++) { m4.makeRotationY(r ? Math.PI / 2 : 0).setPosition(x, y + 0.16 + k * 0.17, z); rail.setMatrixAt(i * 2 + k, m4); } });
+    post.castShadow = rail.castShadow = true;
+    this.scene.add(post, rail);
+    // 城壁
+    const wall = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1.4, 1).translate(0, 0.7, 0), M.stone, Math.max(1, walls.length));
+    const cren = new THREE.InstancedMesh(new THREE.BoxGeometry(0.35, 0.3, 0.35).translate(0, 1.55, 0), M.stone, Math.max(1, walls.length));
+    walls.forEach(([x, z], i) => { const y = topY(w.hgt[z * W + x]); wall.setMatrixAt(i, m4.makeTranslation(wx(x), y, wz(z))); cren.setMatrixAt(i, m4.makeTranslation(wx(x) + ((x + z) % 2 ? 0.25 : -0.25), y, wz(z))); });
+    wall.castShadow = cren.castShadow = true; wall.receiveShadow = true;
+    this.scene.add(wall, cren);
+    // 桟橋
+    const dock = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.12, 0.9), M.planks, Math.max(1, docks.length));
+    docks.forEach(([x, z], i) => dock.setMatrixAt(i, m4.makeTranslation(wx(x), SEA_Y + 0.12, wz(z))));
+    dock.receiveShadow = true;
+    this.scene.add(dock);
+    // 船
+    this.boats = [];
+    for (const s of w.settlements) {
+      if (!s.dockEnd) continue;
+      const g = new THREE.Group();
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 0.6), M.hull); hull.position.y = 0.1;
+      const mast = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.6, 0.08), M.wood); mast.position.y = 0.9;
+      const sail = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.0), M.sail); sail.position.set(0.05, 1.0, 0); sail.rotation.y = Math.PI / 2;
+      g.add(hull, mast, sail);
+      for (const o of g.children) o.castShadow = true;
+      g.position.set(wx(s.dockEnd.x) + 1, SEA_Y, wz(s.dockEnd.z) + 1);
+      this.scene.add(g); this.boats.push(g);
+    }
+    // 街灯（町の広場の四隅）
+    const lamps = [];
+    for (const s of w.settlements) for (const [dx, dz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
+      const x = s.x + dx, z = s.z + dz, t = w.tiles[z * W + x];
+      if (t === T.GRASS || t === T.SAVANNA || t === T.ROAD || t === T.PLAZA) lamps.push([x, z]);
+    }
+    const pole = new THREE.InstancedMesh(new THREE.BoxGeometry(0.08, 1.1, 0.08).translate(0, 0.55, 0), M.black, Math.max(1, lamps.length));
+    const head = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.22).translate(0, 1.2, 0), M.lamp, Math.max(1, lamps.length));
+    lamps.forEach(([x, z], i) => { const y = topY(w.hgt[z * W + x]); pole.setMatrixAt(i, m4.makeTranslation(wx(x) + 0.3, y, wz(z) + 0.3)); head.setMatrixAt(i, m4.makeTranslation(wx(x) + 0.3, y, wz(z) + 0.3)); });
+    this.scene.add(pole, head);
   }
 
   // ---------- 建物 ----------
   prism(L, D, Hr) {
-    // x方向に棟が通る切妻屋根
     const hl = L / 2, hd = D / 2;
-    const v = [
-      // 南側の斜面
-      -hl, 0, hd, hl, 0, hd, hl, Hr, 0, -hl, 0, hd, hl, Hr, 0, -hl, Hr, 0,
-      // 北側の斜面
-      hl, 0, -hd, -hl, 0, -hd, -hl, Hr, 0, hl, 0, -hd, -hl, Hr, 0, hl, Hr, 0,
-      // 妻側
-      hl, 0, hd, hl, 0, -hd, hl, Hr, 0,
-      -hl, 0, -hd, -hl, 0, hd, -hl, Hr, 0,
-    ];
+    const v = [-hl, 0, hd, hl, 0, hd, hl, Hr, 0, -hl, 0, hd, hl, Hr, 0, -hl, Hr, 0, hl, 0, -hd, -hl, 0, -hd, -hl, Hr, 0, hl, 0, -hd, -hl, Hr, 0, hl, Hr, 0, hl, 0, hd, hl, 0, -hd, hl, Hr, 0, -hl, 0, -hd, -hl, 0, hd, -hl, Hr, 0];
     const sl = Math.hypot(hd, Hr);
-    const uv = [
-      0, 0, L, 0, L, sl, 0, 0, L, sl, 0, sl,
-      0, 0, L, 0, L, sl, 0, 0, L, sl, 0, sl,
-      0, 0, D, 0, D / 2, Hr, 0, 0, D, 0, D / 2, Hr,
-    ];
+    const uv = [0, 0, L, 0, L, sl, 0, 0, L, sl, 0, sl, 0, 0, L, 0, L, sl, 0, 0, L, sl, 0, sl, 0, 0, D, 0, D / 2, Hr, 0, 0, D, 0, D / 2, Hr];
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.computeVertexNormals();
     return g;
   }
+  box(w, h, d) {
+    const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+    const uv = g.attributes.uv;
+    const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+    for (let f = 0; f < 6; f++) for (let k = 0; k < 6; k++) { const i = f * 6 + k; uv.setXY(i, uv.getX(i) * dims[f][0], uv.getY(i) * dims[f][1]); }
+    return g;
+  }
+  cyl(rt, rb, h, seg = 8) { const g = new THREE.CylinderGeometry(rt, rb, h, seg).toNonIndexed(); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * rb * 4, uv.getY(i) * h); return g; }
+  cone(r, h, seg = 8) { const g = new THREE.ConeGeometry(r, h, seg).toNonIndexed(); const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * r * 4, uv.getY(i) * h); return g; }
+
+  buildingParts(b) {
+    const M = this.mats, parts = [];
+    const add = (geo, mat, x, y, z, ry = 0) => { const g = geo.index ? geo.toNonIndexed() : geo; g.rotateY(ry); g.translate(x, y, z); if (!g.attributes.uv) return; parts.push({ g, mat }); };
+    const south = b.kingdom === 2;
+    const face = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[b.face] || [0, 1];
+    const W_ = b.w - 0.25, D_ = b.d - 0.25;
+    const door = (w, d, h = 0.62) => add(this.box(face[0] ? 0.08 : 0.42, h, face[1] ? 0.08 : 0.42), M.door, face[0] * w / 2 + (face[0] ? 0.02 * face[0] : 0), h / 2, face[1] * d / 2 + (face[1] ? 0.02 * face[1] : 0));
+    const windows = (w, d, y, mat = M.win) => {
+      for (const s of [-1, 1]) {
+        const n = Math.max(1, Math.floor(w));
+        for (let i = 0; i < n; i++) add(this.box(0.22, 0.22, 0.05), mat, -w / 2 + (i + 0.5) * (w / n), y, s * (d / 2 + 0.01));
+        add(this.box(0.05, 0.22, 0.22), mat, s * (w / 2 + 0.01), y, 0);
+      }
+    };
+    const gable = (w, d, wh, mat) => {
+      const along = w >= d;
+      const g = this.prism(along ? w + 0.35 : d + 0.35, along ? d + 0.4 : w + 0.4, Math.min(1.1, 0.55 + Math.min(w, d) * 0.22));
+      add(g, mat, 0, wh, 0, along ? 0 : Math.PI / 2);
+    };
+    const flat = (w, d, wh) => { add(this.box(w + 0.1, 0.12, d + 0.1), M.flatRoof, 0, wh + 0.06, 0); for (const [x, z] of [[-w / 2, 0], [w / 2, 0]]) add(this.box(0.1, 0.2, d), M.adobe, x, wh + 0.2, z); };
+    const houseLike = (wh, wall, roof) => {
+      add(this.box(W_, wh, D_), south ? M.adobe : wall, 0, wh / 2, 0);
+      if (south && b.roof !== 'tile') flat(W_, D_, wh); else gable(W_, D_, wh, south ? M.tileRoofS : roof);
+      if (!south) add(this.box(0.28, 0.7, 0.28), M.darkStone, W_ * 0.25, wh + 0.6, D_ * 0.18);
+      windows(W_, D_, wh * 0.6);
+      door(W_, D_);
+    };
+    const banner = (x, z, y, color) => { add(this.box(0.06, 1.4, 0.06), M.wood, x, y + 0.7, z); add(new THREE.PlaneGeometry(0.5, 0.35), this.mats['banner' + color] || M.red, x + 0.28, y + 1.2, z); };
+    const kcol = KINGDOMS[b.kingdom]?.color || '#c93a32';
+    switch (b.type) {
+      case 'house': houseLike(1.15, M.timber, b.roof === 'tile' ? M.tileRoof : M.thatch); break;
+      case 'bakery': houseLike(1.2, M.timber, M.thatch); break;
+      case 'workshop': houseLike(1.2, M.timber2, M.thatch); break;
+      case 'smithy': houseLike(1.15, M.timber2, M.greyRoof); add(this.box(0.35, 0.3, 0.2), M.black, face[0] * (W_ / 2 + 0.45), 0.15, face[1] * (D_ / 2 + 0.45)); break;
+      case 'tavern': houseLike(1.5, M.timber, M.tileRoof); add(this.box(0.4, 0.28, 0.05), M.gold, face[0] * (W_ / 2 + 0.15) + (face[0] ? 0 : 0.6), 1.05, face[1] * (D_ / 2 + 0.15) + (face[1] ? 0 : 0.6)); break;
+      case 'guild': houseLike(1.4, M.timber2, M.slate); banner(W_ / 2 - 0.2, D_ / 2 - 0.2, 1.4, kcol); break;
+      case 'mansion': houseLike(2.1, M.timber2, M.slate); windows(W_, D_, 0.6); add(this.box(0.28, 0.8, 0.28), M.darkStone, -W_ * 0.3, 2.9, 0); break;
+      case 'barracks':
+        add(this.box(W_, 1.3, D_), south ? M.sandstone : M.stone, 0, 0.65, 0);
+        for (let i = 0; i < Math.floor(W_); i++) add(this.box(0.3, 0.25, 0.3), south ? M.sandstone : M.stone, -W_ / 2 + 0.3 + i, 1.42, D_ / 2 - 0.15);
+        windows(W_, D_, 0.8); door(W_, D_); banner(0, 0, 1.3, kcol);
+        break;
+      case 'prison':
+        add(this.box(W_, 1.5, D_), M.darkStone, 0, 0.75, 0); windows(W_, D_, 1.0, M.black); door(W_, D_, 0.8);
+        add(this.box(W_ + 0.1, 0.1, D_ + 0.1), M.darkStone, 0, 1.55, 0);
+        break;
+      case 'church': {
+        const wall = south ? M.sandstone : M.stone;
+        add(this.box(W_, 1.6, D_), wall, 0, 0.8, 0);
+        gable(W_, D_, 1.6, south ? M.tileRoofS : M.greyRoof);
+        add(this.box(0.8, 1.6, 0.8), wall, 0, 2.4, 0);
+        add(this.cone(0.62, 1.4, 4), south ? M.tileRoofS : M.greyRoof, 0, 3.9, 0, Math.PI / 4);
+        add(this.box(0.08, 0.5, 0.08), M.gold, 0, 4.8, 0); add(this.box(0.3, 0.08, 0.08), M.gold, 0, 4.75, 0);
+        windows(W_, D_, 1.0); door(W_, D_, 0.8);
+        break;
+      }
+      case 'magictower':
+        add(this.cyl(0.9, 1.1, 4.2, 8), b.kingdom === 1 ? M.stone : M.sandstone, 0, 2.1, 0);
+        add(this.cone(1.3, 2.2, 8), M.purple, 0, 5.3, 0);
+        for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.4; add(this.box(0.2, 0.34, 0.05), M.win, Math.sin(a) * 1.0, 3.1, Math.cos(a) * 1.0, a); }
+        door(1.8, 1.8, 0.7);
+        break;
+      case 'market': {
+        for (let i = 0; i < Math.floor(W_ / 1.3); i++) {
+          const x = -W_ / 2 + 0.6 + i * 1.3;
+          add(this.box(1.0, 0.5, 0.6), M.planks, x, 0.25, 0.1);
+          add(this.box(1.15, 0.05, 0.9), i % 2 ? M.awning2 : M.awning, x, 1.15, 0);
+          for (const px of [-0.5, 0.5]) add(this.box(0.06, 1.2, 0.06), M.wood, x + px, 0.6, -0.35);
+          add(this.box(0.18, 0.12, 0.18), M.gold, x - 0.25, 0.56, 0.1); add(this.box(0.18, 0.12, 0.18), M.red, x, 0.56, 0.1);
+        }
+        break;
+      }
+      case 'well':
+        add(this.cyl(0.42, 0.45, 0.45, 8), M.darkStone, 0, 0.22, 0);
+        for (const s of [-1, 1]) add(this.box(0.07, 0.9, 0.07), M.wood, s * 0.38, 0.7, 0);
+        add(this.prism(1.0, 0.9, 0.35), M.thatch, 0, 1.1, 0);
+        break;
+      case 'castle': {
+        const wall = south ? M.sandstone : M.stone;
+        const roof = this.mats['banner' + kcol] ? new THREE.MeshLambertMaterial({ map: TEX.slate, color: kcol, side: THREE.DoubleSide }) : M.slate;
+        const hw = b.w / 2 - 0.3, hd = b.d / 2 - 0.3;
+        // 外壁
+        add(this.box(b.w - 0.6, 1.5, 0.4), wall, 0, 0.75, -hd); add(this.box(b.w - 0.6, 1.5, 0.4), wall, -0.0, 0.75, hd);
+        add(this.box(0.4, 1.5, b.d - 0.6), wall, -hw, 0.75, 0); add(this.box(0.4, 1.5, b.d - 0.6), wall, hw, 0.75, 0);
+        for (let i = -hw; i <= hw; i += 0.7) { add(this.box(0.3, 0.3, 0.45), wall, i, 1.65, -hd); add(this.box(0.3, 0.3, 0.45), wall, i, 1.65, hd); }
+        add(this.box(1.1, 1.0, 0.45), M.black, 0, 0.5, hd + 0.02);
+        // 四隅の塔
+        for (const [x, z] of [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]]) { add(this.cyl(0.7, 0.8, 3.0, 8), wall, x, 1.5, z); add(this.cone(0.95, 1.6, 8), roof, x, 3.8, z); }
+        // 天守
+        add(this.box(4, 3.4, 2.6), wall, 0, 1.7, -0.6);
+        const g = this.prism(4.4, 3.0, 1.5); add(g, roof, 0, 3.4, -0.6);
+        add(this.cyl(0.8, 0.9, 5.2, 8), wall, 1.2, 2.6, -1.2); add(this.cone(1.1, 2.2, 8), roof, 1.2, 6.3, -1.2);
+        for (let i = 0; i < 3; i++) add(this.box(0.25, 0.4, 0.05), M.win, -1.2 + i * 1.2, 2.4, 0.72);
+        banner(1.2, -1.2, 7.3, kcol); banner(-hw, hd, 4.4, kcol); banner(hw, hd, 4.4, kcol);
+        this.parts_castle = this.parts_castle || [];
+        break;
+      }
+      case 'demoncastle': {
+        add(this.box(6, 3.2, 5.5), M.darkBrick, 0, 1.6, -0.3);
+        add(this.prism(6.4, 5.8, 2), M.demonRoof, 0, 3.2, -0.3);
+        for (const [x, z] of [[-3, -3], [3, -3], [-3, 2.8], [3, 2.8]]) { add(this.cyl(0.7, 0.9, 4.5, 6), M.darkBrick, x, 2.25, z); add(this.cone(0.9, 3.2, 6), M.demonRoof, x, 6.1, z); }
+        add(this.cyl(1.1, 1.3, 7.5, 6), M.darkBrick, 0, 3.75, -1.2); add(this.cone(1.5, 4.5, 6), M.demonRoof, 0, 9.7, -1.2);
+        for (let i = 0; i < 5; i++) add(this.box(0.3, 0.5, 0.05), M.redGlow, -2 + i, 2.2, 2.46);
+        add(this.box(1.4, 1.8, 0.1), M.black, 0, 0.9, 2.5);
+        for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; add(this.cone(0.18, 1.4, 4), M.black, Math.cos(a) * 3.6, 0.7, Math.sin(a) * 3.4); }
+        break;
+      }
+      case 'pyramid':
+        for (let i = 0; i < 6; i++) { const s = b.w - 0.2 - i * 1.15; add(this.box(s, 0.7, s), M.sandstone, 0, 0.35 + i * 0.7, 0); }
+        add(this.box(0.9, 1.0, 0.1), M.black, 0, 0.5, b.d / 2 - 0.05);
+        break;
+      case 'cave': {
+        const g = new THREE.DodecahedronGeometry(1.6, 0).scale(1.1, 0.8, 0.9); add(g, M.darkStone, 0, 0.6, -0.3);
+        add(this.box(1.0, 1.0, 0.2), M.black, 0, 0.5, b.d / 2 - 0.1);
+        break;
+      }
+      case 'observatory':
+        add(this.cyl(0.8, 0.9, 3.6, 8), M.stone, 0, 1.8, 0);
+        add(new THREE.SphereGeometry(0.9, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), M.dome, 0, 3.6, 0);
+        { const t = this.cyl(0.12, 0.16, 1.4, 6); t.rotateZ(0.9); add(t, M.gold, 0.5, 4.2, 0); }
+        add(this.box(0.4, 0.6, 0.08), M.door, 0, 0.3, 0.86);
+        break;
+      case 'hideout':
+        for (const [x, z] of [[-0.6, -0.5], [0.7, 0.4]]) add(this.cone(0.8, 1.2, 5), M.cloth, x, 0.6, z);
+        for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; add(this.box(0.12, 0.9, 0.12), M.wood, Math.cos(a) * 1.35, 0.45, Math.sin(a) * 1.35); }
+        add(this.box(0.3, 0.2, 0.3), M.fire, 0, 0.1, 0);
+        break;
+      case 'mine':
+        add(this.box(1.6, 0.14, 0.2), M.wood, 0, 1.0, 0.3); for (const s of [-1, 1]) add(this.box(0.14, 1.0, 0.14), M.wood, s * 0.7, 0.5, 0.3);
+        add(this.box(1.2, 0.9, 0.1), M.black, 0, 0.45, 0.25);
+        add(this.box(0.5, 0.3, 0.35), M.darkStone, 1.0, 0.15, 0.6);
+        break;
+      case 'ruins':
+        for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, h = 0.4 + hsh(b.x, b.z, i) * 1.6; add(this.cyl(0.18, 0.2, h, 6), M.stone, Math.cos(a) * 1.1, h / 2, Math.sin(a) * 1.1); }
+        add(this.box(1.2, 0.3, 0.5), M.stone, 0.2, 0.15, -0.2, 0.4);
+        break;
+      case 'lighthouse':
+        for (let i = 0; i < 5; i++) add(this.cyl(0.42 - i * 0.03, 0.45 - i * 0.03, 1, 8), i % 2 ? M.red : M.white, 0, 0.5 + i, 0);
+        add(this.box(0.5, 0.4, 0.5), M.lamp, 0, 5.2, 0); add(this.cone(0.45, 0.5, 8), M.red, 0, 5.65, 0);
+        break;
+      default: houseLike(1.15, M.timber, M.thatch);
+    }
+    return parts;
+  }
 
   buildBuildings() {
-    this.roofs = [];
-    this.buildingMeshes = [];
-    const winMat = new THREE.MeshLambertMaterial({ color: '#3a2f28', emissive: '#ffcf6a', emissiveIntensity: 0 });
-    this.nightMats.push(winMat);
-    const doorMat = new THREE.MeshLambertMaterial({ color: '#4a2c18' });
-    for (const b of this.sim.S.world.buildings) {
-      const g = new THREE.Group();
-      g.position.set(wx(b.x) + (b.w - 1) / 2, 0, wz(b.z) + (b.d - 1) / 2);
-      g.userData.building = b.id;
-      const add = (mesh, x, y, z) => { mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.building = b.id; g.add(mesh); return mesh; };
-      const wallTex = (tex, w, h) => { const t = tex.clone(); t.needsUpdate = true; t.repeat.set(w, h); return new THREE.MeshLambertMaterial({ map: t }); };
-      const roof = (L, D, Hr, tex, y, rotate) => {
-        const t = tex.clone(); t.needsUpdate = true;
-        const mesh = new THREE.Mesh(this.prism(L, D, Hr), new THREE.MeshLambertMaterial({ map: t, side: THREE.DoubleSide }));
-        mesh.userData.roofTex = t;
-        if (rotate) mesh.rotation.y = Math.PI / 2;
-        this.roofs.push(mesh);
-        return add(mesh, 0, y, 0);
-      };
-      const faceVec = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[b.face] || [0, 1];
-      const door = (w, d, hgt = 0.62) => {
-        const m = add(new THREE.Mesh(new THREE.BoxGeometry(faceVec[0] ? 0.08 : 0.4, hgt, faceVec[1] ? 0.08 : 0.4), doorMat), 0, hgt / 2, 0);
-        const dx = wx(b.door.x) - g.position.x, dz = wz(b.door.z) - g.position.z;
-        m.position.x = faceVec[0] ? faceVec[0] * w / 2 : dx;
-        m.position.z = faceVec[1] ? faceVec[1] * d / 2 : dz;
-      };
-      const windows = (w, d, y) => {
-        const geo = new THREE.BoxGeometry(0.22, 0.22, 0.05);
-        for (const s of [-1, 1]) {
-          for (let i = 0; i < Math.max(1, Math.floor(w)); i++) {
-            const x = -w / 2 + (i + 0.5) * (w / Math.max(1, Math.floor(w)));
-            add(new THREE.Mesh(geo, winMat), x, y, s * (d / 2 + 0.01));
-          }
-          const wz_ = new THREE.Mesh(geo, winMat); wz_.rotation.y = Math.PI / 2;
-          add(wz_, s * (w / 2 + 0.01), y, 0);
-        }
-      };
-      const W_ = b.w - 0.25, D_ = b.d - 0.25;
-      switch (b.type) {
-        case 'house': case 'bakery': case 'smithy': case 'workshop': case 'tavern': {
-          const wh = b.type === 'tavern' ? 1.5 : 1.15;
-          add(new THREE.Mesh(new THREE.BoxGeometry(W_, wh, D_), wallTex(b.type === 'smithy' ? TEX.timber2 : TEX.timber, W_, wh)), 0, wh / 2, 0);
-          const along = W_ >= D_;
-          const rt = b.type === 'house' ? (b.roof === 'tile' ? TEX.tileRoof : TEX.thatch) : b.type === 'tavern' ? TEX.tileRoof : b.type === 'smithy' ? TEX.greyRoof : TEX.thatch;
-          roof(along ? W_ + 0.35 : D_ + 0.35, along ? D_ + 0.4 : W_ + 0.4, b.type === 'tavern' ? 1.1 : 0.9, rt, wh, !along);
-          add(new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.7, 0.28), new THREE.MeshLambertMaterial({ map: TEX.darkStone })), W_ * 0.25, wh + 0.6, D_ * 0.18);
-          windows(W_, D_, wh * 0.6);
-          door(W_, D_);
-          if (b.type !== 'house') {
-            const sign = add(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.05), new THREE.MeshLambertMaterial({ color: { bakery: '#e0b060', smithy: '#555a60', tavern: '#c9a23a', workshop: '#8a5a34' }[b.type] })), 0, 1.0, 0);
-            sign.position.x = faceVec[0] ? faceVec[0] * (W_ / 2 + 0.15) : 0.5;
-            sign.position.z = faceVec[1] ? faceVec[1] * (D_ / 2 + 0.15) : 0.5;
-            if (faceVec[0]) sign.rotation.y = Math.PI / 2;
-          }
-          if (b.type === 'smithy') add(new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 0.2), new THREE.MeshLambertMaterial({ color: '#333' })), faceVec[0] * (W_ / 2 + 0.45), 0.15, faceVec[1] * (D_ / 2 + 0.45));
-          if (b.type === 'workshop') for (let i = 0; i < 3; i++) { const log = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.9, 6), new THREE.MeshLambertMaterial({ color: '#8a5a34' })), -W_ / 2 - 0.35, 0.1 + i * 0.16, (i - 1) * 0.1); log.rotation.x = Math.PI / 2; }
-          break;
-        }
-        case 'hall': {
-          const wh = 1.9;
-          const bw = W_ - 1.4, bd = D_ - 1.6;
-          add(new THREE.Mesh(new THREE.BoxGeometry(bw, wh, bd), wallTex(TEX.stone, bw, wh)), 0.4, wh / 2, 0.3);
-          const rm = roof(bw + 0.4, bd + 0.5, 1.3, TEX.slate, wh, false); rm.position.x = 0.4; rm.position.z = 0.3;
-          windows(bw, bd, 1.2);
-          windows(bw, bd, 0.55);
-          const tower = add(new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.1, 4.4, 8), wallTex(TEX.stone, 4, 3)), -1.6, 2.2, -1.4);
-          tower.userData.building = b.id;
-          const cone = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.3, 8), new THREE.MeshLambertMaterial({ map: TEX.slate.clone() }));
-          cone.material.map.needsUpdate = true; cone.material.map.repeat.set(4, 2);
-          cone.userData.roofTex = cone.material.map; this.roofs.push(cone);
-          add(cone, -1.6, 4.4 + 1.15, -1.4);
-          for (let i = 0; i < 4; i++) {
-            const a = (i / 4) * Math.PI * 2 + Math.PI / 8;
-            const wmesh = add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.34, 0.05), winMat), -1.6 + Math.sin(a) * 1.02, 3.4, -1.4 + Math.cos(a) * 1.02);
-            wmesh.rotation.y = a;
-          }
-          const bell = add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 0.25, 8), new THREE.MeshLambertMaterial({ color: '#c9a23a' })), -1.6, 4.0, -0.35);
-          this.bell = bell;
-          door(W_, D_, 0.8);
-          break;
-        }
-        case 'chapel': {
-          const wh = 1.6;
-          add(new THREE.Mesh(new THREE.BoxGeometry(W_, wh, D_), wallTex(TEX.stone, W_, wh)), 0, wh / 2, 0);
-          roof(D_ + 0.3, W_ + 0.4, 1.2, TEX.greyRoof, wh, true);
-          add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.6), wallTex(TEX.stone, 1, 1)), 0, wh + 1.0, D_ / 2 - 0.5);
-          const sp = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.2, 4), new THREE.MeshLambertMaterial({ map: TEX.greyRoof.clone() }));
-          sp.material.map.needsUpdate = true; sp.userData.roofTex = sp.material.map; this.roofs.push(sp);
-          sp.rotation.y = Math.PI / 4;
-          add(sp, 0, wh + 2.1, D_ / 2 - 0.5);
-          windows(W_, D_, 0.9);
-          door(W_, D_, 0.8);
-          break;
-        }
-        case 'market': {
-          for (let i = 0; i < 3; i++) {
-            const x = -W_ / 2 + 0.6 + i * 1.3;
-            add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.6), new THREE.MeshLambertMaterial({ map: TEX.wood })), x, 0.25, 0.1);
-            for (const [gx, gc] of [[-0.25, '#e0b060'], [0, '#d9463a'], [0.25, '#6cb846']]) add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.18), new THREE.MeshLambertMaterial({ color: gc })), x + gx, 0.56, 0.1);
-            const aw = add(new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.05, 0.9), new THREE.MeshLambertMaterial({ map: i % 2 ? TEX.awning2 : TEX.awning })), x, 1.15, 0.0);
-            aw.rotation.x = -0.35;
-            for (const px of [-0.5, 0.5]) add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.2, 0.06), new THREE.MeshLambertMaterial({ color: '#5a3a22' })), x + px, 0.6, -0.35);
-          }
-          break;
-        }
-        case 'well': {
-          add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.45, 0.45, 8), new THREE.MeshLambertMaterial({ map: TEX.darkStone })), 0, 0.22, 0);
-          add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.05, 8), new THREE.MeshLambertMaterial({ color: '#2f6394' })), 0, 0.4, 0);
-          for (const s of [-1, 1]) add(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.9, 0.07), new THREE.MeshLambertMaterial({ color: '#5a3a22' })), s * 0.38, 0.7, 0);
-          roof(1.0, 0.9, 0.35, TEX.thatch, 1.1, false);
-          break;
-        }
-      }
-      this.scene.add(g);
-      this.buildingMeshes.push(g);
+    const byMat = new Map();
+    for (const b of this.sim.S.world.buildings) this.addBuildingParts(b, byMat);
+    for (const [mat, geos] of byMat) {
+      const merged = mergeGeometries(geos, false);
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      this.scene.add(mesh);
     }
   }
-
-  // ---------- 木 ----------
-  buildTrees() {
-    const world = this.sim.S.world;
-    const list = [];
-    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) if (world.tiles[z * W + x] === T.TREE) list.push([x, z]);
-    const hsh = (x, z) => ((x * 73856093) ^ (z * 19349663)) >>> 0;
-    const pines = list.filter(([x, z]) => hsh(x, z) % 10 < 6), rounds = list.filter(([x, z]) => hsh(x, z) % 10 >= 6);
-    const trunkGeo = new THREE.BoxGeometry(0.16, 0.5, 0.16); trunkGeo.translate(0, 0.25, 0);
-    const trunkMat = new THREE.MeshLambertMaterial({ color: '#6b4226' });
-    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, list.length);
-    const c1 = new THREE.ConeGeometry(0.5, 0.9, 6); c1.translate(0, 0.8, 0);
-    const c2 = new THREE.ConeGeometry(0.36, 0.75, 6); c2.translate(0, 1.3, 0);
-    this.pineMat = new THREE.MeshLambertMaterial({ color: '#2f6b3a', flatShading: true });
-    this.pineMat2 = new THREE.MeshLambertMaterial({ color: '#3d8247', flatShading: true });
-    const p1 = new THREE.InstancedMesh(c1, this.pineMat, pines.length);
-    const p2 = new THREE.InstancedMesh(c2, this.pineMat2, pines.length);
-    const cr = new THREE.IcosahedronGeometry(0.48, 0); cr.translate(0, 0.85, 0);
-    this.crownMat = new THREE.MeshLambertMaterial({ color: '#4d9a3c', flatShading: true });
-    const rc = new THREE.InstancedMesh(cr, this.crownMat, rounds.length);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), e = new THREE.Euler();
-    let ti = 0;
-    const place = (mesh, i, x, z) => {
-      const h = hsh(x, z);
-      const sc = 0.85 + (h % 100) / 250;
-      p.set(wx(x) + ((h >> 3) % 10 - 5) / 40, 0, wz(z) + ((h >> 7) % 10 - 5) / 40);
-      q.setFromEuler(e.set(0, (h % 628) / 100, 0)); s.set(sc, sc, sc);
-      m.compose(p, q, s); mesh.setMatrixAt(i, m);
-      return m;
-    };
-    pines.forEach(([x, z], i) => { place(p1, i, x, z); place(p2, i, x, z); trunks.setMatrixAt(ti++, m); });
-    rounds.forEach(([x, z], i) => { place(rc, i, x, z); trunks.setMatrixAt(ti++, m); });
-    // 広場のリンデンの大樹
-    for (const mesh of [trunks, p1, p2, rc]) { mesh.castShadow = true; mesh.receiveShadow = true; this.scene.add(mesh); }
-    const big = new THREE.Group();
-    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 1.4, 6), trunkMat); tr.position.y = 0.7;
-    const cm = new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 0), this.crownMat); cm.position.y = 2.0;
-    const cm2 = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), this.crownMat); cm2.position.set(0.6, 2.6, 0.3);
-    for (const x of [tr, cm, cm2]) { x.castShadow = true; big.add(x); }
-    big.position.set(wx(26), 0, wx(26));
-    this.scene.add(big);
-  }
-
-  buildFences() {
-    const world = this.sim.S.world;
-    const pts = [];
-    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) if (world.tiles[z * W + x] === T.FENCE) pts.push([x, z]);
-    for (const f of world.fences) pts.push([f.x, f.z]);
-    const set = new Set(pts.map(([x, z]) => x + ',' + z));
-    const mat = new THREE.MeshLambertMaterial({ color: '#7a5230' });
-    const post = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.45, 0.1).translate(0, 0.22, 0), mat, pts.length);
-    const rails = [];
-    pts.forEach(([x, z], i) => {
-      post.setMatrixAt(i, new THREE.Matrix4().makeTranslation(wx(x), 0, wz(z)));
-      if (set.has(x + 1 + ',' + z)) rails.push([wx(x) + 0.5, wz(z), 0]);
-      if (set.has(x + ',' + (z + 1))) rails.push([wx(x), wz(z) + 0.5, 1]);
-    });
-    const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.06, 0.05), mat, rails.length * 2);
-    const m = new THREE.Matrix4();
-    rails.forEach(([x, z, rot], i) => {
-      for (let k = 0; k < 2; k++) {
-        m.makeRotationY(rot ? Math.PI / 2 : 0).setPosition(x, 0.16 + k * 0.17, z);
-        railMesh.setMatrixAt(i * 2 + k, m);
-      }
-    });
-    post.castShadow = railMesh.castShadow = true;
-    this.scene.add(post, railMesh);
-  }
-
-  buildLamps() {
-    const lampMat = new THREE.MeshLambertMaterial({ color: '#40362c', emissive: '#ffd27a', emissiveIntensity: 0 });
-    this.nightMats.push(lampMat);
-    for (const l of this.sim.S.world.lamps) {
-      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.08), new THREE.MeshLambertMaterial({ color: '#2e2a26' }));
-      pole.position.set(wx(l.x), 0.55, wz(l.z)); pole.castShadow = true;
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), lampMat);
-      head.position.set(wx(l.x), 1.2, wz(l.z));
-      this.scene.add(pole, head);
-    }
-    this.nightLights = [];
-    for (const [x, z] of [[24, 24], [17, 26], [28, 20]]) {
-      const pl = new THREE.PointLight('#ffb85a', 0, 7, 1.6);
-      pl.position.set(wx(x), 1.6, wz(z));
-      this.scene.add(pl);
-      this.nightLights.push(pl);
+  addBuildingParts(b, byMat) {
+    const w = this.sim.S.world;
+    const cx = wx(b.x) + (b.w - 1) / 2, cz = wz(b.z) + (b.d - 1) / 2;
+    const y = topY(w.hgt[b.door.z * W + b.door.x]);
+    for (const { g, mat } of this.buildingParts(b)) {
+      g.translate(cx, y, cz);
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (byMat) { if (!byMat.has(mat)) byMat.set(mat, []); byMat.get(mat).push(g); }
+      else { const m = new THREE.Mesh(g, mat); m.castShadow = m.receiveShadow = true; this.scene.add(m); }
     }
   }
-
-  buildSheep() {
-    const pa = this.sim.S.world.pasture;
-    this.sheep = [];
-    const body = new THREE.BoxGeometry(0.42, 0.28, 0.3), head = new THREE.BoxGeometry(0.14, 0.16, 0.16);
-    const wool = new THREE.MeshLambertMaterial({ color: '#f4f1ea' }), face = new THREE.MeshLambertMaterial({ color: '#2e2622' });
-    for (let i = 0; i < 7; i++) {
-      const g = new THREE.Group();
-      const b = new THREE.Mesh(body, wool); b.position.y = 0.26; b.castShadow = true;
-      const h = new THREE.Mesh(head, face); h.position.set(0.26, 0.32, 0);
-      for (const [lx, lz] of [[-0.14, -0.09], [0.14, -0.09], [-0.14, 0.09], [0.14, 0.09]]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.05), face); l.position.set(lx, 0.07, lz); g.add(l); }
-      g.add(b, h);
-      const x = pa.x0 + Math.random() * (pa.x1 - pa.x0), z = pa.z0 + Math.random() * (pa.z1 - pa.z0);
-      g.position.set(wx(x), 0, wz(z));
-      g.userData = { tx: x, tz: z, x, z, wait: Math.random() * 5 };
-      this.scene.add(g);
-      this.sheep.push(g);
-    }
-  }
+  addBuilding(id) { this.addBuildingParts(this.sim.building(id), null); }
 
   buildWeather() {
-    const n = 1400;
+    const n = 1600;
     const pos = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * W; pos[i * 3 + 1] = Math.random() * 14; pos[i * 3 + 2] = (Math.random() - 0.5) * H; }
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - 0.5) * 60; pos[i * 3 + 1] = Math.random() * 16; pos[i * 3 + 2] = (Math.random() - 0.5) * 60; }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.precip = new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfe3ff', size: 2, sizeAttenuation: false, transparent: true, opacity: 0.8 }));
     this.precip.visible = false;
     this.scene.add(this.precip);
   }
 
-  // ---------- 住人 ----------
-  ageGroup(p) { const a = this.sim.ageOf(p); return a < 13 ? 'child' : a >= 64 ? 'elder' : 'adult'; }
-  ensurePerson(p) {
-    let e = this.people.get(p.id);
-    const grp = this.ageGroup(p);
-    if (e && e.grp === grp) return e;
-    if (e) { this.scene.remove(e.sprite, e.shadow); e.sprite.material.map.dispose(); e.sprite.material.dispose(); }
-    const tex = personTexture(p, grp);
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.5 });
+  // ---------- 生き物のスプライト ----------
+  ageKey(p) { const a = this.sim.ageOf(p); return a < 5 ? 'baby' : a < 13 ? 'child' : a >= 64 ? 'elder' : 'adult'; }
+  makeSheet(e, isHuman) {
+    let cv = null;
+    try {
+      if (isHuman && SPR.drawPerson) cv = SPR.drawPerson(e, { age: this.sim.ageOf(e) });
+      else if (!isHuman && SPR.drawCreature) cv = SPR.drawCreature(e, SPECIES[e.sp]);
+    } catch (err) { cv = null; }
+    if (!cv) {
+      if (isHuman) { const t = personTexture(e, this.ageKey(e) === 'baby' ? 'child' : this.ageKey(e)); return { tex: t, cols: 1, rows: 1, fw: 16, fh: 20, worldH: 0.95 }; }
+      return null;
+    }
+    const u = cv.userData || {};
+    const tex = new THREE.CanvasTexture(cv);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.colorSpace = THREE.SRGBColorSpace;
+    const cols = u.cols || 1, rows = u.rows || 1;
+    const fw = u.frameW || cv.width / cols, fh = u.frameH || cv.height / rows;
+    let worldH = u.worldH || (isHuman ? 0.95 : (SPECIES[e.sp]?.size || 1) * 0.7);
+    if (isHuman) { const a = this.sim.ageOf(e); if (!u.worldH) worldH = a < 5 ? 0.5 : a < 13 ? 0.7 : 0.95; }
+    return { tex, cols, rows, fw, fh, worldH };
+  }
+  ensure(e, isHuman) {
+    let r = this.ents.get(e.id);
+    const key = isHuman ? `${this.ageKey(e)}|${e.job}|${e.rank}|${e.jail != null}` : `${e.sp}|${e.lv}`;
+    if (r && r.key === key) return r;
+    if (r) this.drop(e.id);
+    const sheet = this.makeSheet(e, isHuman);
+    if (!sheet) return null;
+    const mat = new THREE.SpriteMaterial({ map: sheet.tex, transparent: true, alphaTest: 0.5 });
     const sprite = new THREE.Sprite(mat);
     sprite.center.set(0.5, 0);
-    const age = this.sim.ageOf(p);
-    const s = age < 3 ? 0.55 : grp === 'child' ? 0.7 + age * 0.02 : 1;
-    sprite.scale.set(0.72 * s, 0.9 * s, 1);
-    sprite.userData.person = p.id;
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.2 * s, 10), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.25, depthWrite: false }));
+    const hgt = sheet.worldH, wid = hgt * sheet.fw / sheet.fh;
+    sprite.scale.set(wid, hgt, 1);
+    sheet.tex.repeat.set(1 / sheet.cols, 1 / sheet.rows);
+    sprite.userData = { id: e.id, human: isHuman };
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(Math.min(0.5, wid * 0.35), 10), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.25, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2;
     this.scene.add(sprite, shadow);
-    e = { sprite, shadow, grp, lastX: 0, flip: false, phase: Math.random() * 6 };
-    this.people.set(p.id, e);
-    return e;
+    r = { sprite, shadow, sheet, key, dir: 0, lx: e.pos.x, lz: e.pos.z, phase: Math.random() * 10, flash: 0 };
+    this.ents.set(e.id, r);
+    return r;
   }
-  removePerson(id) {
-    const e = this.people.get(id);
-    if (!e) return;
-    this.scene.remove(e.sprite, e.shadow);
-    e.sprite.material.map.dispose(); e.sprite.material.dispose();
-    this.people.delete(id);
+  drop(id) {
+    const r = this.ents.get(id);
+    if (!r) return;
+    this.scene.remove(r.sprite, r.shadow);
+    r.sheet.tex.dispose(); r.sprite.material.dispose(); r.shadow.geometry.dispose();
+    this.ents.delete(id);
+  }
+  hit(id) { const r = this.ents.get(id); if (r) r.flash = 0.18; }
+
+  entityPos(e) {
+    const w = this.sim.S.world;
+    if (e.inside != null) {
+      const b = this.sim.building(e.inside);
+      return new THREE.Vector3(wx(b.x) + (b.w - 1) / 2, topY(b.h || 0) + 1.8, wz(b.z) + (b.d - 1) / 2);
+    }
+    const x = Math.round(e.pos.x), z = Math.round(e.pos.z);
+    const t = w.tiles[z * W + x];
+    let y = (t === T.SEA || t === T.DEEP) ? SEA_Y : t === T.DOCK ? SEA_Y + 0.18 : topY(w.hgt[z * W + x] || 0);
+    return new THREE.Vector3(wx(e.pos.x), y, wz(e.pos.z));
   }
 
-  personWorldPos(p) {
-    if (p.inside) {
-      const b = this.sim.building(p.inside);
-      return new THREE.Vector3(wx(b.x) + (b.w - 1) / 2, b.type === 'hall' ? 2.4 : 1.8, wz(b.z) + (b.d - 1) / 2);
-    }
-    return new THREE.Vector3(wx(p.pos.x), 0, wz(p.pos.z));
+  updateEntities(realDt, now) {
+    const sim = this.sim;
+    const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
+    const fwd = new THREE.Vector2(camDir.x, camDir.z).normalize();
+    const right = new THREE.Vector2(-fwd.y, fwd.x);
+    const seen = new Set();
+    const t = this.controls.target;
+    const viewR = 22 / this.camera.zoom + 8;
+    const place = (e, isHuman) => {
+      const near = Math.abs(e.pos.x - (t.x + W / 2)) < viewR * 1.6 && Math.abs(e.pos.z - (t.z + H / 2)) < viewR * 1.6;
+      if (!near && !this.ents.has(e.id)) return;
+      const r = this.ensure(e, isHuman);
+      if (!r) return;
+      seen.add(e.id);
+      const vis = e.inside == null && !e.dormant;
+      r.sprite.visible = r.shadow.visible = vis && near;
+      if (!r.sprite.visible) return;
+      const p = this.entityPos(e);
+      const dx = e.pos.x - r.lx, dz = e.pos.z - r.lz;
+      const moved = Math.hypot(dx, dz);
+      let target = null;
+      if (e.fight) { const o = sim.entity(e.fight.target); if (o) target = o; }
+      const vx = target ? target.pos.x - e.pos.x : dx, vz = target ? target.pos.z - e.pos.z : dz;
+      if (Math.hypot(vx, vz) > 0.001) {
+        const sx = vx * right.x + vz * right.y, sf = vx * fwd.x + vz * fwd.y;
+        r.dir = Math.abs(sx) > Math.abs(sf) ? (sx > 0 ? 2 : 1) : (sf > 0 ? 3 : 0);
+      }
+      r.lx = e.pos.x; r.lz = e.pos.z;
+      const walking = moved > 0.0005 || !!e.fight;
+      if (walking) r.phase += realDt * (e.fight ? 10 : 7);
+      const seq = [0, 1, 2, 1];
+      const frame = r.sheet.cols >= 3 ? (walking ? seq[Math.floor(r.phase) % 4] : 1) : 0;
+      const row = r.sheet.rows >= 4 ? r.dir : 0;
+      r.sheet.tex.offset.set(frame / r.sheet.cols, 1 - (row + 1) / r.sheet.rows);
+      const def = !isHuman ? SPECIES[e.sp] : null;
+      let y = p.y + 0.01;
+      if (def?.flies) y += 1.1 + Math.sin(now * 3 + r.phase) * 0.1;
+      if (def?.swims) y = SEA_Y - 0.05 + Math.sin(now * 2 + r.phase) * 0.05;
+      if (r.sheet.cols < 3 && walking) y += Math.abs(Math.sin(r.phase * 1.5)) * 0.06;
+      r.sprite.position.set(p.x, y, p.z);
+      r.shadow.position.set(p.x, p.y + 0.015, p.z);
+      r.shadow.visible = !def?.swims;
+      if (r.flash > 0) { r.flash -= realDt; r.sprite.material.color.set('#ff6a6a'); } else r.sprite.material.color.set('#ffffff');
+    };
+    for (const p of sim.living()) place(p, true);
+    for (const c of Object.values(sim.S.creatures)) place(c, false);
+    for (const id of [...this.ents.keys()]) if (!seen.has(id)) this.drop(id);
   }
 
   // ---------- 毎フレーム ----------
@@ -455,158 +646,116 @@ export class Renderer {
     const si = sim.seasonIdx();
     if (si !== this.lastSeason) { this.applySeason(si); this.lastSeason = si; }
     const now = performance.now() / 1000;
-    const camDir = new THREE.Vector3(); this.camera.getWorldDirection(camDir);
-    const camRight = new THREE.Vector3(-camDir.z, 0, camDir.x).normalize();
-    for (const p of sim.living()) {
-      const e = this.ensurePerson(p);
-      const vis = !p.inside;
-      e.sprite.visible = e.shadow.visible = vis;
-      if (!vis) continue;
-      const x = wx(p.pos.x), z = wz(p.pos.z);
-      const moving = p.action && p.action.phase === 'walk' && !p.talk;
-      const dx = x - e.sprite.position.x, dz = z - e.sprite.position.z;
-      const sideways = dx * camRight.x + dz * camRight.z;
-      if (Math.abs(sideways) > 0.001) e.flip = sideways < 0;
-      e.sprite.material.map.repeat.x = e.flip ? -1 : 1;
-      e.sprite.material.map.offset.x = e.flip ? 1 : 0;
-      const bob = moving ? Math.abs(Math.sin(now * 10 + e.phase)) * 0.07 : p.action?.type === 'work' ? Math.abs(Math.sin(now * 4 + e.phase)) * 0.04 : 0;
-      e.sprite.position.set(x, 0.02 + bob, z);
-      e.shadow.position.set(x, 0.015, z);
-    }
-    for (const id of [...this.people.keys()]) if (!sim.S.people[id] || sim.S.people[id].deathYear != null) this.removePerson(id);
-
+    this.updateEntities(realDt, now);
     // 選択・追従
-    const sel = selectedId != null ? sim.S.people[selectedId] : null;
-    if (sel && sel.deathYear == null) {
-      const pos = this.personWorldPos(sel);
-      this.selRing.visible = !sel.inside;
-      this.selRing.position.set(pos.x, 0.03, pos.z);
+    const sel = selectedId != null ? sim.entity(selectedId) : null;
+    if (sel && (sel.deathYear == null) && sel.hp > 0) {
+      const pos = this.entityPos(sel);
+      this.selRing.visible = sel.inside == null;
+      this.selRing.position.set(pos.x, pos.y + 0.03, pos.z);
       this.selRing.scale.setScalar(1 + Math.sin(now * 5) * 0.1);
       if (followId === selectedId) {
         const t = this.controls.target;
-        const delta = new THREE.Vector3(pos.x - t.x, 0, pos.z - t.z).multiplyScalar(Math.min(1, realDt * 4));
-        t.add(delta); this.camera.position.add(delta);
+        const d = new THREE.Vector3(pos.x - t.x, pos.y - t.y, pos.z - t.z).multiplyScalar(Math.min(1, realDt * 4));
+        t.add(d); this.camera.position.add(d);
       }
     } else this.selRing.visible = false;
-
-    // 昼と夜
+    // 昼夜
     const h = sim.hour();
     const dayF = h < 5 ? 0 : h < 7 ? (h - 5) / 2 : h < 18 ? 1 : h < 20 ? 1 - (h - 18) / 2 : 0;
     const dusk = (h > 5 && h < 7.5) || (h > 17 && h < 20) ? 1 - Math.min(1, Math.abs(h - (h < 12 ? 6.2 : 18.5)) / 1.3) : 0;
+    const t = this.controls.target;
+    const demonD = Math.hypot(t.x + W / 2 - sim.S.world.demon.x, t.z + H / 2 - sim.S.world.demon.z);
     const sky = new THREE.Color('#0e1633').lerp(new THREE.Color('#8fd0ff'), dayF).lerp(new THREE.Color('#f29a5c'), dusk * 0.5);
     const weather = sim.S.weather;
     if (weather === 'rain' || weather === 'cloudy') sky.lerp(new THREE.Color('#7c8894'), weather === 'rain' ? 0.5 : 0.3);
+    if (demonD < 30 || sim.S.demon?.active) sky.lerp(new THREE.Color('#5a1a2a'), demonD < 30 ? 0.55 : 0.12);
     this.scene.background = sky;
     const ang = ((h - 6) / 12) * Math.PI;
-    this.sun.position.set(Math.cos(ang) * -30, Math.max(8, Math.sin(ang) * 40), 18);
+    this.sun.position.set(t.x + Math.cos(ang) * -30, Math.max(10, Math.sin(ang) * 45), t.z + 20);
+    this.sun.target.position.copy(t);
     this.sun.intensity = 0.25 + dayF * (weather === 'sunny' ? 2.3 : 1.2);
     this.sun.color.set(dusk > 0.3 ? '#ffc08a' : dayF > 0.2 ? '#fff2d6' : '#8aa0ff');
-    this.hemi.intensity = 0.45 + dayF * 0.9;
+    this.hemi.intensity = 0.5 + dayF * 0.9;
     this.hemi.color.set(dayF > 0.3 ? '#dff1ff' : '#5a6aa8');
-    const night = 1 - dayF;
-    for (const m of this.nightMats) m.emissiveIntensity = night * 1.6;
-    for (const l of this.nightLights) l.intensity = night * 4;
-
-    // 水面
-    this.waterTex.offset.x = (now * 0.03) % 1;
-    this.waterTex.offset.y = (Math.sin(now * 0.5) * 0.05);
-
-    // 羊
-    const pa = sim.S.world.pasture;
-    for (const s of this.sheep) {
-      const u = s.userData;
-      if (u.wait > 0) { u.wait -= realDt; continue; }
-      const dx = u.tx - u.x, dz = u.tz - u.z, d = Math.hypot(dx, dz);
-      if (d < 0.05) { u.wait = 2 + Math.random() * 6; u.tx = pa.x0 + Math.random() * (pa.x1 - pa.x0); u.tz = pa.z0 + Math.random() * (pa.z1 - pa.z0); continue; }
-      const sp = Math.min(d, realDt * 0.5);
-      u.x += (dx / d) * sp; u.z += (dz / d) * sp;
-      s.position.set(wx(u.x), Math.abs(Math.sin(now * 8)) * 0.02, wz(u.z));
-      s.rotation.y = Math.atan2(-dz, dx);
-    }
-
-    // 雨・雪
+    for (const m of this.nightMats) m.emissiveIntensity = (1 - dayF) * 1.6;
+    this.waterTex.offset.x = (now * 0.02) % 1;
+    for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
+    // 雨・雪（カメラの周りだけ）
     const precip = weather === 'rain' || weather === 'snow';
     this.precip.visible = precip;
     if (precip) {
+      this.precip.position.set(t.x, t.y, t.z);
       const pos = this.precip.geometry.attributes.position;
       const spd = weather === 'rain' ? 16 : 1.6;
       this.precip.material.color.set(weather === 'rain' ? '#bcd6f5' : '#ffffff');
       this.precip.material.size = weather === 'rain' ? 1.5 : 2.5;
-      for (let i = 0; i < pos.count; i++) {
-        let y = pos.getY(i) - spd * realDt;
-        if (y < 0) y += 14;
-        pos.setY(i, y);
-        if (weather === 'snow') pos.setX(i, pos.getX(i) + Math.sin(now + i) * 0.004);
-      }
+      for (let i = 0; i < pos.count; i++) { let y = pos.getY(i) - spd * realDt; if (y < 0) y += 16; pos.setY(i, y); }
       pos.needsUpdate = true;
     }
-    if (this.bell) this.bell.rotation.z = Math.sin(now * 2) * 0.05;
-
+    // 遠くから見ているときは影を省く（軽くする）
+    const wantShadow = this.shadowsOn !== false && this.camera.zoom > 0.7;
+    if (this.sun.castShadow !== wantShadow) this.sun.castShadow = wantShadow;
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 
-  // 画面座標
+  // ---------- 視点 ----------
+  viewInfo() { const t = this.controls.target; return { x: t.x + W / 2, z: t.z + H / 2, r: 18 / this.camera.zoom + 6 }; }
   project(v) {
     const p = v.clone().project(this.camera);
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight;
-    return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h, visible: p.z < 1 && p.z > -1 };
+    return { x: (p.x * 0.5 + 0.5) * w, y: (-p.y * 0.5 + 0.5) * h, visible: p.z < 1 && p.z > -1 && p.x > -1.1 && p.x < 1.1 && p.y > -1.1 && p.y < 1.1 };
   }
-  spriteTop(p) {
-    const e = this.people.get(p.id);
-    if (!e || p.inside) return this.personWorldPos(p);
-    return e.sprite.position.clone().add(new THREE.Vector3(0, e.sprite.scale.y + 0.1, 0));
+  spriteTop(e) {
+    const r = this.ents.get(e.id);
+    if (!r || e.inside != null || !r.sprite.visible) return this.entityPos(e).add(new THREE.Vector3(0, 1, 0));
+    return r.sprite.position.clone().add(new THREE.Vector3(0, r.sprite.scale.y + 0.08, 0));
   }
-
   pick(clientX, clientY) {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const sprites = [...this.people.values()].filter((e) => e.sprite.visible).map((e) => e.sprite);
-    const hitP = this.raycaster.intersectObjects(sprites, false);
-    if (hitP.length) return { person: hitP[0].object.userData.person };
-    // スプライトを少し広めに判定
-    let best = null, bestD = 22;
-    for (const e of this.people.values()) {
-      if (!e.sprite.visible) continue;
-      const s = this.project(e.sprite.position.clone().add(new THREE.Vector3(0, 0.4, 0)));
+    const sprites = [...this.ents.values()].filter((r) => r.sprite.visible).map((r) => r.sprite);
+    const hit = this.raycaster.intersectObjects(sprites, false);
+    if (hit.length) return { entity: hit[0].object.userData.id };
+    let best = null, bd = 20;
+    for (const r of this.ents.values()) {
+      if (!r.sprite.visible) continue;
+      const s = this.project(r.sprite.position.clone().add(new THREE.Vector3(0, r.sprite.scale.y / 2, 0)));
       const d = Math.hypot(s.x - (clientX - rect.left), s.y - (clientY - rect.top));
-      if (d < bestD) { bestD = d; best = e.sprite.userData.person; }
+      if (d < bd) { bd = d; best = r.sprite.userData.id; }
     }
-    if (best != null) return { person: best };
-    const hitB = this.raycaster.intersectObjects(this.buildingMeshes, true);
-    if (hitB.length) {
-      let o = hitB[0].object;
-      while (o && o.userData.building == null) o = o.parent;
-      if (o) return { building: o.userData.building };
+    if (best != null) return { entity: best };
+    const th = this.raycaster.intersectObjects(this.terrainMeshes, false);
+    if (th.length) {
+      const it = th[0];
+      const tile = it.object.userData.tiles[it.instanceId];
+      if (tile) {
+        const [x, z] = tile;
+        const w = this.sim.S.world;
+        // 建物は地面の上に立っているので、少し手前（カメラ側）も調べる
+        for (const [ddx, ddz] of [[0, 0], [0, -1], [-1, 0], [0, 1], [1, 0]]) {
+          const b = w.bldAt[(z + ddz) * W + (x + ddx)];
+          if (b != null && b >= 0) return { building: b };
+        }
+        return { tile: { x, z } };
+      }
     }
     return null;
   }
-
-  rotateBy(rad) {
-    const t = this.controls.target, c = this.camera.position;
-    const off = c.clone().sub(t);
-    off.applyAxisAngle(new THREE.Vector3(0, 1, 0), rad);
-    c.copy(t).add(off);
-  }
-  topView() {
+  lookAt(x, z, zoom) {
     const t = this.controls.target;
-    this.camera.position.set(t.x + 0.01, t.y + 45, t.z + 0.01);
+    const off = this.camera.position.clone().sub(t);
+    if (off.length() < 1) off.set(26, 30, 26);
+    t.set(wx(x), topY(this.sim.S.world.hgt[Math.round(z) * W + Math.round(x)] || 0), wz(z));
+    this.camera.position.copy(t).add(off);
+    if (zoom) { this.camera.zoom = zoom; this.camera.updateProjectionMatrix(); }
   }
-  isoView() {
-    const t = this.controls.target;
-    this.camera.position.set(t.x + 26, t.y + 30, t.z + 26);
-  }
-  lowView() {
-    const t = this.controls.target, c = this.camera.position;
-    const off = c.clone().sub(t); off.y = 0; off.normalize().multiplyScalar(40);
-    this.camera.position.set(t.x + off.x, t.y + 9, t.z + off.z);
-  }
-  focusOn(p) {
-    const pos = this.personWorldPos(p);
-    const t = this.controls.target;
-    const delta = new THREE.Vector3(pos.x - t.x, 0, pos.z - t.z);
-    t.add(delta); this.camera.position.add(delta);
-    if (this.camera.zoom < 2.5) { this.camera.zoom = 2.5; this.camera.updateProjectionMatrix(); }
-  }
+  focusOn(e) { this.lookAt(e.pos.x, e.pos.z, Math.max(this.camera.zoom, 2.4)); }
+  rotateBy(rad) { const t = this.controls.target, c = this.camera.position; const off = c.clone().sub(t); off.applyAxisAngle(new THREE.Vector3(0, 1, 0), rad); c.copy(t).add(off); }
+  topView() { const t = this.controls.target; this.camera.position.set(t.x + 0.01, t.y + 50, t.z + 0.01); }
+  isoView() { const t = this.controls.target; this.camera.position.set(t.x + 26, t.y + 30, t.z + 26); }
+  lowView() { const t = this.controls.target, c = this.camera.position; const off = c.clone().sub(t); off.y = 0; off.normalize().multiplyScalar(40); this.camera.position.set(t.x + off.x, t.y + 9, t.z + off.z); }
+  worldView() { this.lookAt(W / 2, H / 2, 0.18); this.topView(); }
 }
