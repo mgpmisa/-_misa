@@ -1263,7 +1263,7 @@ function paintQuad(P, R, sp, def, lv, view, fr) {
     }
     case 'wolf': case 'fox': {
       const fx = sp === 'fox';
-      if (!fx && u[0] < 0.25) col = T(pickU(['#4a4a50', '#a8a8b0', '#8a7a68', '#d8d8dc', '#2a2a30'], u[1]));
+      if (!fx && u[0] < 0.5) col = T(pickU(['#4a4a50', '#a8a8b0', '#8a7a68', '#d8d8dc', '#2a2a30', '#6a5a4a', '#b8a890'], u[1]), 0.02, 0.08, 0.1);
       if (fx && u[0] < 0.15) col = T(pickU(['#c8c8c8', '#8a4a2a', '#e8e0d0'], u[1]));
       o = fx
         ? { L: 10 + dL, BH: 4, legH: 4, legW: 1, col, legCol: u[2] < 0.7 ? '#2a2020' : col, neckUp: 1, neckW: 2, headW: 3, headH: 3, headBack: 1, snoutL: 2 + Math.floor(u[3] * 2), snoutH: 1, muzzleW: 2, ear: 'point', bigEar: true, earIn: '#2a2020', tail: 'bushy', tailLen: 1 + Math.floor(u[4] * 2), tailTip: '#f8f8f8', belly: col2, round: 1, girth: 6 }
