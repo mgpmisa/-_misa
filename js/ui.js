@@ -9,6 +9,7 @@ import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
+import { elderCard, elderBuildingRows } from './elder.js';
 import { monsterHtml } from './monsters.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
 import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js';
@@ -643,6 +644,8 @@ export class UI {
       const skills = Object.entries(p.skill || {}).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
       const dangers = Object.entries(p.danger || {}).filter(([, v]) => v > 1.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
       const cc = careerCard(this.sim, p);
+      const ec = elderCard(this.sim, p);
+      if (ec.length) h += `<div class="section"><h4>老後の備え</h4><dl class="kv">${ec.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       if (cc.length) h += `<div class="section"><h4>人生の目標と修業</h4><dl class="kv">${cc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       h += `<div class="section"><h4>経験から学んだこと</h4><dl class="kv">
         <dt>好きな過ごし方</dt><dd>${likes.filter(([, v]) => v > 0.05).slice(0, 3).map(([k]) => esc(PREF_LABEL[k] || k)).join('、') || 'まだ手探り'}</dd>
@@ -752,6 +755,8 @@ export class UI {
       const qs = (S.quests || []).filter((q) => q.s === b.settlement && ['open', 'taken', 'report'].includes(q.state));
       h += `<div class="section"><h4>依頼掲示板</h4><ul class="rels">${qs.map((q) => `<li><span>［${RANKS_ADV[q.rank]}］${esc(q.title)}</span><span class="dead">${q.reward}銅貨</span></li>`).join('') || '<li>いまは依頼がない</li>'}</ul></div>`;
     }
+    const er = elderBuildingRows(sim, b);
+    if (er.length) h += `<div class="section"><h4>救貧院</h4><dl class="kv">${er.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const inside = sim.living().filter((q) => q.inside === b.id);
     if (inside.length) h += `<div class="section"><h4>いま中にいる人</h4>${inside.map((q) => this.pLink(q)).join('、')}</div>`;
     const bandits = sim.living().filter((q) => q.hideout === b.id);

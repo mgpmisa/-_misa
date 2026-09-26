@@ -48,8 +48,9 @@ if (!DEATH_CAUSES.stayed) DEATH_CAUSES.stayed = '守り神のもとに残った'
 const LS = Math.max(1, Math.min(W, H) / 160);      // 長さの倍率
 const BIGW = W >= 320;                             // 10倍の大陸
 const VR = BIGW ? 7 : 5;                           // 村の半径（チェビシェフ）
-const MIN_TOWN = Math.round(13 * LS);              // 王国の町の縁から、これだけ離れた所を「奥地」とみる
-const MIN_SPECIAL = Math.round(5 * LS);            // 特別な場所（洞窟・遺跡など）から離す
+// 王国の町の縁から（村の半径＋これ）だけ離れた所を「奥地」とみる。今の 160 の世界は土地が混んでいるので近め
+const MIN_TOWN = BIGW ? Math.round(13 * LS) : 6;
+const MIN_SPECIAL = BIGW ? Math.round(5 * LS) : 2; // 特別な場所（洞窟・遺跡など）から離す
 const MAX_VILLAGES = BIGW ? 99 : 6;                // 今の小さな世界に置く村の数の上限
 const inb = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
 const cheb = (ax, az, bx, bz) => Math.max(Math.abs(ax - bx), Math.abs(az - bz));
@@ -101,7 +102,8 @@ export function initTribes(sim) {
     let made = 0;
     for (let n = 0; n < want; n++) {
       if (S.tribes.villages.length >= MAX_VILLAGES) break;
-      const site = findVillageSite(sim, t);
+      const g = guardianOfTribe(t.id);
+      const site = findVillageSite(sim, t).find((c) => !g || findLairSite(sim, { x: c.x, z: c.z, r: VR }, g, true));
       if (!site) break;
       buildVillage(sim, t, site, changed);
       made++;
@@ -125,19 +127,20 @@ function findVillageSite(sim, t) {
   const isle = t.biome === 'ISLE', volcano = t.biome === 'VOLCANO';
   const others = S.tribes.villages;
   const specials = (w.specials || []).map((id) => w.buildings[id]).filter(Boolean);
-  const tries = Math.round(4000 * LS * LS);
+  // 今の小さな世界は全マスを調べる。広い大陸は W・H に比例した回数だけくじで調べる
   const M = VR + 3;
-  let best = null, bs = -Infinity;
+  const tries = BIGW ? Math.round(4000 * LS * LS) : (W - 2 * M) * (H - 2 * M);
+  const cands = [];
   for (let i = 0; i < tries; i++) {
-    const x = R.int(M, W - 1 - M), z = R.int(M, H - 1 - M);
+    const x = BIGW ? R.int(M, W - 1 - M) : M + (i % (W - 2 * M)), z = BIGW ? R.int(M, H - 1 - M) : M + Math.floor(i / (W - 2 * M));
     const t0 = w.tiles[z * W + x];
     if (!tiles.has(t0) && !(isle && t0 === T.BEACH)) continue;
     const dTown = Math.min(...w.settlements.map((s) => Math.hypot(s.x - x, s.z - z) - s.r));
     if (dTown < MIN_TOWN + VR) continue;
     const dDemon = w.demon ? Math.hypot(w.demon.x - x, w.demon.z - z) - (w.demonR || 20) : 99;
-    if (dDemon < VR + (volcano ? 2 : 5)) continue;
+    if (dDemon < VR + (volcano ? 1 : BIGW ? 5 : 1)) continue;
     if (specials.some((b) => cheb(b.x + (b.w >> 1), b.z + (b.d >> 1), x, z) < VR + MIN_SPECIAL)) continue;
-    if (others.some((V) => cheb(V.x, V.z, x, z) < VR * 2 + 8 * LS)) continue;
+    if (others.some((V) => cheb(V.x, V.z, x, z) < VR * 2 + (BIGW ? 8 * LS : 4))) continue;
     // まわりの地形
     let match = 0, walk = 0, sea = 0, road = 0, bad = 0, lava = 0, n = 0;
     const RR = VR + 1;
@@ -151,16 +154,22 @@ function findVillageSite(sim, t) {
       if (tt === T.LAVA) lava++;
     }
     if (bad) continue;
-    if (walk / n < 0.72) continue;
+    if (walk / n < (BIGW ? 0.72 : 0.6)) continue;
+    if (!isle && sea > n * 0.3) continue;
+    if (!BIGW && road > 8) continue;   // 街道が通っている所は奥地ではない
     const frac = match / n;
-    if (frac < (isle ? 0.25 : 0.35)) continue;
+    if (frac < (isle ? 0.2 : BIGW ? 0.35 : 0.3)) continue;
     if (isle && sea < n * 0.08) continue;
     let sc = Math.min(dTown, 40 * LS) * 0.6 + frac * 18 - road * 1.5 + R.next() * 2;
     if (isle) sc += Math.min(sea, 30) * 0.3;
     if (volcano) sc += Math.min(lava, 6) * 2 - Math.max(0, dDemon - 20) * 0.3;
-    if (sc > bs) { bs = sc; best = { x, z, dTown, frac }; }
+    cands.push({ x, z, dTown, frac, sc });
   }
-  return best;
+  cands.sort((a, b) => b.sc - a.sc);
+  // 近すぎる候補は1つにまとめる（よい順に30まで）
+  const out = [];
+  for (const c of cands) { if (out.every((o) => cheb(o.x, o.z, c.x, c.z) > 4)) out.push(c); if (out.length >= 30) break; }
+  return out;
 }
 
 // 地形を村の土地にならす（民族の家が建てられるように）
@@ -448,7 +457,7 @@ function tribalMemories(sim, V, t, p) {
 }
 
 // ---------- 守り神のすみか ----------
-function placeGuardian(sim, V, g, changed) {
+function findLairSite(sim, V, g, probe = false) {
   const S = sim.S, w = S.world, R = sim.rng;
   const want = TILE(g.lair.biome);
   const sea = g.lair.biome === 'SEA';
@@ -479,6 +488,11 @@ function placeGuardian(sim, V, g, changed) {
     }
     if (sc > bs) { bs = sc; best = { x, z }; }
   }
+  return best;
+}
+function placeGuardian(sim, V, g, changed) {
+  const S = sim.S, w = S.world, R = sim.rng;
+  let best = findLairSite(sim, V, g);
   if (!best) best = { x: clamp(V.x + V.r + 6, 3, W - 4), z: V.z };
   V.lair = { x: best.x, z: best.z, bid: null, name: g.lair.name };
   // すみかの目印（小さな祠）。歩ける場所ならその場に、海や溶岩なら岸に
@@ -573,11 +587,16 @@ function addLoreChronicle(sim) {
   const placed = new Set(S.tribes.villages.map((V) => V.tribe));
   const ctx = loreCtx(sim, null);
   const have = new Set(S.chronicle.map((c) => c.text));
+  const oldYears = new Set(S.chronicle.filter((c) => c.y < 0).map((c) => c.y));   // 建国前の年は history.js がすでに書いている
   for (const e of LORE_TIMELINE) {
     if (e.tribe && !placed.has(e.tribe)) continue;
     if (e.y > sim.year()) continue;
+    if (e.y < 0 && oldYears.has(e.y)) continue;
+    const key = `${e.y}:${e.tribe}`;
+    if (have.has(key)) continue;   // 同じ年・同じ民族の出来事は1つだけ（年表と民族の歴史の重なり）
     const text = loreText(e.text, ctx);
     if (have.has(text)) continue;
+    have.add(key);
     S.chronicle.push({ y: e.y, k: e.k, text, lore: true });
   }
   S.chronicle.sort((a, b) => a.y - b.y);
@@ -2054,3 +2073,29 @@ export function tribesSummary(sim) {
   });
 }
 function nextMajorYear(g, y) { for (let i = 0; i < 40; i++) if (offeringDue(g, y + i)) return y + i; return null; }
+// 人の詳細欄：「ドゥール＝アン（フィアナの民）」の括弧の中身。民族の人でなければ null
+export function tribeLabel(sim, p) {
+  const s = sim.town(p.s);
+  const t = p.tribe ? tribeById(p.tribe) : s?.tribal ? tribeById(s.tribe) : null;
+  if (!t) return null;
+  if (s?.tribal && s.annexed != null) return `${t.name}・${kname(s.annexed)}${s.charter ? 'の自治村' : '領'}`;
+  return s?.tribal ? t.name : `${t.name}の出`;
+}
+// 国々のタブ：奥地の民の欄（esc は ui.js の esc）
+export function tribesNationHTML(sim, esc) {
+  const list = tribesSummary(sim);
+  if (!list.length) return '';
+  const X = sim.S.tribes;
+  let h = `<div class="nation tribes"><div class="nname">奥地の民</div>`;
+  for (const v of list) {
+    const V = X.villages[v.id];
+    h += `<dl class="kv" style="margin-top:6px"><dt class="link" data-goto="${V.x},${V.z}">${esc(v.name)}</dt><dd>${esc(v.tribe)}（${esc(v.alias)}）・${v.pop}人${v.annexed ? `・${esc(v.annexed)}領` : ''}</dd>
+      <dt>守り神</dt><dd>${esc(v.guardian)}（${esc(v.gstate)}）${v.renewed ? '・人を送らない約束に改めた' : ''}${v.next ? `・次の約束の年 ${v.next}年` : ''}</dd>
+      <dt>信仰</dt><dd>${v.faith}</dd>
+      <dt>王国への態度</dt><dd>${v.att.map((a) => `${esc(a.name.replace('王国', ''))} <b class="${a.a < -30 ? 'up' : a.a > 30 ? 'down' : ''}">${a.a}</b>${a.trade ? '・交易' : ''}${a.ally ? '・盟約' : ''}`).join('　')}</dd>
+      ${v.arcs.length ? `<dt>いま</dt><dd>${v.arcs.map(esc).join('、')}</dd>` : ''}</dl>`;
+  }
+  const pend = (X.pending || []).map((id) => tribeById(id)?.name).filter(Boolean);
+  if (pend.length) h += `<p class="small">まだ誰も知らない民：${pend.map(esc).join('、')}（大陸が広がれば見つかる）</p>`;
+  return h + '</div>';
+}

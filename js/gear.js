@@ -60,15 +60,16 @@ export function ensureGear(sim) {
   if (!S.gear) S.gear = { v: 1, orders: [], stats: {} };
   const st = S.gear.stats;
   for (const k of ['broken', 'brokeWeapon', 'brokeArmor', 'brokeShield', 'brokeAcc', 'brokeTool', 'repaired', 'repairIncome', 'selfCare', 'hazardPaid', 'meritPaid', 'merits', 'injuryPaid', 'injuries', 'condolence', 'fallen',
-    'lessons', 'lessonFees', 'orders', 'orderItems', 'orderSpent', 'soldSpares', 'spareIncome', 'quits', 'deserts', 'corrupt', 'slack', 'replaced', 'treasures', 'payStopped']) if (st[k] == null) st[k] = 0;
+    'lessons', 'lessonFees', 'orders', 'orderItems', 'orderSpent', 'soldSpares', 'spareIncome', 'quits', 'deserts', 'corrupt', 'slack', 'bought', 'boughtSpent', 'treasures', 'payStopped']) if (st[k] == null) st[k] = 0;
   S.gear.orders = S.gear.orders || [];
+  S.gear.crown = S.gear.crown || {};
   return S.gear;
 }
 function gm(p) { return p.gm || (p.gm = { merit: 0, grief: 0, noRest: 0, dutyH: 0, lowD: 0, paid: 0, earned: 0, inj: -1 }); }
 
 // ---------- 耐久の計算 ----------
 const MAT_DUR = { scale: 2.6, iron: 1.2, magicstone: 1.4, gem: 1.6, silk: 0.9, leather: 0.85, wood: 0.75, cloth: 0.55 };
-const BASE_DUR = { weapon: 160, armor: 220, shield: 140, accessory: 400, tool: 250 };
+const BASE_DUR = { weapon: 70, armor: 90, shield: 60, accessory: 180, tool: 250 };   // 武器・防具は打ち合った回数、道具は使った時間
 function matMul(d) {
   if (!d.mat) return d.rare ? 50 : 1;
   let s = 0, n = 0;
@@ -177,7 +178,7 @@ function merit(sim, p, c) {
     const k = sim.kingdomOf(p);
     const f = payFactor(sim, k);
     amt = Math.round(base * generosity(sim, k) * f);
-    if (amt >= 1 && k.treasury - amt > FLOOR) { k.treasury -= amt; from = '国'; } else amt = 0;
+    if (amt >= 1 && k.treasury - amt > FLOOR) { k.treasury -= amt; spend(sim, k, amt); from = '国'; } else amt = 0;
   } else if (near) {
     const t = S.towns[p.s];
     amt = Math.round(base * 0.6);
@@ -212,8 +213,8 @@ export function gearOnDeath(sim, p, cause, killer) {
     let amt = 0, from = '';
     if (isCrown(p)) {
       const k = sim.kingdomOf(p);
-      amt = Math.round((30 + (p.lv || 1) * 3) * generosity(sim, k) * Math.max(0.4, payFactor(sim, k)));
-      if (k.treasury - amt > FLOOR * 0.5) { k.treasury -= amt; from = '国'; }
+      amt = Math.round((20 + (p.lv || 1) * 2) * generosity(sim, k) * Math.max(0.5, payFactor(sim, k)));
+      if (k.treasury - amt > FLOOR) { k.treasury -= amt; spend(sim, k, amt); from = '国'; }
       else { const t = S.towns[p.s]; amt = Math.min(amt, Math.max(0, Math.round(t.fund * 0.2))); t.fund -= amt; from = '町'; }
     } else {
       const t = S.towns[p.s];
@@ -230,20 +231,23 @@ export function gearOnDeath(sim, p, cause, killer) {
   for (const q of sim.living()) {
     if (q === p || q.s !== p.s || !isGuardian(q)) continue;
     const g = gm(q);
-    g.grief += (sim.rel(q, p).a > 30 ? 2 : 1);
-    q.morale = clamp((q.morale ?? 55) - (sim.rel(q, p).a > 30 ? 10 : 4), 0, 100);
+    const close = sim.rel(q, p).a > 30;
+    g.grief += close ? 1.5 : 0.5;
+    q.morale = clamp((q.morale ?? 55) - (close ? 7 : 2), 0, 100);
   }
 }
 
 // ---------- 王の寛大さと国庫の具合 ----------
-const FLOOR = 250;   // 待遇に使うのはこれより上の分だけ（国庫を崩さない）
+// 国庫から出した待遇の費用を国ごとに数える（試験と国々のタブ用）
+function spend(sim, k, amt) { const c = ensureGear(sim).crown; c[k.id] = Math.round(((c[k.id] || 0) + amt) * 10) / 10; }
+const FLOOR = 350;   // 待遇に使うのはこれより上の分だけ（国庫を崩さない）
 export function generosity(sim, k) {
   const king = k && sim.S.people[k.kingId];
   if (!king) return 0.8;
   return clamp(1 + (king.pers.A - 0.5) * 0.8 + (king.values.courage - 0.5) * 0.4 - (king.values.ambition - 0.5) * 0.3, 0.5, 1.5);
 }
-// 国庫が 250 以下なら 0、850 で 1
-function payFactor(sim, k) { return k ? clamp((k.treasury - FLOOR) / 600, 0, 1) : 0; }
+// 国庫が 350 以下なら 0、1150 で 1
+function payFactor(sim, k) { return k ? clamp((k.treasury - FLOOR) / 800, 0, 1) : 0; }
 
 // ---------- 修理 ----------
 const REPAIRERS = {
@@ -268,7 +272,7 @@ function repairerFor(sim, p, it, cache) {
   return null;
 }
 export function repairCost(it) {
-  return Math.max(1, Math.round(itemValue(it) * (1 - durOf(it)) * 0.45));
+  return Math.max(1, Math.round(itemValue(it) * (1 - durOf(it)) * 0.3));
 }
 // 同じ部位の、店に並ぶ買い替え候補の値段（なければ null）
 function replacePrice(sim, p, it) {
@@ -348,8 +352,10 @@ export function gearCandidates(sim, p, add) {
     const s = sim.townOf(p);
     const dojo = sim.townBuilding(s, 'dojo');
     const fee = lessonFee(p);
-    if (dojo && spendable(sim, p) >= fee + 15 && sim.living().some((q) => q.job === 'swordmaster' && q.s === p.s)) {
-      add(2.5 + (m - 60) / 10 + p.values.ambition * 2 + (rest ? 2 : 0) + (p.gm?.lessonDay === sim.today ? -6 : 0), 'lesson', { x: dojo.door.x, z: dojo.door.z, bld: dojo.id }, R.int(60, 120));
+    const teacher = teacherFor(sim, p);
+    const place = dojo ? { x: dojo.door.x, z: dojo.door.z, bld: dojo.id } : sim.placeFor(p, 'drillyard');
+    if (teacher && place && spendable(sim, p) >= fee + 15 && p.gm?.lessonDay !== sim.today) {
+      add(2.5 + (m - 60) / 10 + p.values.ambition * 2 + (rest ? 2 : 0), 'lesson', place, R.int(60, 120));
     }
   }
   // 満足した守り手：少し無理をしてでも良い装備を買う
@@ -358,7 +364,19 @@ export function gearCandidates(sim, p, add) {
     if (shop.some((it) => sim.isUpgrade(p, it) && itemValue(it) * 1.2 <= spendable(sim, p) - 10)) add(3 + (m - 65) / 8, 'buygear', sim.placeFor(p, 'smithy'), 15);
   }
   // 満足度の低い守り手：持ち場を抜けて酒場へ（怠け）
-  if (m < 30 && !isAdv(p) && h >= 8 && h < 20 && !rest) add(3.5 + (30 - m) / 5 + p.needs.sloth / -40 + 2.5, 'tavern', sim.placeFor(p, 'tavern'), R.int(50, 100));
+  if (m < 30 && !isAdv(p) && h >= 8 && h < 20 && !rest) add(5 + (30 - m) / 5 + (100 - p.needs.sloth) / 50, 'tavern', sim.placeFor(p, 'tavern'), R.int(50, 100));
+}
+// 師：町の剣の師範。いなければ、町でいちばん腕の立つ騎士・将軍・近衛・聖騎士・ギルドの長が教官を務める
+const TEACHERS = ['swordmaster', 'general', 'royalguard', 'knight', 'paladin', 'guildmaster'];
+function teacherFor(sim, p) {
+  let best = null, bs = -1;
+  for (const q of sim.living()) {
+    if (q === p || q.s !== p.s || q.jail != null || !TEACHERS.includes(q.job)) continue;
+    const sc = (q.job === 'swordmaster' ? 100 : 0) + (q.lv || 1);
+    if (q.job !== 'swordmaster' && (q.lv || 1) <= (p.lv || 1) + 1) continue;
+    if (sc > bs) { bs = sc; best = q; }
+  }
+  return best;
 }
 const lessonFee = (p) => (['knight', 'royalguard', 'general', 'paladin'].includes(p.job) ? 6 : 4);
 
@@ -368,14 +386,20 @@ export function gearArrive(sim, p) {
   if (!a) return;
   const st = ensureGear(sim).stats;
   if (a.type === 'repair') { doRepair(sim, p); a.until = sim.S.t + 15; return; }
+  if (a.type === 'buygear') {
+    // 買い物の結果（sim.buyGear が記憶を残す）を数える
+    const m = p.memories?.[p.memories.length - 1];
+    if (m && m.k === 'gear' && m.min === sim.S.t && m.txt.includes('買った')) { st.bought = (st.bought || 0) + 1; st.boughtSpent = (st.boughtSpent || 0) + (+(m.txt.match(/(\d+)銅貨/)?.[1]) || 0); }
+    return;
+  }
   if (a.type === 'lesson') {
-    const master = sim.living().find((q) => q.job === 'swordmaster' && q.s === p.s);
+    const master = teacherFor(sim, p);
     const fee = lessonFee(p);
     if (!master || spendable(sim, p) < fee) { a.until = sim.S.t + 5; return; }
     pay(sim, p, fee); const hh = sim.hh(master); if (hh) hh.money += fee;
     st.lessons++; st.lessonFees += fee;
     gm(p).lessonDay = sim.today;
-    if (sim.rng.chance(0.35)) sim.remember(p, `${fee}銅貨の謝礼を払い、師範の${master.given}に稽古をつけてもらった`, { emo: 0.4, imp: 0.35, about: [master.id], k: 'duty' });
+    if (sim.rng.chance(0.35)) sim.remember(p, `${fee}銅貨の謝礼を払い、${master.job === 'swordmaster' ? '師範' : JOBS[master.job].name}の${master.given}に稽古をつけてもらった`, { emo: 0.4, imp: 0.35, about: [master.id], k: 'duty' });
     return;
   }
   if (a.type === 'tavern' && isGuardian(p) && !isAdv(p) && (p.morale ?? 55) < 30) {
@@ -402,16 +426,23 @@ export function gearDo(sim, p, dt) {
 }
 
 // ---------- 毎時 ----------
+function initMorale(p) {
+  if (p.morale == null || Number.isNaN(p.morale)) p.morale = clamp(52 + ((p.pers?.C ?? 0.5) - 0.5) * 20 + ((p.values?.courage ?? 0.5) - 0.5) * 16 + ((p.mood ?? 50) - 50) * 0.2, 15, 90);
+}
 export function gearHourly(sim) {
-  ensureGear(sim);
+  const G = ensureGear(sim);
   const t = sim.today;
+  const seed = !G.seeded && t === 0;
+  G.seeded = true;
   for (const p of sim.living()) {
-    if (!p.eq) continue;
-    // 古いセーブ：耐久のない品は満タンから
-    for (const s of SLOTS) { const it = p.eq[s]; if (it) { if (it.dur == null) it.dur = 1; if (it.since == null) it.since = t - (t < 1 ? 60 + (p.id % 200) : 0); } }
+    // 世界の始まり：持ち物はそれぞれ使い込まれている（一度だけ）。古いセーブで耐久のない品は満タンから
+    if (seed && p.inv) for (const it of p.inv) if (BASE_DUR[ITEMS[it.id]?.type] && !unbreakable(it)) { const h = ((p.id * 2654435761 + (it.id.length * 97)) >>> 0) % 1000 / 1000; it.dur = r1(1 - 0.6 * h * h); }
+    if (seed && p.eq && (p.eq.weapon || p.eq.armor)) { autoEquip(p); Object.assign(p, humanStats(sim, p)); }
+    if (p.eq) for (const s of SLOTS) { const it = p.eq[s]; if (it) { if (it.dur == null) it.dur = 1; if (it.since == null) it.since = t - (t < 1 ? 60 + (p.id % 200) : 0); } }
     if (!isGuardian(p)) continue;
     const a = p.action, g = gm(p);
-    if (p.morale == null) p.morale = clamp(52 + (p.pers.C - 0.5) * 20 + (p.values.courage - 0.5) * 16 + ((p.mood ?? 50) - 50) * 0.2, 15, 90);
+    initMorale(p);
+    if (!p.eq) continue;
     if (a && a.phase === 'do') {
       if (a.type === 'work' || a.type === 'sentry' || a.type === 'quest') g.dutyH++;
       if (a.type === 'train' || a.type === 'dojo') { g.dutyH += 0.5; if (p.eq.weapon) wear(sim, p, p.eq.weapon, 0.3, null); }
@@ -442,28 +473,33 @@ export function gearDaily(sim) {
     }
     if (!isGuardian(p) || p.jail != null) continue;
     const g = gm(p);
+    initMorale(p);
     const k = sim.kingdomOf(p);
     (byK[k.id] = byK[k.id] || []).push(p);
     // --- 給金（危険手当）：勤めた日だけ ---
     const worked = g.dutyH >= 3;
-    let paidOK = true;
+    let paidOK = true;          // ふだんの給金が出ているか（国庫・町の蓄えが尽きると出ない）
+    let hazard = 0;             // 危険手当が出ているか（0〜1）
     if (isCrown(p)) {
       const f = payFactor(sim, k);
       const amt = r1(CROWN_DEF[p.job] * generosity(sim, k) * f);
-      if (worked && amt >= 0.3) { k.treasury -= amt; earn(sim, p, amt, 0.5); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }
-      else if (worked) { paidOK = false; g.paid = 0; }
-      if (k.treasury < FLOOR) { paidOK = false; if (R.chance(0.1)) sim.remember(p, '国庫が苦しく、危険手当が止まったままだ', { emo: -0.4, imp: 0.35, k: 'duty' }); st.payStopped++; }
+      if (worked && amt >= 0.3) { k.treasury -= amt; spend(sim, k, amt); earn(sim, p, amt, 0.5); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }
+      else if (worked) g.paid = 0;
+      hazard = clamp(amt / CROWN_DEF[p.job], 0, 1.5);
+      if (k.treasury < 30) paidOK = false;
+      if (amt < 0.3) { st.payStopped++; if (R.chance(0.08)) sim.remember(p, '国庫が苦しく、危険手当が止まったままだ', { emo: -0.3, imp: 0.3, k: 'duty' }); }
     } else if (TOWN_DEF[p.job]) {
       const t = S.towns[p.s];
       const amt = r1(TOWN_DEF[p.job] * (t.fund > 150 ? 1 : t.fund > 60 ? 0.5 : 0));
       if (worked && amt > 0) { t.fund -= amt; earn(sim, p, amt, 0.5); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }
-      if (t.fund < 60) paidOK = false;
-    } else if (isAdv(p)) paidOK = spendable(sim, p) > 15;
+      hazard = amt / TOWN_DEF[p.job];
+      if (t.fund < 10) paidOK = false;
+    } else if (isAdv(p)) { paidOK = spendable(sim, p) > 15; hazard = 0.6; }
     // --- 負傷の見舞金 ---
     if (g.inj >= sim.today - 1 && !g.injPaid) {
       g.injPaid = true; st.injuries++;
       let amt = 0, from = '';
-      if (isCrown(p)) { amt = Math.round(8 * generosity(sim, k) * Math.max(0.3, payFactor(sim, k))); if (k.treasury - amt > FLOOR * 0.6) { k.treasury -= amt; from = '国'; } else amt = 0; }
+      if (isCrown(p)) { amt = Math.round(8 * generosity(sim, k) * Math.max(0.3, payFactor(sim, k))); if (k.treasury - amt > FLOOR * 0.6) { k.treasury -= amt; spend(sim, k, amt); from = '国'; } else amt = 0; }
       else { const t = S.towns[p.s]; amt = t.fund > 80 ? 5 : 0; t.fund -= amt; from = '町'; }
       if (amt > 0) {
         earn(sim, p, amt, 0.5); st.injuryPaid += amt; g.earned += amt;
@@ -480,9 +516,9 @@ export function gearDaily(sim) {
       return ((wearMul(w) + (a ? wearMul(a) : 0.8)) / 2 - 0.85) * 40 + (w.q < 0.8 ? -3 : w.q > 1.2 ? 3 : 0);
     })();
     const gen = isCrown(p) ? (generosity(sim, k) - 1) * 15 : 0;
-    const target = 50 + gen + (paidOK ? 8 : -15) + Math.min(15, g.merit * 3) - Math.min(20, g.grief * 6) + cond
+    const target = 52 + gen + (paidOK ? 0 : -15) + hazard * 8 + Math.min(15, g.merit * 3) - Math.min(12, g.grief * 4) + cond
       - Math.max(0, g.noRest - 6) * 3 + ((p.mood ?? 50) - 50) * 0.25 + (p.pers.C - 0.5) * 6 + (p.values.courage - 0.5) * 6
-      + (S.towns[p.s]?.occupied ? -15 : 0) + (g.earned > 0 ? Math.min(6, g.earned / 5) : 0);
+      + (S.towns[p.s]?.occupied ? -15 : 0);
     p.morale = r1(clamp(p.morale * 0.75 + target * 0.25, 0, 100));
     g.merit *= 0.85; g.grief *= 0.8; g.earned *= 0.8;
     if (g.merit < 0.05) g.merit = 0; if (g.grief < 0.05) g.grief = 0;
@@ -595,8 +631,8 @@ function bulkOrders(sim, byK) {
   if (sim.today % 7 !== 2) return;
   for (const k of S.kingdoms) {
     const f = payFactor(sim, k);
-    if (f < 0.3 || G.orders.some((o) => o.k === k.id)) continue;
-    const budget = Math.min(160, (k.treasury - FLOOR) * 0.15) * generosity(sim, k);
+    if (k.treasury < 700 || G.orders.some((o) => o.k === k.id)) continue;
+    const budget = Math.min(150, (k.treasury - 600) * 0.2) * generosity(sim, k);
     const smiths = sim.living().filter((q) => q.job === 'smith' && sim.townOf(q).kingdom === k.id && q.jail == null).sort((a, b) => (b.skill?.smith || 0) - (a.skill?.smith || 0));
     if (!smiths.length || budget < 30) continue;
     const need = [];
@@ -622,7 +658,7 @@ function bulkOrders(sim, byK) {
     }
     if (!items.length) continue;
     const smith = smiths[0];
-    k.treasury -= spent;
+    k.treasury -= spent; spend(sim, k, spent);
     const hh = sim.hh(smith); if (hh) hh.money += spent;
     st.orders++; st.orderItems += items.length; st.orderSpent += spent;
     G.orders.push({ k: k.id, smith: smith.id, items, due: sim.today + 2 });
@@ -653,7 +689,7 @@ export function gearDungeonLoot(sim, p, b) {
 export function gearGuardMul(p) {
   const m = p?.morale;
   if (m == null) return 1;
-  return m >= 70 ? 1.1 + (m - 70) / 300 : m < 30 ? 0.8 + m / 150 : 1;
+  return clamp(0.85 + m / 333, 0.85, 1.15);   // 満足度50で1.0、80で1.09、20で0.91
 }
 // 迎え撃ちに出るか（満足度がひどく低い者は、見て見ぬふりをすることがある）
 export function gearWillDefend(p, rng) {

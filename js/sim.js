@@ -8,7 +8,7 @@ import { findPathFar } from './pathfar.js';
 import { lodWalkMul } from './lod.js';
 import { ancestors, kinTerm, isCloseKin, siblings } from './kin.js';
 import { composeConversation, innerThought, speechStyle } from './speech.js';
-import { spawnInitialCreatures, stepCreatures, creatureDaily } from './creatures.js';
+import { spawnInitialCreatures, stepCreatures, creatureDaily, settleCreature } from './creatures.js';
 import { stepCombat, startFight, humanStats, crimeHourly, justiceDaily, tryCrime, crimeArrive, markWanted } from './society.js';
 import { initPolitics, politicsDaily, politicsHourly, demonHourly, addSaying } from './politics.js';
 import { saveWorld, loadWorld, clearWorld } from './store.js';
@@ -31,6 +31,7 @@ import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade 
 import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
 import { monstersDaily, monstersHourly } from './monsters.js';
+import { elderDaily } from './elder.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -1589,7 +1590,24 @@ export class Sim {
   }
 
   // ---------- 時間の節目 ----------
+  // 立てない場所に取り残された人と生き物を、近くの歩ける場所へ戻す（地形が変わったとき・生まれた場所が悪かったとき）
+  unstick() {
+    const w = this.S.world;
+    for (const c of Object.values(this.S.creatures)) settleCreature(this, c);
+    for (const p of this.living()) {
+      if (p.inside != null || p.jail != null) continue;
+      const x0 = Math.round(p.pos.x), z0 = Math.round(p.pos.z);
+      if (walkable(tileAt(w, x0, z0))) continue;
+      let done = false;
+      for (let r = 1; r <= 8 && !done; r++) for (let dz = -r; dz <= r && !done; dz++) for (let dx = -r; dx <= r && !done; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        if (walkable(tileAt(w, x0 + dx, z0 + dz))) { p.pos = { x: x0 + dx, z: z0 + dz }; p.path = null; if (p.action?.phase === 'walk') p.action.path = null; done = true; }
+      }
+    }
+  }
+
   newHour() {
+    this.unstick();
     this.updatePrices();
     logisticsHourly(this);
     for (const p of this.living()) {
@@ -1734,6 +1752,7 @@ export class Sim {
     choreDaily(this);
     civicDaily(this);
     careerDaily(this);
+    elderDaily(this);
     financeDaily(this);
     creatureDaily(this);
     faunaDaily(this);

@@ -49,6 +49,7 @@ export function makeCreature(sim, sp, x, z, extra = {}) {
   applyStats(c);
   c.hp = c.maxhp;
   S.creatures[id] = c;
+  if (!c.inDungeon) settleCreature(sim, c);
   return c;
 }
 
@@ -376,6 +377,23 @@ export function townMask(sim) {
   sim._townMask = m; sim._townMaskN = w.settlements.length;
   return m;
 }
+// 立てない場所（海・川・柵・建物の上など）にいたら、いちばん近い立てる場所へ移す
+export function settleCreature(sim, c) {
+  if (!c || c.inDungeon || c.dormant || c.hp <= 0) return true;
+  const def = SPECIES[c.sp];
+  const x0 = Math.round(c.pos.x), z0 = Math.round(c.pos.z);
+  if (canStand(sim, c, def, x0, z0)) return true;
+  for (let r = 1; r <= 10; r++) for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    if (canStand(sim, c, def, x0 + dx, z0 + dz)) {
+      c.pos = { x: x0 + dx, z: z0 + dz }; c.path = null; c.goal = null;
+      if (c.home && !canStand(sim, c, def, Math.round(c.home.x), Math.round(c.home.z)) && c.range !== 0) c.home = { x: x0 + dx, z: z0 + dz };
+      return true;
+    }
+  }
+  return false;
+}
+
 function canStand(sim, c, def, x, z) {
   if (x < 0 || z < 0 || x >= W || z >= H) return false;
   if (!allowedInTown(c) && townMask(sim)[z * W + x]) return false;

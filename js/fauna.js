@@ -1063,6 +1063,7 @@ function hierarchy(sim, animals) {
     c._gkey = null; c._gsize = 0;
     if (!SOCIAL.has(c.sp) || c.hp <= 0) { c.rank = 0; continue; }
     if (c.role === 'loner' && !isLive(c)) { c.rank = 0; continue; }
+    if (!c.home) c.home = { x: Math.round(c.pos.x), z: Math.round(c.pos.z) };
     const key = isLive(c) ? c.sp + '@' + (c.owner ?? 'x') + (c.range === 0 ? 'r' : 't') : c.sp === 'goose' && c.flock ? 'goose@' + c.flock : c.sp + ':' + Math.floor(c.home.x / 12) + ',' + Math.floor(c.home.z / 12);
     c._gkey = key;
     (groups[key] = groups[key] || []).push(c);

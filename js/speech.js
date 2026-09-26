@@ -3,6 +3,7 @@
 // 同じ人が同じ台詞をくり返さないよう、最近の発言を覚えておく。
 import { casualKin } from './kin.js';
 import { careerThought } from './career.js';
+import { elderThought, elderTopic, elderTopicWeight } from './elder.js';
 import { underworldTopic, underworldThoughts } from './underworld.js';
 import { healthThoughts, healthTopic } from './health.js';
 import { financeThoughts, financeTopic, financeTopicWeight } from './finance.js';
@@ -139,6 +140,7 @@ function topics(api, A, B) {
   add(0.5, topicWeather);
   add(calendarTopicWeight(api, A), calendarTopic);
   add(financeTopicWeight(api, A, B), (a1, a2, a3, v) => financeTopic(a1, a2, a3, v));
+  add(elderTopicWeight(api, A, B), (a1, a2, a3, v) => elderTopic(a1, a2, a3, v));
   const ut = underworldTopic(api, A, B); if (ut) add(ut.w, ut.fn);
   const ht = healthTopic(api, A, B); if (ht) add(ht.w, ht.fn);
   add(A.job && age >= 14 ? 1.2 : 0, topicWork);
@@ -762,6 +764,7 @@ export function innerThought(api, p) {
   const ct = calendarThought(api, p); if (ct) opts.push(ct);
   for (const t of financeThoughts(api, p)) opts.push(t);
   const cth = careerThought(api, p); if (cth) opts.push(cth);
+  const eth = elderThought(api, p); if (eth) opts.push(eth);
   opts.push(...underworldThoughts(api, p));
   opts.push(...healthThoughts(api, p));
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
