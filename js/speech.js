@@ -2,6 +2,7 @@
 // 性格・身分・記憶・人間関係・世界の情勢から、その人らしい言葉を組み立てる。
 // 同じ人が同じ台詞をくり返さないよう、最近の発言を覚えておく。
 import { casualKin } from './kin.js';
+import { financeThoughts, financeTopic, financeTopicWeight } from './finance.js';
 import { calendarTopicWeight, calendarTopic, calendarReact, calendarThought } from './calendar.js';
 import { JOBS, GOODS, TECHS, RANKS } from './data.js';
 
@@ -134,6 +135,7 @@ function topics(api, A, B) {
   add(low[1] < 35 ? 2.4 : 0, topicNeed);
   add(0.5, topicWeather);
   add(calendarTopicWeight(api, A), calendarTopic);
+  add(financeTopicWeight(api, A, B), (a1, a2, a3, v) => financeTopic(a1, a2, a3, v));
   add(A.job && age >= 14 ? 1.2 : 0, topicWork);
   add(age >= 14 ? 0.4 + Math.abs(api.priceRatio('bread', A.s) - 1) * 3 + (api.householdMoney(A) < 20 ? 1.2 : 0) : 0, topicEconomy);
   add(age >= 16 ? A.values.family * 1.2 : 0.3, topicFamily);
@@ -673,7 +675,7 @@ export function react(api, B, A, topic, v) {
   if (kind === 'saying') { const [b, k] = R.pick([['その言葉、胸にしみる', 'v'], ['{me}もその言葉が好き', 'n'], ['うまいことを言う', 'a']]); return { text: v.s(b, k), da: 2, adopt: true }; }
   if (topic.sentiment < -0.25) {
     if (B.pers.A > 0.5 || rel.a > 30) return { text: v.r({ polite: ['それは大変ですね。', 'おつらいですね。', 'あまりご無理なさらずに。'], elder: ['それは大変じゃのう。', 'つらいのう。'], rough: ['そりゃ大変だな。', 'あんま無理すんなよ。'], child: ['だいじょうぶ？', 'かわいそう……'], plain: ['それは大変だね。', 'つらいね。', 'あんまり無理しないでね。'], royal: '案ずるな。余が何とかしよう。', noble_f: 'お気の毒ですわ。', knight: 'お力になります！', sage: 'それは難儀だな。' }), da: 3 };
-    if (B.pers.A < 0.35) return { text: v.r({ polite: 'みなさん同じですよ。', elder: 'わしらの若いころはもっと大変じゃった。', rough: 'みんな同じだっての。', child: 'ふーん。', plain: 'みんな同じだよ。', royal: '甘えるでない。' }), da: -2 };
+    if (B.pers.A < 0.35) return { text: v.r({ polite: ['みなさん同じですよ。', '大変なのはお互いさまです。'], elder: ['わしらの若いころはもっと大変じゃった。', '愚痴を言うても始まらんぞ。'], rough: ['みんな同じだっての。', '甘ったれんな。', 'ぐちぐち言うなよ。'], child: ['ふーん。', 'へんなの。'], plain: ['みんな同じだよ。', 'そんなこと言われても……', 'まあ、がんばるしかないね。'], royal: '甘えるでない。' }), da: -2 };
     return { text: v.s('そうか……', 'raw'), da: 1 };
   }
   if (topic.sentiment > 0.3) {
@@ -753,6 +755,7 @@ export function innerThought(api, p) {
   const sp = p.spouseId != null ? api.person(p.spouseId) : null;
   const opts = [];
   const ct = calendarThought(api, p); if (ct) opts.push(ct);
+  for (const t of financeThoughts(api, p)) opts.push(t);
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
   if (low[1] < 30) opts.push(needTxt[low[0]]);
   if (act === 'work') opts.push(`さて、もうひと頑張り。${JOBS[p.job]?.name ?? ''}の仕事は待ってくれない。`);

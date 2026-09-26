@@ -516,6 +516,7 @@ function considerRetire(sim, p, cnt) {
   const spare = (cnt[p.s]?.[job] || 0) > quotaOf(sim, p.s, job);
   const n = cnt[p.s]?.[job] || 0, q = quotaOf(sim, p.s, job);
   if (!heir && !spare && NO_VACANCY.includes(job)) return; // 代わりの利かない役目
+  if (FOOD.includes(job) && n - 1 < q) return; // 村の食べ物を作る手が足りなくなる
   const sole = q >= 1 && n <= q; // 町でその仕事を担う人が足りていない
   if (!heir && !spare && !(age >= 60 && !(FOOD.includes(job) && sole) && !(q === 1 && n <= 1)) && !(age >= 65 && !FOOD.includes(job))) return;
   const nest = p.nestEgg || (p.plan?.goal === 'nest' && p.plan.stage === 'done');

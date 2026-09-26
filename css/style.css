@@ -215,3 +215,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 @media (max-width: 760px) {
   #interior { left: 6px; right: 6px; top: 96px; bottom: auto; height: 34vh; }
 }
+
+/* 会話の記録 */
+.talklog details { border-bottom: 1px dashed rgba(0,0,0,.2); padding: 3px 0; }
+.talklog summary { cursor: pointer; font-size: 12px; line-height: 1.5; }
+.talklog .tl-line { font-size: 12px; margin: 2px 0 2px 10px; }
+.talklog .tl-line.me b { color: #7a4b16; }

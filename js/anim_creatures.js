@@ -13,6 +13,8 @@
 // 姿勢 Q が空のときの 'walk' は、drawCreature の歩行シートと 1 ピクセル単位で一致する（試験で確かめる）。
 // 光は画面の左上から。自発光（炎・魔法・光る目）は陰影をつけない。
 
+import { SPECIES } from './data.js';
+
 const PIXEL_SCALE = 0.0432; // 大人の人（足元〜髪の上 約22px）≒ 0.95
 
 // ================================================================ 乱数
@@ -1140,7 +1142,7 @@ function paintBlob(P, R, sp, def, lv, view, fr) {
     if (mouth === 'fang') { P.rect(mx - 2, my - 1, 4, 1, ec); P.px(mx - 2, my, '#ffffff'); P.px(mx + 1, my, '#ffffff'); }
     if (mouth === 'big') { P.rect(mx - 2, my - 1, 4, 3, '#3a1a2a'); P.px(mx - 1, my + 1, '#e06080'); P.px(mx, my + 1, '#e06080'); }
   }
-  A.top = top; A.body = [cx - Math.floor(W / 2), top, W, Hh]; A.head = [cx - Math.floor(W / 2), top, W, Hh]; A.front = cx + Math.ceil(W / 2); A.back = cx - Math.ceil(W / 2); if (!A.mouth) A.mouth = [cx, top + Math.round(Hh * 0.6)];
+  A.col = col; A.top = top; A.body = [cx - Math.floor(W / 2), top, W, Hh]; A.head = [cx - Math.floor(W / 2), top, W, Hh]; A.front = cx + Math.ceil(W / 2); A.back = cx - Math.ceil(W / 2); if (!A.mouth) A.mouth = [cx, top + Math.round(Hh * 0.6)];
   if (sp === 'kingslime') {
     const cw = 10;
     P.rect(cx - cw / 2, top - 3, cw, 3, GOLD); for (let i = 0; i < 4; i++) P.rect(cx - cw / 2 + i * 3, top - 5, 1, 2, GOLD);
@@ -1205,7 +1207,7 @@ function rig(P, o, view, fr) {
   if (!S) {
     for (const side of ['L', 'R']) {
       const posed = (arms2 === 'up') || (side === wSide && (arm === 'up' || arm === 'back'));
-      const late = (arms2 === 'fwd') || (side === wSide && (arm === 'across' || arm === 'fwd' || arm === 'down'));
+      const late = (arms2 === 'fwd') || (side === wSide && (arm === 'across' || arm === 'fwd' || arm === 'down' || arm === 'mouth'));
       if (posed) { const h = upArm(side); if (side === wSide) hand = h; continue; }
       if (late) continue;
       const ax = side === 'L' ? cx - tw / 2 - aw : cx + tw / 2;
@@ -1221,6 +1223,7 @@ function rig(P, o, view, fr) {
       if (side !== wSide) continue;
       if (arm === 'across' || arm === 'fwd') { const half = Math.ceil(o.armLen / 2); P.rect(ax, armY, aw, half, armC); const x1 = cx - sg * 1; const xa = Math.min(ax, x1), xb = Math.max(ax + aw - 1, x1); P.rect(xa, armY + half, xb - xa + 1, aw, armC); P.rect(x1, armY + half, 1, aw, handC); hand = [x1, armY + half]; }
       if (arm === 'down') { P.rect(ax, armY, aw, o.armLen + 2, armC); P.rect(ax, armY + o.armLen + 2, aw, 1, handC); hand = [ax, armY + o.armLen + 2]; }
+      if (arm === 'mouth') { const hx = cx + sg * 1 - (sg < 0 ? aw - 1 : 0), hy = hT + o.headH; thick(P, ax + (aw - 1) / 2, armY + 1, hx + (aw - 1) / 2, hy, (aw - 1) / 2 + 0.3, armC); P.rect(hx, hy, aw, 1, handC); hand = [hx, hy]; }
     }
   } else {
     if (arms2 === 'fwd') P.rect(cx - o.armLen - 1, armY, o.armLen + 1, aw, shadow(armC, 1.4)); // 奥の腕も前へ
@@ -1249,6 +1252,7 @@ function rig(P, o, view, fr) {
       if (pose === 'up') { P.rect(ax, armY - o.armLen + 1, aw, o.armLen, armC); P.rect(ax, armY - o.armLen, aw, 1, handC); return; }
       if (pose === 'fwd' || pose === 'across') { P.rect(ax - o.armLen + 1, armY + 1, o.armLen + aw - 1, aw, armC); P.rect(ax - o.armLen, armY + 1, 1, aw, handC); return; }
       if (pose === 'back') { const k = Math.round(o.armLen * 0.7); thick(P, ax + (aw - 1) / 2, armY, ax + (aw - 1) / 2 + k, armY - k, (aw - 1) / 2 + 0.3, armC); P.rect(ax + k + 1, armY - k - 1, aw, 1, handC); return; }
+      if (pose === 'mouth') { thick(P, ax + (aw - 1) / 2, armY, hL + 1 + (aw - 1) / 2, hT + o.headH - 1, (aw - 1) / 2 + 0.3, armC); P.rect(hL, hT + o.headH - 1, aw, 1, handC); return; }
       if (pose === 'down') { const k = Math.round(o.armLen * 0.6); thick(P, ax + (aw - 1) / 2, armY, ax - k + (aw - 1) / 2, armY + o.armLen, (aw - 1) / 2 + 0.3, armC); P.rect(ax - k - 1, armY + o.armLen + 1, aw, 1, handC); return; }
       for (let y = armY; y < armY + o.armLen; y++) P.rect(ax + (y > armY + 1 ? -s : 0), y, aw, 1, armC);
       P.rect(ax - s, armY + o.armLen, aw, 1, handC);
@@ -1260,7 +1264,7 @@ function rig(P, o, view, fr) {
   g.shieldX = F ? cx - tw / 2 - aw - 4 : B ? cx + tw / 2 + aw : null;
   if (S && (arm || arms2)) {
     const ax = cx - Math.ceil(aw / 2) - 1, pose = arms2 || arm, k7 = Math.round(o.armLen * 0.7), k6 = Math.round(o.armLen * 0.6);
-    const hp = pose === 'up' ? [ax, armY - o.armLen] : pose === 'fwd' || pose === 'across' ? [ax - o.armLen, armY + 1] : pose === 'back' ? [ax + k7 + 1, armY - k7 - 1] : pose === 'down' ? [ax - k6 - 1, armY + o.armLen + 1] : null;
+    const hp = pose === 'mouth' ? [hL, hT + o.headH - 1] : pose === 'up' ? [ax, armY - o.armLen] : pose === 'fwd' || pose === 'across' ? [ax - o.armLen, armY + 1] : pose === 'back' ? [ax + k7 + 1, armY - k7 - 1] : pose === 'down' ? [ax - k6 - 1, armY + o.armLen + 1] : null;
     if (hp) { g.wx = hp[0] - 1; g.handY = hp[1]; }
   } else if (hand) { g.wx = F ? hand[0] + (arm === 'up' || arm === 'back' || arms2 === 'up' ? aw : 0) : hand[0] - 1; g.handY = hand[1]; }
   A.head = [hL, hT, W, o.headH]; A.neckY = tT; A.mouth = [S ? hL : cx, hT + Math.round(o.headH * 0.72)]; A.body = [cx - tw / 2, tT, tw, o.torsoH]; A.top = hT - 2;
@@ -2172,4 +2176,1043 @@ function drawCreatureWalk(c, def) {
   const grounded = info.grounded !== false;
   return buildSheet(frame, { grounded, ground: GROUND, side, dead: c.dead, flying: !grounded, kind: 'creature' });
 }
+// 試験用：drawCreature と同じ歩行シート（1ピクセル単位で一致することを確かめるため）
 export { drawCreatureWalk as __walkSheet };
+
+// ================================================================ アニメーションの仕組み
+// コマの指定：{ fr, q, pre, fx, under, post, d }
+//   fr    …… 絵描き関数に渡す歩行コマ（0/1/2）。姿勢 Q と組み合わせる
+//   q     …… 姿勢（Q）。種の骨組みごとに読む（lie・hg・mouth・arm・wrot・flap など）
+//   pre   …… 輪郭を付ける前の変形 [['fwd',n], ['lift',n], ['rot',度,支点], ['shear',k], ['breathe',n], ['head',dx], ['squash',sy,sx], ['crumble',t], ['settle'], ['shake',n]]
+//   under …… 体の後ろに描くもの（宝の山・玉座・巣・荷車・蜘蛛の巣・水たまり など）
+//   fx    …… 体の上に描くもの（Zzz・声・炎・魔法・斬撃・土ぼこり・星 など）。左右反転の後に描くので文字は裏返らない
+//   post  …… 仕上げ ['gray',t] ['fade',t] ['tint',色,t] ['light',t]
+//   d     …… 表示時間（ms）
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const bayer = (x, y) => (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
+function hash01(a, b = 0) { let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x632be5ab, 0xc2b2ae35); h ^= h >>> 13; h = Math.imul(h, 0x27d4eb2f); h ^= h >>> 15; return (h >>> 0) / 4294967296; }
+
+// ---- 目印（A）の移動：変形に合わせて口・手・尾の位置も動かす
+function mapAnchors(An, fn) {
+  const pt = (k) => { if (An[k]) { const [x, y] = fn(An[k][0], An[k][1]); An[k] = [x, y]; } };
+  for (const k of ['mouth', 'tip', 'hand', 'tail', 'grip']) pt(k);
+  for (const k of ['head', 'body']) if (An[k]) { const [x, y] = fn(An[k][0], An[k][1]); An[k] = [x, y, An[k][2], An[k][3]]; }
+  if (An.top != null) { const [, y] = fn(An.front ?? CX, An.top); An.top = y; }
+  if (An.front != null) { const [x] = fn(An.front, GROUND - 2); An.front = x; }
+  if (An.back != null) { const [x] = fn(An.back, GROUND - 2); An.back = x; }
+  if (An.eyeY != null) { const [, y] = fn(CX, An.eyeY); An.eyeY = y; }
+  if (An.neckY != null) { const [, y] = fn(CX, An.neckY); An.neckY = y; }
+}
+// 逆写像で描き直す（穴があかない）。fn(x, y) は「行き先 → 元」の座標
+function remap(P, fn, pad = 24) {
+  const b = P.bbox(); if (!b) return;
+  const out = new Array(P.w * P.h).fill(null);
+  const X0 = Math.max(0, b[0] - pad), X1 = Math.min(P.w - 1, b[2] + pad), Y0 = Math.max(0, b[1] - pad), Y1 = Math.min(P.h - 1, b[3] + pad);
+  for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) { const [sx, sy] = fn(x, y); const c = P.raw(sx, sy); if (c) out[y * P.w + x] = c; }
+  P.d = out; P.x0 = X0; P.y0 = Y0; P.x1 = X1; P.y1 = Y1; P.fit();
+}
+function shiftPix(P, dx, dy) {
+  if (!dx && !dy) return;
+  const out = new Array(P.w * P.h).fill(null);
+  for (let y = P.y0; y <= P.y1; y++) for (let x = P.x0; x <= P.x1; x++) { const c = P.d[y * P.w + x]; if (!c) continue; const nx = x + dx, ny = y + dy; if (nx >= 0 && ny >= 0 && nx < P.w && ny < P.h) out[ny * P.w + nx] = c; }
+  P.d = out; P.x0 += dx; P.x1 += dx; P.y0 += dy; P.y1 += dy; P.x0 = Math.max(0, P.x0); P.y0 = Math.max(0, P.y0); P.x1 = Math.min(P.w - 1, P.x1); P.y1 = Math.min(P.h - 1, P.y1);
+}
+function pivotOf(P, An, pv, face) {
+  const b = P.bbox() || [CX, GROUND, CX, GROUND];
+  if (Array.isArray(pv)) return pv;
+  switch (pv) {
+    case 'fb': return [face > 0 ? Math.min(b[2], (An.body ? An.body[0] + An.body[2] - 2 : b[2])) : Math.max(b[0], (An.body ? An.body[0] + 1 : b[0])), GROUND]; // 前足
+    case 'bb': return [face > 0 ? (An.body ? An.body[0] + 1 : b[0]) : (An.body ? An.body[0] + An.body[2] - 2 : b[2]), GROUND]; // 後ろ足
+    case 'c': return [Math.round((b[0] + b[2]) / 2), Math.round((b[1] + b[3]) / 2)];
+    case 'b': default: return [CX, GROUND];
+  }
+}
+// 変形を1つ当てる。view に合わない変形は飛ばす
+function applyPre(P, An, t, view, face) {
+  const [op, a, b2, c2] = t;
+  const only = typeof t[t.length - 1] === 'string' && /^[SFB]+$/.test(t[t.length - 1]) ? t[t.length - 1] : null;
+  if (only && !only.includes(view)) return;
+  switch (op) {
+    case 'fwd': { // 顔の向きへ進む（正面は下へ、背中は上へ）
+      const dx = view === 'S' ? Math.round(a * face) : 0, dy = view === 'F' ? Math.round(a / 2) : view === 'B' ? -Math.round(a / 2) : 0;
+      shiftPix(P, dx, dy); mapAnchors(An, (x, y) => [x + dx, y + dy]); break;
+    }
+    case 'lift': shiftPix(P, 0, -Math.round(a)); mapAnchors(An, (x, y) => [x, y - Math.round(a)]); break;
+    case 'shift': shiftPix(P, Math.round(a), Math.round(b2 || 0)); mapAnchors(An, (x, y) => [x + Math.round(a), y + Math.round(b2 || 0)]); break;
+    case 'shake': { const dx = Math.round(a); shiftPix(P, dx, 0); mapAnchors(An, (x, y) => [x + dx, y]); break; }
+    case 'shear': { // 前へ傾く（足元は動かない）
+      const k = a * (view === 'S' ? face : 0); if (!k) break;
+      remap(P, (x, y) => [x - Math.round(k * (GROUND - y)), y]); mapAnchors(An, (x, y) => [x + Math.round(k * (GROUND - y)), y]); break;
+    }
+    case 'rot': { // 時計回りの度。横向きでは「前へのめる」向きを正とする
+      const deg = view === 'S' ? a * face : (c2 === 'mirror' ? -a : a);
+      const [px, py] = pivotOf(P, An, b2 || 'b', face);
+      const r = deg * Math.PI / 180, cs = Math.cos(r), sn = Math.sin(r);
+      const ex = (v) => Math.abs(v) < 1e-9 ? 0 : v;
+      const C = ex(cs), Sn = ex(sn);
+      remap(P, (x, y) => { const dx = x - px, dy = y - py; return [Math.round(px + dx * C + dy * Sn), Math.round(py - dx * Sn + dy * C)]; }, 40);
+      mapAnchors(An, (x, y) => { const dx = x - px, dy = y - py; return [Math.round(px + dx * C - dy * Sn), Math.round(py + dx * Sn + dy * C)]; });
+      break;
+    }
+    case 'squash': { // 足元を基準に縦 a 倍・横 b2 倍
+      const sy = a, sx = b2 ?? 1;
+      remap(P, (x, y) => [Math.round(CX + (x - CX) / sx), Math.round(GROUND - (GROUND - y) / sy)]); mapAnchors(An, (x, y) => [Math.round(CX + (x - CX) * sx), Math.round(GROUND - (GROUND - y) * sy)]); break;
+    }
+    case 'breathe': { // 胸の高さより上を a px 持ち上げる（息を吸う）
+      const n = Math.round(a); if (!n) break;
+      const yc = b2 ?? (An.body ? An.body[1] + Math.floor(An.body[3] / 2) : GROUND - 6);
+      for (let y = Math.max(0, P.y0 - n); y < yc && y < P.h; y++) for (let x = P.x0; x <= P.x1; x++) P.d[y * P.w + x] = y + n < yc ? P.d[(y + n) * P.w + x] : P.d[yc * P.w + x];
+      P.y0 = Math.max(0, P.y0 - n);
+      mapAnchors(An, (x, y) => [x, y < yc ? y - n : y]); break;
+    }
+    case 'head': { // 首より上だけ横へずらす（見回す）
+      const ny = An.neckY; if (ny == null) break; const dx = Math.round(a), dy = Math.round(b2 || 0);
+      const out = P.d.slice();
+      for (let y = P.y0; y < ny; y++) for (let x = P.x0; x <= P.x1; x++) out[y * P.w + x] = null;
+      for (let y = P.y0; y < ny; y++) for (let x = P.x0; x <= P.x1; x++) { const c = P.d[y * P.w + x]; if (!c) continue; const nx = x + dx, yy = Math.min(ny - 1 + Math.max(0, dy), y + dy); if (nx >= 0 && nx < P.w && yy >= 0) out[yy * P.w + nx] = c; }
+      P.d = out; P.x0 = Math.max(0, P.x0 - Math.abs(dx)); P.x1 = Math.min(P.w - 1, P.x1 + Math.abs(dx));
+      if (An.mouth && An.mouth[1] < ny) An.mouth = [An.mouth[0] + dx, An.mouth[1] + dy]; if (An.head) An.head = [An.head[0] + dx, An.head[1] + dy, An.head[2], An.head[3]]; if (An.eyeY != null) An.eyeY += dy;
+      break;
+    }
+    case 'settle': { const bb = P.bbox(); if (bb) { const dy = GROUND - bb[3]; shiftPix(P, 0, dy); mapAnchors(An, (x, y) => [x, y + dy]); } break; }
+    case 'crumble': crumble(P, a, b2 || 3, An); break;
+    case 'closeEyes': closeEyes(P, An, view); break;
+    case 'mouth': { // 口を開ける（叫ぶ・食べる）
+      if (view === 'B' || !An.mouth) break; const [mx, my] = An.mouth;
+      if (view === 'S') { P.px(mx, my, '#2a1016'); P.px(mx + face, my, '#2a1016'); P.px(mx, my + 1, '#5a1a22'); }
+      else { P.rect(mx - 1, my, 2, 2, '#2a1016'); P.px(mx - 1, my + 1, '#7a2a32'); }
+      break;
+    }
+  }
+}
+// 崩れる：3px のかけらに分け、下から順に地面へ積もる（骨の山・瓦礫の山）
+function crumble(P, t, bs, An) {
+  const b = P.bbox(); if (!b || t <= 0) return;
+  const blocks = [];
+  for (let by = b[1]; by <= b[3]; by += bs) for (let bx = b[0]; bx <= b[2]; bx += bs) {
+    const px = []; for (let j = 0; j < bs; j++) for (let i = 0; i < bs; i++) { const c = P.raw(bx + i, by + j); if (c) px.push([i, j, c]); }
+    if (px.length) blocks.push({ bx, by, px });
+  }
+  blocks.sort((p, q) => q.by - p.by || Math.abs(p.bx - CX) - Math.abs(q.bx - CX));
+  const top = new Array(P.w).fill(GROUND + 1);
+  const e = t * t * (3 - 2 * t);
+  const out = new Array(P.w * P.h).fill(null);
+  for (const k of blocks) {
+    const jit = Math.round((hash01(k.bx, k.by) - 0.5) * 3);
+    const nx = Math.max(1, Math.min(P.w - bs - 1, k.bx + Math.round((k.bx + bs / 2 - CX) * 0.45) + jit));
+    const low = new Array(bs).fill(-1), high = new Array(bs).fill(99);
+    for (const [i, j] of k.px) { if (j > low[i]) low[i] = j; if (j < high[i]) high[i] = j; }
+    let ny = 999; for (let i = 0; i < bs; i++) if (low[i] >= 0) ny = Math.min(ny, top[nx + i] - 1 - low[i]);
+    ny = Math.min(ny, GROUND - Math.max(...low));
+    for (let i = 0; i < bs; i++) if (low[i] >= 0) top[nx + i] = Math.min(top[nx + i], ny + high[i]);
+    const cx2 = Math.round(k.bx + (nx - k.bx) * e), cy2 = Math.round(k.by + (ny - k.by) * e);
+    for (const [i, j, c] of k.px) { const x = cx2 + i, y = cy2 + j; if (x >= 0 && y >= 0 && x < P.w && y < P.h) out[y * P.w + x] = c; }
+  }
+  P.d = out; P.x0 = 0; P.y0 = 0; P.x1 = P.w - 1; P.y1 = P.h - 1; P.fit();
+  if (An.top != null) An.top = Math.round(An.top + (GROUND - 6 - An.top) * e);
+}
+// 閉じた目：目の行の、肌と違う色を肌の暗い色で塗る
+function closeEyes(P, An, view) {
+  if (view === 'B' || An.eyeY == null || !An.head) return;
+  const y = An.eyeY, x0 = Math.round(An.head[0]), x1 = Math.round(An.head[0] + An.head[2] - 1);
+  const skin = P.get(x0 + 1, y + 1) || P.get(x0 + 1, y - 1) || P.get(Math.round((x0 + x1) / 2), y - 2);
+  if (!skin) return;
+  for (let x = x0; x <= x1; x++) { const c = P.get(x, y); if (c && c !== skin) P.px(x, y, dk(skin, 0.22)); }
+}
+function applyPost(P, t) {
+  const [op, a, b] = t;
+  if (op === 'gray') P.mapColors((c) => mix(c, mix(gray(c), '#6a6a78', 0.3), a));
+  else if (op === 'tint') P.mapColors((c) => mix(c, a, b));
+  else if (op === 'fade') { for (let y = P.y0; y <= P.y1; y++) for (let x = P.x0; x <= P.x1; x++) if (P.d[y * P.w + x] && bayer(x, y) < a) P.d[y * P.w + x] = null; }
+  else if (op === 'light') { // 光に溶ける：明るくしながら下から消える
+    const b0 = P.bbox(); if (!b0) return; const h = b0[3] - b0[1] + 1;
+    for (let y = P.y0; y <= P.y1; y++) for (let x = P.x0; x <= P.x1; x++) { const c = P.d[y * P.w + x]; if (!c) continue; const up = (b0[3] - y) / h; const k = a * 1.4 - up * 0.6; if (bayer(x, y) < k) P.d[y * P.w + x] = null; else P.d[y * P.w + x] = mix(c, '#fff4c8', Math.min(0.85, a)); }
+  }
+}
+
+// ---- 上に描く効果（fx）と、後ろに描くもの（under）
+// どれも (P, An, view, face, k, ...) を受け取る。k はコマ番号（動きの段階）
+const OUT = '#1c1622';
+function glyph(P, rows, x, y, c, oc = OUT) {
+  const on = (i, j) => rows[j] && rows[j][i] === '#';
+  for (let j = -1; j <= rows.length; j++) for (let i = -1; i <= rows[0].length; i++) if (!on(i, j) && (on(i + 1, j) || on(i - 1, j) || on(i, j + 1) || on(i, j - 1))) P.px(x + i, y + j, oc);
+  for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[0].length; i++) if (on(i, j)) P.px(x + i, y + j, c);
+}
+const G_Z = ['###', '.#.', '###'], G_ZZ = ['####', '..#.', '.#..', '####'], G_BANG = ['#', '#', '#', '.', '#'];
+const G_STAR = ['.#.', '###', '.#.'], G_NOTE = ['.##', '.#.', '##.'];
+function headTop(An) { return [An.head ? Math.round(An.head[0] + An.head[2] / 2) : CX, An.top != null ? An.top : GROUND - 20]; }
+function star(P, x, y, r, c1 = '#ffffff', c2 = '#ffe070') {
+  P.px(x, y, c1);
+  for (let i = 1; i <= r; i++) { const c = i === 1 ? c1 : c2; P.px(x + i, y, c); P.px(x - i, y, c); P.px(x, y + i, c); P.px(x, y - i, c); }
+  if (r >= 2) { P.px(x + 1, y + 1, c2); P.px(x - 1, y - 1, c2); P.px(x + 1, y - 1, c2); P.px(x - 1, y + 1, c2); }
+}
+const FX = {
+  zzz(P, An, view, face, k) {
+    const [hx, ty] = headTop(An); const x = hx + (view === 'S' ? face * 3 : 3);
+    glyph(P, G_Z, x, ty - 3 - (k % 3), '#e8ecff');
+    if (k % 3 >= 1) glyph(P, G_ZZ, x + (view === 'S' ? face * 4 : 4) - (face < 0 && view === 'S' ? 1 : 0), ty - 9 - (k % 3), '#ffffff');
+  },
+  sound(P, An, view, face, k) { // 鳴き声：口の前に弧
+    const [mx, my] = An.mouth || headTop(An);
+    const c = '#fff6d8';
+    const arc = (x, y, r, s) => { for (let j = -r; j <= r; j++) P.px(x + s * (r - Math.round(Math.sqrt(Math.max(0, r * r - j * j)) * 0.6)), y + j, c); };
+    if (view === 'S') { arc(mx + face * 2, my, 1 + (k & 1), face); arc(mx + face * 4, my, 2 + (k & 1), face); }
+    else { const [hx, ty] = headTop(An); arc(hx - 5, ty + 2, 1 + (k & 1), -1); arc(hx + 5, ty + 2, 1 + (k & 1), 1); if (k & 1) { arc(hx - 7, ty + 2, 2, -1); arc(hx + 7, ty + 2, 2, 1); } }
+  },
+  note(P, An, view, face, k) { const [hx, ty] = headTop(An); glyph(P, G_NOTE, hx + (view === 'S' ? face * 4 : 4), ty - 2 - (k & 1), '#fff0a0'); },
+  bang(P, An, view, face, k) { const [hx, ty] = headTop(An); glyph(P, G_BANG, hx, ty - 7 - (k & 1), '#ffe040'); },
+  roar(P, An, view, face, k) { // 咆哮の衝撃線
+    const [mx, my] = An.mouth || headTop(An); const c = '#fff8e0', L2 = 3 + (k & 1) * 2;
+    if (view === 'S') { for (const dy of [-3, 0, 3]) P.line(mx + face * 2, my + dy, mx + face * (2 + L2), my + dy * 2, c); }
+    else if (view === 'F') { for (const dx of [-5, 0, 5]) P.line(mx + dx, my + 2, mx + dx * 2, my + 2 + L2, c); }
+    else { const [hx, ty] = headTop(An); for (const dx of [-6, 6]) P.line(hx + dx, ty, hx + dx * 1.6, ty - L2, c); }
+  },
+  angry(P, An, view, face, k) { const [hx, ty] = headTop(An); const x = hx + (view === 'S' ? face * 3 : 4), y = ty - 3; const c = '#ff3040'; P.px(x - 1, y - 1, c); P.px(x + 1, y - 1, c); P.px(x - 1, y + 1, c); P.px(x + 1, y + 1, c); if (k & 1) { P.px(x - 2, y - 2, c); P.px(x + 2, y + 2, c); } },
+  grass(P, An, view, face, k) { // 口元の草（食べるほど減る）
+    const [mx] = An.mouth || [CX, 0]; const x = view === 'S' ? mx + face : mx; const n = Math.max(1, 4 - (k % 4));
+    const gc = ['#4a9a30', '#5ab040', '#3a8a28', '#6ac050'];
+    for (let i = 0; i < n; i++) { const xx = x + (i - 1) * (view === 'S' ? face : 1) + (i === 3 ? 1 : 0); const h = 2 + ((i + k) % 2); P.rect(xx, GROUND - h + 1, 1, h, gc[i]); }
+  },
+  seeds(P, An, view, face, k) { const [mx] = An.mouth || [CX, 0]; const x = view === 'S' ? mx + face : mx; for (let i = 0; i < 4 - (k % 2); i++) P.px(x - 2 + i * 2 + (k & 1), GROUND, i & 1 ? '#d8c070' : '#b89850'); },
+  meat(P, An, view, face, k) { // 獲物の肉（骨つき）
+    const [mx] = An.mouth || [CX, 0]; const x = view === 'S' ? mx + face * 1 : mx, y = GROUND - 1;
+    P.ell(x, y, 2.6 - (k % 3) * 0.3, 1.6, '#a83232'); P.px(x - 1, y - 1, '#d86a5a'); P.px(x, y - 1, '#d86a5a');
+    P.rect(x + (view === 'S' ? face * 2 : 2), y - 1, 2, 1, '#f0ead8'); P.px(x + (view === 'S' ? face * 3 : 3), y - 2, '#f0ead8');
+    if (k & 1) P.px(x - (view === 'S' ? face : 1) * 3, y + 1, '#8a2020');
+  },
+  water(P, An, view, face, k) { // 水たまりと波紋
+    const [mx] = An.mouth || [CX, 0]; const x = view === 'S' ? mx : mx;
+    P.ell(x, GROUND, 4.5, 1.1, '#3a78c8'); P.rect(x - 2, GROUND, 3, 1, '#5a98e0'); P.px(x - 3 + (k % 3), GROUND - 1 + 0, (k & 1) ? '#bfe4ff' : '#8ac8f8');
+    if (k % 2) { P.px(x - 5, GROUND, '#8ac8f8'); P.px(x + 5, GROUND, '#8ac8f8'); }
+  },
+  slash(P, An, view, face, k) { // 爪・刃の斬撃
+    const [mx, my] = An.mouth || headTop(An); const x0 = view === 'S' ? (An.front ?? mx) + face * 1 : mx - 3, y0 = (view === 'S' ? my - 4 : my - 1);
+    for (let i = 0; i < 3; i++) { const x = x0 + (view === 'S' ? face * i * 2 : i * 3), y = y0 + i; P.line(x, y, x + (view === 'S' ? face * 3 : 2), y + 5, i === 1 ? '#ffffff' : '#d8ecff'); }
+  },
+  swing(P, An, view, face, k) { // 武器の軌跡（弧）
+    const [gx, gy] = An.grip || An.hand || [CX, GROUND - 12]; const r = 9;
+    for (let i = 0; i < 9; i++) { const a = -Math.PI * 0.45 + i * (Math.PI * 0.62 / 8); const x = view === 'S' ? gx + face * Math.round(Math.sin(a) * r) : gx + (view === 'F' ? -1 : 1) * Math.round(Math.sin(a) * r), y = gy - Math.round(Math.cos(a) * r); P.px(x, y, i > 5 ? '#ffffff' : '#c8dcff'); if (i > 3) P.px(x, y + 1, '#e8f0ff'); }
+  },
+  bite(P, An, view, face, k) { const [mx, my] = An.mouth || headTop(An); const x = view === 'S' ? mx + face * 2 : mx, y = view === 'S' ? my : my + 2; P.px(x, y - 2, '#ffffff'); P.px(x + (view === 'S' ? face : 1), y - 1, '#ffffff'); P.px(x, y + 2, '#ffffff'); P.px(x + (view === 'S' ? face : 1), y + 1, '#ffffff'); },
+  impact(P, An, view, face, k, at) {
+    let x, y; if (at === 'back' && view === 'S') { x = (An.back ?? CX) - face * 2; y = GROUND - 5; }
+    else if (at === 'tip' && (An.tip || An.tail)) { [x, y] = An.tip || An.tail; }
+    else { const m = An.mouth || headTop(An); x = view === 'S' ? (An.front ?? m[0]) + face * 2 : m[0]; y = view === 'S' ? m[1] : view === 'F' ? m[1] + 4 : m[1] - 4; }
+    star(P, x, y, 2 + (k & 1));
+  },
+  fire(P, An, view, face, k) { // 竜の息（炎）
+    const [mx, my] = An.mouth || headTop(An); const len = [10, 18, 24, 16][k % 4];
+    const col = (d, off) => { const v = (off / (1 + d * 0.35)); return v < 0.35 ? '#fff4b0' : v < 0.7 ? '#ffb030' : '#e84020'; };
+    if (view === 'S') { for (let d = 1; d <= len; d++) { const h = 1 + d * 0.33; for (let j = -Math.ceil(h); j <= Math.ceil(h); j++) { if (hash01(d * 7 + k, j + 20) < 0.18 && Math.abs(j) > h * 0.6) continue; P.px(mx + face * d, my + j + Math.round(d * 0.15), col(d, Math.abs(j))); } } }
+    else if (view === 'F') { for (let d = 1; d <= len * 0.6; d++) { const h = 1 + d * 0.45; for (let j = -Math.ceil(h); j <= Math.ceil(h); j++) { if (hash01(d * 5 + k, j + 9) < 0.15 && Math.abs(j) > h * 0.6) continue; P.px(mx + j, my + d, col(d, Math.abs(j))); } } }
+    else { const [hx, ty] = headTop(An); for (let j = -3; j <= 3; j++) P.px(hx + j, ty - 1 - (Math.abs(j) < 2 ? 2 : 1), col(3, Math.abs(j))); }
+  },
+  smoke(P, An, view, face, k) { const [mx, my] = An.mouth || headTop(An); const x = view === 'S' ? mx : mx; for (let i = 0; i < 2; i++) P.ell(x + (view === 'S' ? face * i : i - 1), my - 2 - i * 2 - (k % 3), 1 + i * 0.4, 1, i ? '#a8a0a8' : '#c8c0c8'); },
+  magic(P, An, view, face, k, color = '#60f080') { // 杖の先の光
+    const [x, y] = An.tip || An.hand || headTop(An); const r = 2 + (k & 1);
+    for (let a = 0; a < 8; a++) { const t = a * Math.PI / 4 + k * 0.4; P.px(x + Math.round(Math.cos(t) * (r + 1)), y + Math.round(Math.sin(t) * (r + 1)), a & 1 ? color : lt(color, 0.2)); }
+    P.ell(x, y, 1.5, 1.5, lt(color, 0.3)); P.px(x, y, '#ffffff');
+  },
+  bolt(P, An, view, face, k, color = '#60f080') { // 飛んでいく魔法の弾
+    const [x0, y0] = An.tip || An.hand || An.mouth || headTop(An); const d = 5 + k * 6;
+    const x = view === 'S' ? x0 + face * d : x0, y = view === 'S' ? y0 + 2 : view === 'F' ? y0 + d * 0.6 : y0 - d * 0.5;
+    P.ell(x, y, 2.2, 2.2, color); P.ell(x, y, 1.2, 1.2, lt(color, 0.3)); P.px(x, y, '#ffffff');
+    for (let i = 1; i <= 3; i++) P.px(view === 'S' ? x - face * (2 + i * 2) : x, view === 'S' ? y + (i & 1) : view === 'F' ? y - 2 - i * 2 : y + 2 + i * 2, lt(color, 0.1));
+  },
+  burst(P, An, view, face, k, color = '#c02040') { // 魔王の闇の波動
+    const [hx, ty] = headTop(An); const cy = ty + 16, r = 8 + k * 5;
+    for (let a = 0; a < 24; a++) { const t = a * Math.PI / 12; const x = hx + Math.round(Math.cos(t) * r), y = cy + Math.round(Math.sin(t) * r * 0.6); P.px(x, y, a & 1 ? color : '#ff80a0'); }
+  },
+  circle(P, An, view, face, k, color = '#80f0a0') { // 地面の魔法陣（体の上にも少しかかる）
+    for (let a = 0; a < 32; a++) { const t = a * Math.PI / 16 + k * 0.2; const x = CX + Math.round(Math.cos(t) * 12), y = GROUND - 1 + Math.round(Math.sin(t) * 2.5); if (Math.sin(t) > 0) P.px(x, y, a % 4 === 0 ? '#ffffff' : color); }
+  },
+  poison(P, An, view, face, k) { const [x, y] = An.tail || An.mouth || headTop(An); P.px(x, y + 2 + (k % 3), '#80e040'); P.px(x + 1, y + 4 + (k % 3), '#60c030'); P.px(x - 1, y + 1, '#a0f060'); },
+  web(P, An, view, face, k) { const [x, y] = An.mouth || headTop(An); const d = 4 + k * 5; const px = view === 'S' ? x + face * d : x, py = view === 'S' ? y : view === 'F' ? y + d / 2 : y - d / 2; P.line(x, y, px, py, '#e8e8f0'); star(P, Math.round(px), Math.round(py), 2, '#ffffff', '#d8d8e8'); },
+  dust(P, An, view, face, k) { // 足元の土ぼこり
+    const b = An.body || [CX - 6, 0, 12, 0]; const L2 = b[0] - 1, R2 = b[0] + b[2]; const s = 1 + (k % 2) * 0.6;
+    P.ell(L2 - k, GROUND - 1, 1.6 * s, 1.2 * s, '#c8b89a'); P.ell(R2 + k, GROUND - 1, 1.6 * s, 1.2 * s, '#d8ccb0'); if (k) { P.ell(L2 - 3 - k, GROUND - 2, 1, 1, '#e0d8c4'); P.ell(R2 + 3 + k, GROUND - 2, 1, 1, '#e0d8c4'); }
+  },
+  dirt(P, An, view, face, k) { const x = view === 'S' ? (An.front ?? CX) - face * 2 : CX; for (let i = 0; i < 3; i++) P.px(x - (view === 'S' ? face : 1) * (2 + i * 2 + k), GROUND - 2 - ((i + k) % 3) * 2, i & 1 ? '#8a6a40' : '#6a4a2a'); },
+  hit(P, An, view, face, k, kind = 'blood') { // 当たった所の火花としぶき
+    const b = An.body || [CX - 4, GROUND - 10, 8, 8]; const x = Math.round(b[0] + b[2] * (view === 'S' ? (face > 0 ? 0.7 : 0.3) : 0.5)), y = Math.round(b[1] + b[3] * 0.4);
+    star(P, x, y, 2);
+    const c = kind === 'bone' ? '#e8e4d8' : kind === 'stone' ? '#a8a498' : kind === 'slime' ? '#a0e8ff' : kind === 'dark' ? '#8a40c0' : '#c02030';
+    P.px(x - 3, y - 2, c); P.px(x + 3, y - 1, c); P.px(x + 2, y + 3, c); if (k) P.px(x - 2, y + 3, c);
+  },
+  dizzy(P, An, view, face, k) { const [hx, ty] = headTop(An); for (let i = 0; i < 3; i++) { const t = (i / 3 + k * 0.12) * Math.PI * 2; const x = hx + Math.round(Math.cos(t) * 5), y = ty - 2 + Math.round(Math.sin(t) * 1.5); if (Math.sin(t) > -0.3 || i === 0) glyph(P, G_STAR, x - 1, y - 1, '#ffe040', '#3a2a10'); } },
+  sweat(P, An, view, face, k) { const [hx, ty] = headTop(An); const x = hx + (view === 'S' ? -face * 3 : 4), y = ty + 3 + (k % 2); P.px(x, y, '#a8d8ff'); P.px(x, y + 1, '#6ab0f0'); P.px(x - 1, y + 1, '#8ac8f8'); },
+  soul(P, An, view, face, k) { const [hx, ty] = headTop(An); const y = ty - 2 - k * 4; const x = hx + Math.round(Math.sin(k * 1.3) * 2); P.ell(x, y, 2, 2.4, '#d8f0ff'); P.px(x - 1, y - 1, '#ffffff'); P.px(x, y + 3, '#a8d0f0'); P.px(x + 1, y + 4, '#a8d0f0'); },
+  beam(P, An, view, face, k) { // 天へ昇る光の柱（魔王の消滅）
+    const w = Math.max(1, 7 - k); const b = An.body || [CX - 8, GROUND - 30, 16, 20];
+    for (let y = 0; y <= GROUND; y++) for (let x = CX - w; x <= CX + w; x++) if (((x + y) & 1) === 0 || Math.abs(x - CX) < w / 2) P.px(x, y, Math.abs(x - CX) < w / 2 ? '#fffbe8' : '#ffe8a0');
+    for (let i = 0; i < 6; i++) { const x = CX + Math.round((hash01(i, k) - 0.5) * 30), y = b[1] + Math.round(hash01(k, i) * (GROUND - b[1])); glyph(P, G_STAR, x, y, '#fff4c0', '#c09020'); }
+  },
+  smokeDark(P, An, view, face, k) { const b = An.body || [CX - 6, GROUND - 16, 12, 12]; for (let i = 0; i < 5; i++) { const x = b[0] + Math.round(hash01(i, 3) * b[2]), y = b[1] + Math.round(hash01(i, 7) * b[3]) - k * 3; P.ell(x, y, 1.5, 1.3, i & 1 ? '#5a2a6a' : '#3a1a4a'); } },
+  splash(P, An, view, face, k) { const y = (An.cy ?? 50) + 4, x = CX; for (let i = -3; i <= 3; i++) P.px(x + i * 2, y - Math.abs(i) % 2 - (k & 1), i & 1 ? '#d8f4ff' : '#a8dcff'); P.px(x - 1, y - 3, '#ffffff'); P.px(x + 1, y - 4, '#ffffff'); },
+  bubbles(P, An, view, face, k) { const [mx, my] = An.mouth || [CX, 50]; for (let i = 0; i < 2; i++) { const x = mx + (view === 'S' ? face * (1 + i) : i * 2 - 1), y = my - 3 - i * 3 - (k % 3); P.px(x, y, '#d8f0ff'); P.px(x + 1, y - 1, '#a8d8f8'); } },
+  fishy(P, An, view, face, k) { const [mx, my] = An.mouth || [CX, 50]; const d = 8 - (k % 3) * 3; const x = view === 'S' ? mx + face * d : mx + 3, y = my + (k & 1); P.rect(x, y, 3, 1, '#c8d8e8'); P.px(x + (face > 0 ? 3 : -1), y - 1, '#a8b8c8'); P.px(x + (face > 0 ? 3 : -1), y + 1, '#a8b8c8'); },
+  crack(P, An, view, face, k) { const c = '#3a3028'; for (const s2 of [-1, 1]) { P.line(CX + s2 * 3, GROUND, CX + s2 * (8 + k * 2), GROUND - 1, c); P.px(CX + s2 * (6 + k), GROUND - 3 - k, '#8a847a'); P.px(CX + s2 * (9 + k), GROUND - 4 - k, '#a8a498'); } },
+  crumbs(P, An, view, face, k) { const [mx, my] = An.mouth || [CX, GROUND - 2]; const x = view === 'S' ? mx + face : mx; P.rect(x, GROUND - 1, 2, 2, '#e8c860'); P.px(x + 1, GROUND - 1, '#f8e090'); if (k & 1) { P.px(x - 2, GROUND, '#d8b850'); P.px(x + 3, GROUND, '#d8b850'); } },
+  nut(P, An, view, face, k) { const [mx, my] = An.mouth || [CX, GROUND - 2]; const x = view === 'S' ? mx + face : mx; P.ell(x, my + 1, 1.2, 1.4, '#8a5a2a'); P.px(x, my, '#6a3a1a'); },
+  food(P, An, view, face, k) { const [x, y] = An.hand || An.mouth || headTop(An); P.ell(x, y - 1, 1.8 - (k % 2) * 0.4, 1.3, '#a83232'); P.px(x - 1, y - 2, '#d86a5a'); P.px(x + 2, y - 1, '#f0ead8'); P.px(x + 3, y - 1, '#f0ead8'); },
+  banana(P, An, view, face, k) { const [x, y] = An.hand || An.mouth || headTop(An); P.rect(x - 1, y - 2, 2, 3 - (k % 2), '#f0d040'); P.px(x, y - 3, '#6a8a2a'); },
+  leaves(P, An, view, face, k) { const [mx, my] = An.mouth || headTop(An); const x = view === 'S' ? mx + face * 2 : mx; const y = my - 3; P.ell(x, y, 3, 2, '#4a9a30'); P.px(x - 1, y - 1, '#6ac050'); P.px(x + 1, y + 1, '#3a7a28'); if (k & 1) P.px(x + (view === 'S' ? face : 1) * 3, y + 2, '#6ac050'); },
+  fly(P, An, view, face, k) { const [mx, my] = An.mouth || headTop(An); const d = 10 - (k % 3) * 3; const x = view === 'S' ? mx + face * d : mx + 2, y = my - 3 - (k & 1); P.px(x, y, '#1a1a1a'); P.px(x - 1, y - 1, '#d8e8f0'); P.px(x + 1, y - 1, '#d8e8f0'); },
+  cocoon(P, An, view, face, k) { const [mx] = An.mouth || [CX, 0]; const x = view === 'S' ? mx + face * 2 : mx; P.ell(x, GROUND - 2, 1.8, 2.4, '#e8e8f0'); P.px(x, GROUND - 3, '#c8c8d8'); P.px(x, GROUND - 1, '#c8c8d8'); },
+  wool(P, An, view, face, k) { // 刈られた毛の房と鋏
+    const b = An.body || [CX - 6, GROUND - 10, 12, 7];
+    for (let i = 0; i < 4; i++) { const x = b[0] + Math.round(hash01(i, 11) * b[2]), y = Math.min(GROUND - 1, b[1] + b[3] + ((i * 3 + k * 2) % 6)); P.rect(x, y, 2, 2, i & 1 ? '#f4f1ea' : '#e8e4da'); }
+    const sx = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.3 : 0.7)) : b[0] + b[2] + 1, sy = b[1] - 2;
+    P.line(sx, sy, sx + 3, sy + 3 - (k & 1), '#b8bcc4'); P.line(sx + 3, sy, sx, sy + 3, '#d8dce4'); P.px(sx - 1, sy - 1, '#8a3a2a');
+  },
+  milk(P, An, view, face, k) { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; const x = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.45 : 0.55)) : CX + 4; const y = b[1] + b[3]; P.px(x, y + 1 + (k % 3), '#ffffff'); if (k % 3 === 1) P.px(x, y + 3, '#f0f0f0'); },
+  letter(P, An, view, face, k) { const [x, y] = An.hand || headTop(An); P.rect(x - 1, y - 3, 4, 3, '#f0e8d0'); P.px(x, y - 2, '#c02030'); },
+  rock(P, An, view, face, k) { const [hx, ty] = headTop(An); P.ell(hx, ty - 3, 5, 3.5, '#8a847a'); P.ell(hx - 1, ty - 4, 3, 2, '#a8a498'); P.px(hx + 2, ty - 2, '#6a645a'); },
+  sparkle(P, An, view, face, k, color = '#fff4c0') { const b = An.body || [CX - 6, GROUND - 16, 12, 12]; for (let i = 0; i < 3; i++) { const x = b[0] + Math.round(hash01(i, k + 3) * b[2]), y = b[1] - 2 + Math.round(hash01(k + 5, i) * (b[3] + 4)); P.px(x, y, '#ffffff'); P.px(x + 1, y, color); P.px(x - 1, y, color); P.px(x, y + 1, color); P.px(x, y - 1, color); } },
+  yawn(P, An, view, face, k) {},
+};
+// 体の後ろ・下に描くもの（先に描いて、体をその上に重ねる）
+const UNDER = {
+  treasure(U, An, view, face, k) { // 宝の山
+    const w = Math.max(8, Math.round((An.body ? An.body[2] : 12) * 0.75) + 4);
+    for (let y = 0; y < 5; y++) { const hw = Math.round(w * Math.sqrt(1 - (y / 5) ** 2)); U.rect(CX - hw, GROUND - y, hw * 2, 1, y > 2 ? '#f0d060' : '#e0b840'); }
+    for (let i = 0; i < 7; i++) { const x = CX - w + 1 + Math.round(hash01(i, 5) * (w * 2 - 2)), y = GROUND - Math.round(hash01(5, i) * 3); U.px(x, y, i % 3 === 0 ? '#fff6b0' : '#b08a20'); }
+    U.px(CX - 3, GROUND - 3, '#d0303a'); U.px(CX + 4, GROUND - 2, '#3a7ad8'); U.px(CX + 1, GROUND - 4, '#fff8d0');
+    U.rect(CX + w - 4, GROUND - 5, 5, 4, '#7a4a20'); U.rect(CX + w - 4, GROUND - 5, 5, 1, '#c9a23a'); U.px(CX + w - 2, GROUND - 3, '#e8c040'); // 宝箱
+  },
+  throne(U, An, view, face, k) { // 魔王の玉座（背もたれは体の後ろ）
+    const top = (An.top ?? GROUND - 40) - 4, x0 = CX - 13, w = 26;
+    if (view === 'B') { U.rect(x0, top, w, GROUND - top + 1, '#3a1a2a'); U.rect(x0 + 2, top + 2, w - 4, GROUND - top - 6, '#4a2238'); U.rect(x0, top, w, 1, GOLD); return; }
+    U.rect(x0, top, w, GROUND - top + 1, '#2a1220'); U.rect(x0 + 2, top + 2, w - 4, GROUND - top - 8, '#8a1020'); U.rect(x0 + 3, top + 3, w - 6, GROUND - top - 10, '#a81828');
+    U.rect(x0, top, w, 1, GOLD); U.rect(x0, top, 1, GROUND - top, GOLD_D); U.rect(x0 + w - 1, top, 1, GROUND - top, GOLD_D);
+    for (const s2 of [-1, 1]) { U.line(CX + s2 * 11, top, CX + s2 * 15, top - 6, '#e8e0c8'); U.line(CX + s2 * 12, top, CX + s2 * 16, top - 5, '#c8c0a8'); }
+    U.rect(x0 - 3, GROUND - 12, 4, 13, '#2a1220'); U.rect(x0 + w - 1, GROUND - 12, 4, 13, '#2a1220'); U.rect(x0 - 3, GROUND - 12, 4, 1, GOLD); U.rect(x0 + w - 1, GROUND - 12, 4, 1, GOLD);
+    U.px(CX, top + 1, '#ff2030');
+  },
+  nest(U, An, view, face, k) { U.ell(CX, GROUND - 1, 7, 2.5, '#a8804a'); for (let x = CX - 6; x <= CX + 6; x += 2) U.px(x, GROUND - 2 - ((x >> 1) & 1), '#c8a060'); U.ell(CX - 5, GROUND - 2, 1.4, 1.6, '#f8f0e0'); U.ell(CX + 5, GROUND - 2, 1.4, 1.6, '#f4e8d0'); },
+  bucket(U, An, view, face, k) { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; const x = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.45 : 0.55)) - 2 : CX + 3; U.rect(x, GROUND - 3, 5, 4, '#8a6a40'); U.rect(x, GROUND - 2, 5, 1, '#5a4a3a'); U.rect(x + 1, GROUND - 3, 3, 1, '#f8f8f0'); },
+  plow(U, An, view, face, k) { // すき（牛の後ろ）
+    if (view !== 'S') { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; U.rect(b[0] - 3, b[1] - 1, b[2] + 6, 2, '#7a5230'); return; }
+    const b = An.body; const bx = face > 0 ? b[0] : b[0] + b[2] - 1, by = b[1] + Math.round(b[3] / 2);
+    const px = bx - face * 9; U.line(bx, by, px, GROUND - 3, '#7a5230'); U.line(px, GROUND - 3, px - face * 2, GROUND - 7, '#7a5230');
+    U.rect(Math.min(px, px + face * 2), GROUND - 2, 3, 3, '#9aa0aa'); U.px(px - face * 3, GROUND - 1 - (k & 1), '#6a4a2a'); U.px(px - face * 5, GROUND - (k & 1), '#8a6a40');
+  },
+  cart(U, An, view, face, k) { // 荷車（馬・ロバの後ろ）
+    const b = An.body || [CX - 6, GROUND - 10, 12, 7];
+    if (view !== 'S') { const y = b[1] + 2; U.line(b[0] - 1, y, b[0] - 2, GROUND - 2, '#7a5230'); U.line(b[0] + b[2], y, b[0] + b[2] + 1, GROUND - 2, '#7a5230'); if (view === 'B') { U.rect(b[0] - 3, b[1] - 6, b[2] + 6, 8, '#8a6a40'); U.rect(b[0] - 3, b[1] - 6, b[2] + 6, 1, '#b08a5a'); } return; }
+    const bx = face > 0 ? b[0] : b[0] + b[2] - 1, wx = bx - face * 8, wy = GROUND - 4;
+    U.line(bx + face * 4, b[1] + 3, wx + face * 2, b[1] + 3, '#7a5230');
+    U.rect(Math.min(wx - face * 8, wx + face * 3), b[1] - 4, 12, 6, '#8a6a40'); U.rect(Math.min(wx - face * 8, wx + face * 3), b[1] - 4, 12, 1, '#b08a5a');
+    U.ell(wx, wy, 4, 4, '#5a3a20'); U.ell(wx, wy, 2.6, 2.6, '#8a6a40'); const a = k * 0.8; for (let i = 0; i < 2; i++) U.line(wx - Math.round(Math.cos(a + i * 1.57) * 3), wy - Math.round(Math.sin(a + i * 1.57) * 3), wx + Math.round(Math.cos(a + i * 1.57) * 3), wy + Math.round(Math.sin(a + i * 1.57) * 3), '#5a3a20'); U.px(wx, wy, '#3a2a1a');
+  },
+  web(U, An, view, face, k) { const cx = CX, cy = GROUND - 16, r = 5 + Math.min(k, 3) * 3; for (let a = 0; a < 8; a++) { const t = a * Math.PI / 4; U.line(cx, cy, cx + Math.round(Math.cos(t) * r * 1.3), cy + Math.round(Math.sin(t) * r), '#d8d8e4'); } for (let ring = 3; ring <= r; ring += 3) for (let a = 0; a < 8; a++) { const t1 = a * Math.PI / 4, t2 = (a + 1) * Math.PI / 4; U.line(cx + Math.round(Math.cos(t1) * ring * 1.3), cy + Math.round(Math.sin(t1) * ring), cx + Math.round(Math.cos(t2) * ring * 1.3), cy + Math.round(Math.sin(t2) * ring), '#c8c8d8'); } },
+  puddle(U, An, view, face, k, col = '#4fc3e8') { const w = 8 + k * 3; U.ell(CX, GROUND, w, 1.6, col); U.rect(CX - Math.round(w / 2), GROUND - 1, 2, 1, lt(col, 0.2)); },
+  circle(U, An, view, face, k, color = '#80f0a0') { for (let a = 0; a < 40; a++) { const t = a * Math.PI / 20 + k * 0.2; const x = CX + Math.round(Math.cos(t) * 12), y = GROUND - 1 + Math.round(Math.sin(t) * 2.5); U.px(x, y, a % 5 === 0 ? '#ffffff' : color); } for (let a = 0; a < 5; a++) { const t = a * Math.PI * 2 / 5 + k * 0.2; U.px(CX + Math.round(Math.cos(t) * 7), GROUND - 1 + Math.round(Math.sin(t) * 1.4), '#ffffff'); } },
+  branch(U, An, view, face, k) { const [hx] = headTop(An); const y = (An.body ? An.body[1] : 40) - 2; U.rect(hx - 8, y, 16, 2, '#6a4a2a'); U.px(hx + 6, y - 1, '#4a8a3a'); U.px(hx - 7, y - 1, '#4a8a3a'); },
+  mud(U, An, view, face, k) { U.ell(CX, GROUND, 9, 1.4, '#6a4a2a'); U.px(CX - 4, GROUND - 1, '#8a6a40'); },
+  sled(U, An, view, face, k) { if (view !== 'S') return; const b = An.body; const bx = face > 0 ? b[0] : b[0] + b[2] - 1; const sx = bx - face * 7; U.line(bx, b[1] + 3, sx, GROUND - 3, '#7a5230'); U.rect(Math.min(sx, sx - face * 9), GROUND - 5, 10, 4, '#a0342a'); U.rect(Math.min(sx, sx - face * 9) - 1, GROUND, 12, 1, '#c8a040'); U.px(face > 0 ? sx - 10 : sx + 10, GROUND - 1, '#c8a040'); },
+};
+
+// ================================================================ 種ごとのアニメーション表
+// 骨組み（四つ足・地上の鳥・飛ぶ鳥・海の生き物・スライム・二足・蜘蛛・竜・サソリ・カエル/ヘビ/カメ/ワニ）で共有し、
+// 種の違い（攻撃の型・仕事・鳴き方）は下の表で切り替える。
+export const ANIM_NAMES = ['walk', 'run', 'idle', 'call', 'attack', 'hurt', 'dying', 'dead', 'graze', 'eat', 'drink', 'sleep', 'rest', 'groom', 'work', 'guard', 'fly', 'play'];
+const f = (fr, q = {}, o = {}) => ({ fr, q, d: 300, ...o });
+const V = (S, F, B) => ({ S, F, B }); // 向きごとに値を変える
+const HOLD = 1e9;
+const QUAD_ATK = { cow: 'charge', sheep: 'charge', pig: 'charge', goat: 'charge', deer: 'charge', reindeer: 'charge', boar: 'charge', unicorn: 'horn', horse: 'kick', donkey: 'kick', camel: 'kick', rabbit: 'kick', wolf: 'bite', fox: 'bite', dog: 'bite', rat: 'bite', squirrel: 'bite', bear: 'claw', polarbear: 'claw', tiger: 'claw', cat: 'claw' };
+const QUAD_WORK = { cow: 'milk', sheep: 'shear', pig: 'root', horse: 'cart', goat: 'milk', deer: 'browse', reindeer: 'sled', boar: 'root', wolf: 'dig', fox: 'dig', bear: 'dig', rabbit: 'dig', squirrel: 'nut', camel: 'load', tiger: 'stalk', dog: 'herd', cat: 'stretch', donkey: 'cart', rat: 'gnaw', unicorn: 'heal' };
+const HIT_KIND = (def, sp) => sp === 'golem' ? 'stone' : ['skeleton', 'skelknight', 'lich'].includes(sp) ? 'bone' : def.shape === 'blob' ? 'slime' : def.kind === 'demon' ? 'dark' : 'blood';
+const walkSpec = (d = 150) => ({ loop: true, frames: [f(0, {}, { d }), f(1, {}, { d }), f(2, {}, { d }), f(1, {}, { d })], plain: true });
+const hurtSpec = (q1 = {}, q2 = {}, hk = 'blood', extra = []) => ({ loop: false, frames: [
+  f(1, { eyes: 'closed', ...q1 }, { pre: [['fwd', -2], ...extra], fx: [['hit', hk]], post: [['tint', '#ffffff', 0.55]], d: 90 }),
+  f(1, { ...q2 }, { pre: [['fwd', -1], ['shear', -0.08], ...extra], fx: [['hit', hk]], d: 220 })] });
+
+// ---------------------------------------------------------------- 四つ足
+function specQuad(anim, x) {
+  const { sp, def, role } = x;
+  const grazer = def.diet !== 'meat', young = role === 'young', leader = role === 'leader';
+  const atk = QUAD_ATK[sp] || (grazer ? 'charge' : 'bite');
+  const hd = leader ? -1 : 0;
+  const B1 = { earsBack: true };
+  switch (anim) {
+    case 'walk': return walkSpec(leader ? 170 : young ? 110 : 150);
+    case 'idle':
+      if (young) return { loop: true, frames: [f(1, { tail: 1 }, { d: 200 }), f(1, { legs: [-1, 1, -1, 1], tail: -1 }, { pre: [['lift', 2]], d: 130 }), f(1, { tail: 1 }, { pre: [['lift', 1]], d: 120 }), f(1, { tail: 0, eyes: 'closed' }, { d: 150 }), f(1, { tail: -1 }, { d: 260 })] };
+      if (sp === 'dog') return { loop: true, frames: [f(1, { tail: 1, hdy: hd }, { d: 150 }), f(1, { tail: -1, hdy: hd }, { pre: [['breathe', 1]], d: 150 }), f(1, { tail: 1, hdy: hd, mouth: true }, { pre: [['breathe', 1]], d: 150 }), f(1, { tail: -1, hdy: hd, mouth: true }, { d: 150 })] };
+      return { loop: true, frames: [f(1, { hdy: hd, tail: 0 }, { d: 480 }), f(1, { hdy: hd, tail: 1 }, { pre: [['breathe', 1]], d: 480 }), f(1, { hdy: hd, tail: 1, eyes: 'closed' }, { pre: [['breathe', 1]], d: 130 }), f(1, { hdy: hd, tail: -1 }, { d: 480 })] };
+    case 'call': {
+      if (sp === 'wolf' || sp === 'fox') return { loop: true, frames: [f(1, { hdy: -1 }, { d: 200 }), f(1, { hdy: -3, mouth: true }, { fx: [['sound']], d: 320 }), f(1, { hdy: -3, mouth: true }, { fx: [['sound']], d: 320 }), f(1, { hdy: -3, mouth: true }, { fx: [['sound']], d: 320 }), f(1, { hdy: -1 }, { d: 240 })] };
+      if (sp === 'dog') return { loop: true, frames: [f(1, { mouth: true, tail: 1 }, { pre: [['fwd', 1]], fx: [['sound'], ...(role === 'watchdog' ? [['bang']] : [])], d: 130 }), f(1, { tail: -1 }, { d: 120 }), f(1, { mouth: true, tail: 1 }, { pre: [['fwd', 1]], fx: [['sound']], d: 130 }), f(1, { tail: -1 }, { d: 260 })] };
+      if (['bear', 'polarbear', 'tiger', 'cat', 'boar', 'rat'].includes(sp)) return { loop: true, frames: [f(1, { ...B1, hdy: 1 }, { d: 200 }), f(1, { ...B1, hdy: 1, mouth: true }, { pre: [['fwd', 1]], fx: [['roar']], d: 260 }), f(1, { ...B1, hdy: 1, mouth: true }, { pre: [['fwd', 1]], fx: [['roar'], ['angry']], d: 260 }), f(1, { ...B1 }, { d: 200 })] };
+      const rear = sp === 'horse' || sp === 'unicorn' || sp === 'donkey' ? [['rot', -10, 'bb', 'S'], ['lift', 1, 'FB']] : [];
+      return { loop: true, frames: [f(1, { hdy: -1 }, { d: 200 }), f(1, { hdy: -2, mouth: true }, { pre: rear, fx: [['sound']], d: 300 }), f(1, { hdy: -2, mouth: true, tail: 1 }, { pre: rear, fx: [['sound']], d: 300 }), f(1, { hdy: -1, tail: -1 }, { d: 260 })] };
+    }
+    case 'attack':
+      if (atk === 'bite') return { loop: true, frames: [
+        f(1, { ...B1, fold: 0.3, hdy: 1, mouth: true }, { pre: [['fwd', -1]], d: 200 }),
+        f(1, { ...B1, mouth: true, legs: [2, -2, 2, -2], step: 1 }, { pre: [['fwd', 4], ['lift', 1]], fx: [['bite']], d: 70 }),
+        f(1, { ...B1, legs: [1, -1, 1, -1] }, { pre: [['fwd', 4]], fx: [['impact']], d: 170 }),
+        f(1, { ...B1 }, { pre: [['fwd', 1]], d: 140 })] };
+      if (atk === 'claw') return { loop: true, frames: [
+        f(1, { ...B1, mouth: true, legs: [2, 0, 2, 0] }, { pre: [['rot', -22, 'bb', 'S'], ['lift', 2, 'FB']], d: 220 }),
+        f(1, { ...B1, mouth: true, legs: [2, -1, 2, -1] }, { pre: [['rot', -6, 'bb', 'S'], ['fwd', 3]], fx: [['slash']], d: 70 }),
+        f(1, { ...B1, legs: [1, -1, 1, -1] }, { pre: [['fwd', 3]], fx: [['impact']], d: 170 }),
+        f(1, { ...B1 }, { pre: [['fwd', 1]], d: 140 })] };
+      if (atk === 'kick') return { loop: true, frames: [
+        f(1, { ...B1, hdy: 2, legs: [0, 1, 0, 1] }, { pre: [['fwd', -1]], d: 220 }),
+        f(1, { ...B1, hdy: 3, legs: [0, -3, 0, -3], mouth: true }, { pre: [['rot', 12, 'fb', 'S'], ['lift', 1, 'FB']], fx: [['impact', 'back']], d: 90 }),
+        f(1, { ...B1, hdy: 2, legs: [0, -2, 0, -2] }, { pre: [['rot', 8, 'fb', 'S']], fx: [['impact', 'back'], ['dust']], d: 160 }),
+        f(1, { ...B1 }, { d: 160 })] };
+      return { loop: true, frames: [ // 角・頭突きの突進
+        f(1, { ...B1, hdy: 2, fold: 0.15 }, { pre: [['fwd', -1]], d: 240 }),
+        f(1, { ...B1, hdy: 2, legs: [2, -2, 2, -2] }, { pre: [['fwd', 5]], fx: atk === 'horn' ? [['sparkle']] : [], d: 80 }),
+        f(1, { ...B1, hdy: 1 }, { pre: [['fwd', 5]], fx: [['impact'], ['dust']], d: 170 }),
+        f(1, { ...B1 }, { pre: [['fwd', 2]], d: 150 })] };
+    case 'hurt': return hurtSpec(B1, B1, HIT_KIND(def, sp));
+    case 'dying': return { loop: true, frames: [
+      f(1, { ...B1, fold: 0.25, hdy: 2, tail: 0 }, { pre: [['shear', 0.06]], fx: [['dizzy']], d: 320 }),
+      f(1, { ...B1, fold: 0.35, hdy: 3, tail: 0, eyes: 'closed' }, { pre: [['shear', -0.04]], fx: [['dizzy']], d: 320 }),
+      f(1, { ...B1, fold: 0.3, hdy: 2, tail: 0 }, { pre: [['shear', 0.03]], fx: [['dizzy'], ['sweat']], d: 320 }),
+      f(1, { ...B1, fold: 0.4, hdy: 3, tail: 0 }, { fx: [['dizzy']], d: 320 })] };
+    case 'dead': return { loop: false, frames: [
+      f(1, { ...B1, eyes: 'closed', fold: 0.2, hdy: 2 }, { pre: [['fwd', -1]], post: [['tint', '#ffffff', 0.4]], d: 120 }),
+      f(1, { ...B1, fold: 0.6, hg: 0.5, eyes: 'closed' }, { pre: [['rot', 10, 'fb', 'S']], d: 150 }),
+      f(1, { ...B1, lie: 2, hg: 1, eyes: 'x', tail: 0 }, { fx: [['dust']], d: 170 }),
+      f(1, { ...B1, lie: 2, hg: 1, eyes: 'x', tail: 0 }, { post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'eat':
+      if (anim === 'eat' && !grazer) return { loop: true, frames: [
+        f(1, { hg: 0.9, fold: 0.15, mouth: true }, { fx: [['meat']], d: 220 }), f(1, { hg: 1, fold: 0.2 }, { fx: [['meat']], d: 180 }),
+        f(1, { hg: 0.7, fold: 0.15, mouth: true }, { pre: [['fwd', -1]], fx: [['meat']], d: 240 }), f(1, { hg: 1, fold: 0.2, tail: 1 }, { fx: [['meat']], d: 180 })] };
+      if (!grazer) return { loop: true, frames: [f(1, { hg: 0.8, tail: 0 }, { d: 300 }), f(1, { hg: 0.9, tail: 1 }, { d: 200 }), f(1, { hg: 0.85, tail: -1 }, { pre: [['fwd', 1]], d: 300 })] };
+      return { loop: true, frames: [f(1, { hg: 0.9 }, { fx: [['grass']], d: 340 }), f(1, { hg: 1, mouth: true }, { fx: [['grass']], d: 220 }), f(1, { hg: 0.95 }, { fx: [['grass']], d: 300 }), f(1, { hg: 0.85, tail: 1 }, { fx: [['grass']], d: 340 })] };
+    case 'drink': return { loop: true, frames: [f(1, { hg: 1, fold: 0.15 }, { fx: [['water']], d: 320 }), f(1, { hg: 1, fold: 0.15, mouth: true }, { fx: [['water']], d: 200 }), f(1, { hg: 1, fold: 0.15, tail: 1 }, { fx: [['water']], d: 320 })] };
+    case 'sleep': { const q = { lie: 1, hg: 1, eyes: 'closed', tail: 0, earsBack: true }; return { loop: true, frames: [f(1, q, { fx: [['zzz']], d: 700 }), f(1, q, { pre: [['breathe', 1]], fx: [['zzz']], d: 700 }), f(1, q, { fx: [['zzz']], d: 700 })] }; }
+    case 'rest': return { loop: true, frames: [f(1, { lie: 1, tail: 0, hdy: hd }, { d: 600 }), f(1, { lie: 1, tail: 1, hdy: hd }, { pre: [['breathe', 1]], d: 600 }), f(1, { lie: 1, tail: 0, eyes: 'closed', hdy: hd }, { d: 160 }), f(1, { lie: 1, tail: -1, hdy: hd }, { d: 600 })] };
+    case 'groom': return { loop: true, frames: [f(1, { fold: 0.3, hdx: V(-4, 2, 2), hdy: 3, mouth: true }, { d: 260 }), f(1, { fold: 0.3, hdx: V(-4, 2, 2), hdy: 2 }, { d: 200 }), f(1, { fold: 0.3, hdx: V(-5, 2, 2), hdy: 3, mouth: true }, { d: 260 }), f(1, { fold: 0.3, hdx: V(-3, 1, 1), hdy: 2, tail: 1 }, { d: 300 })] };
+    case 'work': return quadWork(x);
+    case 'guard':
+      if (role === 'treasure') return { loop: true, frames: [f(1, { lie: 1, hdy: -1 }, { under: [['treasure']], d: 700 }), f(1, { lie: 1, hdy: -1, hdx: V(0, 1, 1) }, { under: [['treasure']], pre: [['breathe', 1]], d: 600 }), f(1, { lie: 1, hdy: -1, hdx: V(0, -1, -1) }, { under: [['treasure']], d: 600 })] };
+      return { loop: true, frames: [f(1, { hdy: -1, tail: 0 }, { d: 600 }), f(1, { hdy: -2, hdx: V(1, 1, 1), tail: 0 }, { d: 500 }), f(1, { hdy: -2, tail: 0 }, { pre: [['breathe', 1]], d: 400 }), f(1, { hdy: -1, hdx: V(0, -1, -1), tail: 1 }, { d: 500 })] };
+    case 'run': case 'fly': return { loop: true, frames: [
+      f(1, { legs: [2, -2, 2, -2], step: 1, tail: -1 }, { pre: [['lift', 1]], d: 90 }), f(1, { legs: [1, 0, 1, 0], step: 0, tail: 0 }, { d: 80 }),
+      f(1, { legs: [-2, 2, -2, 2], step: -1, tail: 1 }, { pre: [['lift', 1]], d: 90 }), f(1, { legs: [0, -1, 0, -1], step: 0, tail: 0 }, { d: 80 })] };
+    case 'play': return { loop: true, frames: [
+      f(1, { legs: [-1, 1, -1, 1], tail: 1 }, { d: 120 }), f(1, { legs: [1, -1, 1, -1], tail: -1, mouth: true }, { pre: [['lift', 3]], d: 150 }),
+      f(1, { legs: [1, -1, 1, -1], tail: 1 }, { pre: [['lift', 2]], d: 120 }), f(1, { tail: -1, hdy: 1 }, { pre: [['rot', 12, 'bb', 'S'], ['settle']], d: 260 })] };
+  }
+  return null;
+}
+function quadWork(x) {
+  const { sp, role } = x;
+  let w = QUAD_WORK[sp] || 'dig';
+  if (sp === 'cow') w = role === 'plow' ? 'plow' : role === 'meat' ? 'graze' : 'milk';
+  if ((sp === 'horse' || sp === 'donkey') && role === 'mount') w = 'saddle';
+  const walk = (under, fx = [], d = 220, q = {}) => ({ loop: true, frames: [f(0, q, { under, fx, d }), f(1, q, { under, fx, d }), f(2, q, { under, fx, d }), f(1, q, { under, fx, d })] });
+  switch (w) {
+    case 'plow': return walk([['plow']], [['dirt']], 260, { hdy: 1 });
+    case 'cart': return walk([['cart']], [], 200, { hdy: 1 });
+    case 'sled': return walk([['sled']], [], 200);
+    case 'saddle': return walk([], [], 130, { hdy: -1 });
+    case 'load': return walk([], [['sparkle', '#e8d8b0']], 240, { hdy: 1 });
+    case 'milk': return { loop: true, frames: [f(1, { tail: 1 }, { under: [['bucket']], fx: [['milk']], d: 260 }), f(1, { tail: 0 }, { under: [['bucket']], fx: [['milk']], d: 260 }), f(1, { tail: -1 }, { under: [['bucket']], fx: [['milk']], d: 260 }), f(1, { tail: 0, eyes: 'closed' }, { under: [['bucket']], d: 200 })] };
+    case 'shear': return { loop: true, frames: [f(1, { hdy: 1 }, { fx: [['wool']], d: 260 }), f(1, { hdy: 1, eyes: 'closed' }, { fx: [['wool']], d: 260 }), f(1, { hdy: 1 }, { fx: [['wool']], d: 260 })] };
+    case 'root': return { loop: true, frames: [f(1, { hg: 1, mouth: true }, { under: [['mud']], fx: [['dirt']], d: 200 }), f(1, { hg: 0.9, tail: 1 }, { under: [['mud']], d: 200 }), f(1, { hg: 1, mouth: true }, { under: [['mud']], fx: [['dirt']], pre: [['fwd', 1]], d: 200 }), f(1, { hg: 0.9, tail: -1 }, { under: [['mud']], d: 200 })] };
+    case 'browse': return { loop: true, frames: [f(1, { hdy: -3, mouth: true }, { fx: [['leaves']], d: 300 }), f(1, { hdy: -4 }, { fx: [['leaves']], d: 260 }), f(1, { hdy: -3, mouth: true, tail: 1 }, { fx: [['leaves']], d: 300 })] };
+    case 'dig': return { loop: true, frames: [f(0, { hg: 0.5, fold: 0.2 }, { fx: [['dirt']], d: 150 }), f(2, { hg: 0.5, fold: 0.2 }, { fx: [['dirt']], d: 150 }), f(0, { hg: 0.55, fold: 0.2, tail: 1 }, { fx: [['dirt']], d: 150 }), f(2, { hg: 0.5, fold: 0.2, tail: -1 }, { d: 150 })] };
+    case 'nut': return { loop: true, frames: [f(1, { fold: 0.3, mouth: true, hdy: -1 }, { fx: [['nut']], d: 140 }), f(1, { fold: 0.3, hdy: -1 }, { fx: [['nut']], d: 140 }), f(1, { fold: 0.3, mouth: true, hdy: -1, tail: 1 }, { fx: [['nut']], d: 140 }), f(1, { fold: 0.3, hdy: -1 }, { fx: [['nut']], d: 300 })] };
+    case 'stalk': return walk([], [], 280, { fold: 0.45, hdy: 2, earsBack: true, tail: 0 });
+    case 'herd': return { loop: true, frames: [f(1, { legs: [2, -2, 2, -2], step: 1, mouth: true }, { pre: [['lift', 1]], fx: [['sound'], ['bang']], d: 100 }), f(1, { legs: [1, 0, 1, 0], step: 0 }, { d: 90 }), f(1, { legs: [-2, 2, -2, 2], step: -1, mouth: true }, { pre: [['lift', 1]], fx: [['sound']], d: 100 }), f(1, { legs: [0, -1, 0, -1], step: 0 }, { d: 90 })] };
+    case 'stretch': return { loop: true, frames: [f(1, {}, { d: 300 }), f(1, { hdy: 2, mouth: true, tail: 1 }, { pre: [['rot', 14, 'bb', 'S'], ['settle'], ['squash', 0.85, 1.1, 'FB']], d: 520 }), f(1, { hdy: 2, tail: 1 }, { pre: [['rot', 14, 'bb', 'S'], ['settle'], ['squash', 0.85, 1.1, 'FB']], d: 400 }), f(1, { hdy: -1 }, { pre: [['rot', -8, 'bb', 'S']], d: 360 })] };
+    case 'gnaw': return { loop: true, frames: [f(1, { fold: 0.4, hg: 0.6, mouth: true }, { fx: [['crumbs']], d: 110 }), f(1, { fold: 0.4, hg: 0.7 }, { fx: [['crumbs']], d: 110 }), f(1, { fold: 0.4, hg: 0.6, mouth: true, tail: 1 }, { fx: [['crumbs']], d: 110 }), f(1, { fold: 0.4, hg: 0.5, hdy: -1 }, { fx: [['crumbs']], d: 260 })] };
+    case 'heal': return { loop: true, frames: [f(1, { hdy: -1 }, { fx: [['sparkle']], d: 260 }), f(1, { hdy: -2 }, { fx: [['sparkle']], d: 260 }), f(1, { hdy: -1, eyes: 'closed' }, { fx: [['sparkle']], d: 260 })] };
+    case 'graze': return specQuad('graze', x);
+  }
+  return specQuad('graze', x);
+}
+
+// ---------------------------------------------------------------- 地上の鳥（鶏・アヒル）
+function specBirdG(anim, x) {
+  const { sp, role } = x;
+  const rooster = false;
+  switch (anim) {
+    case 'walk': return walkSpec(140);
+    case 'idle': return { loop: true, frames: [f(1, { bob: 0 }, { d: 320 }), f(1, { bob: 1 }, { d: 280 }), f(1, { bob: 0, eyes: 'closed' }, { d: 120 }), f(1, { bob: 0, hdx: 1 }, { d: 320 })] };
+    case 'call': return { loop: true, frames: [f(1, { hdy: -1 }, { d: 180 }), f(1, { hdy: -2, mouth: true, wing: 1 }, { fx: [['sound']], d: 260 }), f(1, { hdy: -2, mouth: true, wing: -1 }, { fx: [['sound']], d: 260 }), f(1, {}, { d: 220 })] };
+    case 'attack': return { loop: true, frames: [f(1, { hdy: -1, wing: 1 }, { pre: [['fwd', -1]], d: 170 }), f(1, { hg: 0.4, hdx: 2, mouth: true, wing: -1 }, { pre: [['fwd', 3]], fx: [['bite']], d: 70 }), f(1, { hg: 0.4, hdx: 2 }, { pre: [['fwd', 3]], fx: [['impact']], d: 150 }), f(1, {}, { pre: [['fwd', 1]], d: 120 })] };
+    case 'hurt': return hurtSpec({ wing: 1 }, { wing: -1 });
+    case 'dying': return { loop: true, frames: [f(1, { sit: true, hdy: 1 }, { fx: [['dizzy']], d: 320 }), f(1, { sit: true, hdy: 2, eyes: 'closed' }, { fx: [['dizzy']], d: 320 }), f(1, { sit: true, hdy: 1, wing: -1 }, { fx: [['dizzy'], ['sweat']], d: 320 })] };
+    case 'dead': return { loop: false, frames: [f(1, { wing: 1, eyes: 'closed' }, { pre: [['lift', 1]], post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { sit: true, eyes: 'closed', hdy: 2 }, { d: 150 }),
+      f(1, { eyes: 'closed', wing: -1 }, { pre: [['rot', -90, 'c', 'S'], ['squash', 0.5, 1.2, 'FB'], ['settle']], fx: [['dust']], d: 170 }), f(1, { eyes: 'closed', wing: -1 }, { pre: [['rot', -90, 'c', 'S'], ['squash', 0.5, 1.2, 'FB'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'eat': return { loop: true, frames: [f(1, { hg: 0 }, { fx: [['seeds']], d: 240 }), f(1, { hg: 1, mouth: true }, { fx: [['seeds']], d: 110 }), f(1, { hg: 0.8 }, { fx: [['seeds']], d: 160 }), f(1, { hg: 0, hdy: -1 }, { fx: [['seeds']], d: 260 })] };
+    case 'drink': return { loop: true, frames: [f(1, { hg: 1 }, { fx: [['water']], d: 260 }), f(1, { hdy: -2, mouth: true }, { fx: [['water']], d: 300 }), f(1, { hdy: -1 }, { fx: [['water']], d: 200 })] };
+    case 'sleep': { const q = { sit: true, hdx: -2, hdy: 2, eyes: 'closed' }; return { loop: true, frames: [f(1, q, { fx: [['zzz']], d: 700 }), f(1, q, { pre: [['breathe', 1]], fx: [['zzz']], d: 700 }), f(1, q, { fx: [['zzz']], d: 700 })] }; }
+    case 'rest': return { loop: true, frames: [f(1, { sit: true }, { d: 600 }), f(1, { sit: true }, { pre: [['breathe', 1]], d: 600 }), f(1, { sit: true, eyes: 'closed' }, { d: 160 })] };
+    case 'groom': return { loop: true, frames: [f(1, { hdx: -3, hdy: 2, wing: 1 }, { d: 240 }), f(1, { hdx: -2, hdy: 3 }, { d: 200 }), f(1, { hdx: -3, hdy: 2, mouth: true }, { d: 240 }), f(1, {}, { d: 300 })] };
+    case 'work':
+      if (sp === 'chicken') return { loop: true, frames: [f(1, { sit: true }, { under: [['nest']], d: 700 }), f(1, { sit: true }, { under: [['nest']], pre: [['breathe', 1]], d: 700 }), f(1, { sit: true, eyes: 'closed' }, { under: [['nest']], d: 200 }), f(1, { sit: true, hdx: 1 }, { under: [['nest']], d: 600 })] };
+      return { loop: true, frames: [f(1, { hg: 1, mouth: true }, { fx: [['water']], d: 160 }), f(1, { hg: 0.8 }, { fx: [['water']], d: 160 }), f(1, { hg: 1, mouth: true }, { fx: [['water']], d: 160 }), f(1, { hdy: -1 }, { fx: [['water']], d: 300 })] };
+    case 'guard': return { loop: true, frames: [f(1, { hdy: -1 }, { d: 500 }), f(1, { hdy: -1, hdx: 1 }, { d: 500 }), f(1, { hdy: -1, hdx: -1 }, { d: 500 })] };
+    case 'fly': return { loop: true, frames: [f(1, { wing: 1 }, { pre: [['lift', 2]], d: 90 }), f(1, { wing: -1 }, { pre: [['lift', 4]], d: 90 }), f(1, { wing: 1 }, { pre: [['lift', 3]], d: 90 }), f(1, { wing: -1 }, { pre: [['lift', 1]], d: 90 })] };
+    case 'run': return { loop: true, frames: [f(0, { wing: -1 }, { d: 80 }), f(1, { wing: -1 }, { d: 70 }), f(2, { wing: -1 }, { d: 80 }), f(1, { wing: -1 }, { d: 70 })] };
+    case 'play': return { loop: true, frames: [f(1, {}, { d: 140 }), f(1, { wing: 1 }, { pre: [['lift', 3]], d: 150 }), f(1, { wing: -1 }, { pre: [['lift', 2]], d: 120 }), f(1, {}, { d: 200 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- 飛ぶ鳥・コウモリ（飛んでいる間は空中、地上の仕事はとまって行う）
+function specFlyer(anim, x) {
+  const { sp } = x;
+  const bat = sp === 'bat', raptor = sp === 'eagle' || sp === 'owl';
+  const air = { air: true, loop: true };
+  const P1 = { perch: true };
+  switch (anim) {
+    case 'walk': return { ...walkSpec(110), air: true };
+    case 'run': return { ...walkSpec(80), air: true, plain: false };
+    case 'idle': return { ...air, frames: [f(1, { ang: -0.9 }, { d: 130 }), f(1, { ang: -0.4 }, { d: 110 }), f(1, { ang: 0.2 }, { d: 110 }), f(1, { ang: 0.55 }, { pre: [['lift', 1]], d: 130 }), f(1, { ang: 0.1 }, { pre: [['lift', 1]], d: 110 }), f(1, { ang: -0.4 }, { d: 110 })] };
+    case 'call': return { ...air, frames: [f(0, { mouth: true }, { fx: [['sound']], d: 140 }), f(1, {}, { d: 120 }), f(2, { mouth: true }, { fx: [['sound']], d: 140 }), f(1, {}, { d: 160 })] };
+    case 'attack': return { ...air, frames: [
+      f(1, { ang: -0.9 }, { pre: [['fwd', -2], ['lift', 2]], d: 190 }),
+      f(1, { ang: 0.55, talon: !bat, mouth: true }, { pre: [['rot', 25, 'c', 'S'], ['fwd', 4], ['lift', -3]], fx: [[bat ? 'bite' : 'slash']], d: 80 }),
+      f(1, { ang: 0.3, talon: !bat }, { pre: [['rot', 15, 'c', 'S'], ['fwd', 4], ['lift', -3]], fx: [['impact']], d: 160 }),
+      f(1, { ang: -0.4 }, { pre: [['fwd', 1]], d: 140 })] };
+    case 'hurt': return { air: true, loop: false, frames: [f(1, { ang: -0.9, eyes: 'closed' }, { pre: [['fwd', -2], ['rot', -15, 'c', 'S']], fx: [['hit']], post: [['tint', '#ffffff', 0.55]], d: 90 }), f(1, { ang: 0.3 }, { pre: [['fwd', -1]], fx: [['hit']], d: 220 })] };
+    case 'dying': return { ...air, frames: [f(1, { ang: 0.3 }, { pre: [['lift', -4], ['rot', 10, 'c', 'S']], fx: [['dizzy']], d: 260 }), f(1, { ang: -0.2, eyes: 'closed' }, { pre: [['lift', -6]], fx: [['dizzy'], ['sweat']], d: 260 }), f(1, { ang: 0.55 }, { pre: [['lift', -5], ['rot', 15, 'c', 'S']], fx: [['dizzy']], d: 260 }), f(1, { ang: -0.6 }, { pre: [['lift', -3]], fx: [['dizzy']], d: 260 })] };
+    case 'dead': return { ground: true, air: false, loop: false, frames: [
+      f(1, { ang: -0.9, eyes: 'closed' }, { pre: [['settle'], ['lift', 22]], post: [['tint', '#ffffff', 0.4]], d: 110 }),
+      f(1, { ang: 0.55, eyes: 'closed' }, { pre: [['rot', 60, 'c', 'S'], ['settle'], ['lift', 11]], d: 110 }),
+      f(1, { ang: -0.15, eyes: 'closed' }, { pre: [['rot', 90, 'c', 'S'], ['settle']], fx: [['dust']], d: 170 }),
+      f(1, { ang: -0.15, eyes: 'closed' }, { pre: [['rot', 90, 'c', 'S'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'work': case 'eat':
+      if (anim === 'eat' && (raptor || sp === 'crow' || sp === 'seagull')) return { loop: true, frames: [f(1, { ...P1, hg: 0.9, mouth: true }, { fx: [['meat']], d: 200 }), f(1, { ...P1, hg: 1 }, { fx: [['meat']], d: 180 }), f(1, { ...P1, hg: 0.5, mouth: true }, { fx: [['meat']], d: 240 })] };
+      if (anim === 'work' && raptor) return specFlyer('guard', x);
+      if (bat && anim !== 'graze') return { ...air, frames: [f(0, { mouth: true }, { fx: [['fly']], d: 110 }), f(1, {}, { fx: [['fly']], d: 110 }), f(2, { mouth: true }, { fx: [['fly']], d: 110 }), f(1, {}, { d: 110 })] };
+      return { loop: true, frames: [f(1, { ...P1 }, { fx: [['seeds']], d: 220 }), f(1, { ...P1, hg: 1, mouth: true }, { fx: [['seeds']], d: 110 }), f(1, { ...P1, hg: 0.8 }, { fx: [['seeds']], d: 150 }), f(1, { ...P1, hdy: -1 }, { fx: [['seeds']], d: 260 })] };
+    case 'drink': return { loop: true, frames: [f(1, { ...P1, hg: 1 }, { fx: [['water']], d: 260 }), f(1, { ...P1, hdy: -1, mouth: true }, { fx: [['water']], d: 300 }), f(1, { ...P1 }, { fx: [['water']], d: 200 })] };
+    case 'sleep':
+      if (bat) { const q = { ...P1, eyes: 'closed' }; return { air: true, loop: true, frames: [f(1, q, { pre: [['rot', 180, 'c']], under: [['branch']], fx: [['zzz']], d: 700 }), f(1, q, { pre: [['breathe', 1], ['rot', 180, 'c']], under: [['branch']], fx: [['zzz']], d: 700 })] }; }
+      { const q = { ...P1, sit: true, eyes: 'closed', hdy: 1 }; return { loop: true, frames: [f(1, q, { fx: [['zzz']], d: 700 }), f(1, q, { pre: [['breathe', 1]], fx: [['zzz']], d: 700 }), f(1, q, { fx: [['zzz']], d: 700 })] }; }
+    case 'rest': return { loop: true, frames: [f(1, { ...P1 }, { d: 600 }), f(1, { ...P1 }, { pre: [['breathe', 1]], d: 600 }), f(1, { ...P1, eyes: 'closed' }, { d: 150 })] };
+    case 'groom': return { loop: true, frames: [f(1, { ...P1, hdx: -2, hdy: 2 }, { d: 240 }), f(1, { ...P1, wing: 1 }, { d: 200 }), f(1, { ...P1, hdx: -2, hdy: 3, mouth: true }, { d: 240 }), f(1, { ...P1 }, { d: 300 })] };
+    case 'guard': return { loop: true, frames: [f(1, { ...P1, hdy: -1 }, { d: 600 }), f(1, { ...P1, hdx: 1 }, { d: 400 }), f(1, { ...P1, hdy: -1, eyes: sp === 'owl' ? 'closed' : undefined }, { d: 200 }), f(1, { ...P1, hdx: -1 }, { d: 500 })] };
+    case 'fly': return { ...air, frames: [f(1, { ang: -0.15 }, { d: 220 }), f(1, { ang: -0.1 }, { pre: [['lift', 1]], d: 220 }), f(1, { ang: -0.22 }, { pre: [['lift', 1]], d: 220 }), f(1, { ang: -0.15 }, { d: 220 })] };
+    case 'play': return { ...air, frames: [f(0, {}, { pre: [['rot', -20, 'c', 'S']], d: 110 }), f(1, {}, { pre: [['lift', 2]], d: 110 }), f(2, {}, { pre: [['rot', 20, 'c', 'S'], ['lift', 1]], d: 110 }), f(1, {}, { d: 110 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- 海の生き物（イルカ・クジラ）
+function specFish(anim, x) {
+  const { sp } = x;
+  const whale = sp === 'whale';
+  switch (anim) {
+    case 'walk': return walkSpec(whale ? 260 : 180);
+    case 'run': case 'fly': return { ...walkSpec(whale ? 160 : 100), plain: false };
+    case 'idle': return { loop: true, frames: [f(0, {}, { d: 340 }), f(1, {}, { d: 300 }), f(2, {}, { d: 340 }), f(1, {}, { fx: [['bubbles']], d: 300 })] };
+    case 'call': return whale
+      ? { loop: true, frames: [f(1, { spout: true }, { fx: [['sound']], d: 400 }), f(1, { spout: true }, { d: 300 }), f(1, {}, { fx: [['sound']], d: 400 })] }
+      : { loop: true, frames: [f(1, { mouth: true }, { pre: [['rot', -12, 'c', 'S'], ['lift', 1]], fx: [['sound']], d: 180 }), f(1, {}, { d: 140 }), f(1, { mouth: true }, { pre: [['rot', -12, 'c', 'S'], ['lift', 1]], fx: [['sound']], d: 180 }), f(1, {}, { d: 200 })] };
+    case 'attack': return { loop: true, frames: [f(1, {}, { pre: [['fwd', -2]], d: 200 }), f(0, { mouth: true }, { pre: [['fwd', 4]], fx: [['bite']], d: 80 }), f(2, {}, { pre: [['fwd', 4]], fx: [['impact']], d: 170 }), f(1, {}, { pre: [['fwd', 1]], d: 140 })] };
+    case 'hurt': return hurtSpec({}, {}, 'blood', [['rot', -10, 'c', 'S']]);
+    case 'dying': return { loop: true, frames: [f(1, { eyes: 'closed' }, { pre: [['rot', 20, 'c']], fx: [['bubbles']], d: 360 }), f(0, {}, { pre: [['rot', 15, 'c']], d: 360 }), f(1, { eyes: 'closed' }, { pre: [['rot', 25, 'c']], fx: [['sweat']], d: 360 })] };
+    case 'dead': return { loop: false, frames: [f(1, { eyes: 'closed' }, { pre: [['fwd', -1]], post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { eyes: 'closed' }, { pre: [['rot', 90, 'c']], d: 200 }), f(1, { eyes: 'closed' }, { pre: [['rot', 180, 'c']], d: 250 }), f(1, { eyes: 'closed' }, { pre: [['rot', 180, 'c']], post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'eat': return { loop: true, frames: [f(0, { mouth: true }, { fx: [['fishy']], d: 200 }), f(1, {}, { pre: [['fwd', 1]], fx: [['fishy']], d: 160 }), f(2, { mouth: true }, { pre: [['fwd', 2]], fx: [['fishy']], d: 200 }), f(1, {}, { d: 240 })] };
+    case 'drink': case 'guard': return specFish('idle', x);
+    case 'sleep': return { loop: true, frames: [f(1, { eyes: 'closed', flick: 0 }, { fx: [['bubbles']], d: 800 }), f(1, { eyes: 'closed', flick: 0 }, { pre: [['lift', 1]], d: 800 })] };
+    case 'rest': return { loop: true, frames: [f(1, { flick: 0 }, { d: 700 }), f(1, { flick: 1 }, { pre: [['lift', 1]], d: 700 })] };
+    case 'groom': return { loop: true, frames: [f(1, {}, { pre: [['rot', 30, 'c', 'S']], d: 260 }), f(1, {}, { d: 200 }), f(1, {}, { pre: [['rot', -30, 'c', 'S']], d: 260 }), f(1, {}, { d: 200 })] };
+    case 'work': case 'play': return whale
+      ? { loop: true, frames: [f(1, { spout: true }, { d: 400 }), f(0, {}, { pre: [['rot', -15, 'c', 'S'], ['lift', 3]], fx: [['splash']], d: 300 }), f(2, {}, { pre: [['rot', 15, 'c', 'S']], fx: [['splash']], d: 300 }), f(1, {}, { d: 300 })] }
+      : { loop: true, frames: [f(1, {}, { fx: [['splash']], d: 160 }), f(0, {}, { pre: [['rot', -35, 'c', 'S'], ['lift', 7]], fx: [['splash']], d: 140 }), f(1, {}, { pre: [['lift', 12]], d: 160 }), f(2, {}, { pre: [['rot', 35, 'c', 'S'], ['lift', 7]], d: 140 }), f(1, {}, { fx: [['splash']], d: 200 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- スライム
+function specBlob(anim, x) {
+  const { sp } = x;
+  const king = sp === 'kingslime';
+  switch (anim) {
+    case 'walk': return walkSpec(king ? 200 : 160);
+    case 'run': case 'fly': return { loop: true, frames: [f(1, { bw: 3, bh: -3 }, { d: 90 }), f(1, { bw: -2, bh: 3 }, { pre: [['lift', 4]], d: 110 }), f(1, { bw: -1, bh: 1 }, { pre: [['lift', 2]], d: 90 }), f(1, { bw: 2, bh: -2 }, { d: 90 })] };
+    case 'idle': return { loop: true, frames: [f(1, { bw: 1, bh: -1 }, { d: 320 }), f(1, { bw: 0, bh: 0 }, { d: 280 }), f(1, { bw: -1, bh: 1 }, { d: 320 }), f(1, { bw: 0, bh: 0, eyes: 'closed' }, { d: 140 })] };
+    case 'call': return { loop: true, frames: [f(1, { bw: 2, bh: -2 }, { d: 160 }), f(1, { bw: -2, bh: 3, mouth: 'big' }, { fx: [['sound']], d: 260 }), f(1, { bw: -1, bh: 2, mouth: 'big' }, { fx: [['sound']], d: 220 }), f(1, {}, { d: 200 })] };
+    case 'attack': return king
+      ? { loop: true, frames: [f(1, { bw: 3, bh: -3, eyes: 'angry' }, { d: 220 }), f(1, { bw: -2, bh: 3, eyes: 'angry' }, { pre: [['lift', 6]], d: 160 }), f(1, { bw: 6, bh: -6, mouth: 'big', eyes: 'angry' }, { pre: [['shake', 1]], fx: [['crack'], ['dust']], d: 110 }), f(1, { bw: 3, bh: -3, eyes: 'angry' }, { pre: [['shake', -1]], fx: [['dust']], d: 180 }), f(1, {}, { d: 160 })] }
+      : { loop: true, frames: [f(1, { bw: 3, bh: -3, eyes: 'angry' }, { pre: [['fwd', -1]], d: 220 }), f(1, { bw: -3, bh: 3, eyes: 'angry', mouth: 'big' }, { pre: [['fwd', 3], ['lift', 3]], d: 80 }), f(1, { bw: 3, bh: -2, eyes: 'angry' }, { pre: [['fwd', 5]], fx: [['impact']], d: 160 }), f(1, { bw: 1, bh: -1 }, { pre: [['fwd', 2]], d: 140 })] };
+    case 'hurt': return { loop: false, frames: [f(1, { bw: 4, bh: -4, eyes: 'x' }, { pre: [['fwd', -2]], fx: [['hit', 'slime']], post: [['tint', '#ffffff', 0.55]], d: 90 }), f(1, { bw: -2, bh: 2, eyes: 'closed' }, { pre: [['fwd', -1]], fx: [['hit', 'slime']], d: 220 })] };
+    case 'dying': return { loop: true, frames: [f(1, { bw: 3, bh: -3, eyes: 'closed' }, { fx: [['sweat']], d: 360 }), f(1, { bw: 2, bh: -2, eyes: 'closed' }, { d: 360 }), f(1, { bw: 4, bh: -4, eyes: 'x' }, { fx: [['sweat']], d: 360 })] };
+    case 'dead': return { loop: false, frames: [
+      f(1, { bw: 3, bh: -3, eyes: 'x' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }),
+      f(1, { bw: 6, bh: -6, eyes: 'x' }, { under: [['puddle']], d: 150 }),
+      f(1, { bw: 9, bh: -10, eyes: 'x' }, { under: [['puddle']], post: [['fade', 0.35]], d: 170 }),
+      f(1, { bw: 11, bh: -30 }, { under: [['puddle']], post: [['fade', 0.75]], d: 200 }),
+      f(1, { bw: 11, bh: -30 }, { under: [['puddle']], post: [['fade', 1]], d: HOLD })] };
+    case 'graze': case 'eat': case 'work': return { loop: true, frames: [f(1, { bw: 2, bh: -2, mouth: 'big' }, { fx: [[anim === 'eat' && x.def.diet === 'meat' ? 'meat' : 'grass']], d: 220 }), f(1, { bw: -1, bh: 1 }, { fx: [[anim === 'eat' && x.def.diet === 'meat' ? 'meat' : 'grass']], d: 200 }), f(1, { bw: 1, bh: 0, mouth: 'big' }, { d: 220 }), f(1, { bw: 0, bh: 0, eyes: 'happy' }, { d: 300 })] };
+    case 'drink': return { loop: true, frames: [f(1, { bw: 3, bh: -2, mouth: 'big' }, { fx: [['water']], d: 260 }), f(1, { bw: 1, bh: 0 }, { fx: [['water']], d: 260 })] };
+    case 'sleep': return { loop: true, frames: [f(1, { bw: 3, bh: -3, eyes: 'closed' }, { fx: [['zzz']], d: 700 }), f(1, { bw: 2, bh: -2, eyes: 'closed' }, { fx: [['zzz']], d: 700 }), f(1, { bw: 3, bh: -3, eyes: 'closed' }, { fx: [['zzz']], d: 700 })] };
+    case 'rest': return { loop: true, frames: [f(1, { bw: 2, bh: -2 }, { d: 600 }), f(1, { bw: 1, bh: -1 }, { d: 600 }), f(1, { bw: 2, bh: -2, eyes: 'closed' }, { d: 160 })] };
+    case 'groom': return { loop: true, frames: [f(1, { bw: 2, bh: -1 }, { d: 110 }), f(1, { bw: -1, bh: 1 }, { d: 110 }), f(1, { bw: 1, bh: -1, eyes: 'happy' }, { d: 110 }), f(1, { bw: 0, bh: 0 }, { d: 300 })] };
+    case 'guard': return { loop: true, frames: [f(1, {}, { d: 500 }), f(1, { hdx: 2 }, { d: 500 }), f(1, {}, { d: 300 }), f(1, { hdx: -2 }, { d: 500 })] };
+    case 'play': return { loop: true, frames: [f(1, { bw: 3, bh: -3, eyes: 'happy' }, { d: 120 }), f(1, { bw: -2, bh: 3, eyes: 'happy', mouth: 'open' }, { pre: [['lift', 6]], d: 160 }), f(1, { bw: -1, bh: 2, eyes: 'happy' }, { pre: [['lift', 3]], d: 120 }), f(1, { bw: 3, bh: -3 }, { d: 140 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- 二足（人型の魔物・サル・ペンギン）
+const WEAPON_SP = new Set(['goblin', 'hobgoblin', 'goblinlord', 'orc', 'orcking', 'skeleton', 'skelknight', 'demonsoldier', 'demongeneral']);
+const CASTER = { lich: '#60f080', imp: '#ff8030', demonlord: '#ff3050', pharaoh: '#60e0ff' };
+function specBiped(anim, x) {
+  const { sp, def, role } = x;
+  const undead = !!def.undead, golem = sp === 'golem', demon = def.kind === 'demon';
+  const floaty = sp === 'lich' || sp === 'pharaoh', winged = sp === 'imp' || sp === 'demonlord';
+  const bony = sp === 'skeleton' || sp === 'skelknight';
+  const living = !undead && !golem;
+  const hk = HIT_KIND(def, sp);
+  const S0 = { step: 0 };
+  const swingW = { back: { arm: 'back', wrot: V(60, 25, -25), crouch: 1, step: 0 }, hit: { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, down: { arm: 'down', wrot: V(-150, 180, 180), step: 0 } };
+  switch (anim) {
+    case 'walk': return walkSpec(sp === 'mummy' ? 220 : bony ? 170 : golem ? 240 : 150);
+    case 'run': case 'fly':
+      if (winged) return { loop: true, frames: [f(0, S0, { pre: [['lift', 3]], d: 120 }), f(1, S0, { pre: [['lift', 4]], d: 120 }), f(2, S0, { pre: [['lift', 3]], d: 120 }), f(1, S0, { pre: [['lift', 2]], d: 120 })] };
+      return { loop: true, frames: [f(0, {}, { pre: [['shear', 0.08]], d: 90 }), f(1, {}, { pre: [['shear', 0.08]], d: 80 }), f(2, {}, { pre: [['shear', 0.08]], d: 90 }), f(1, {}, { pre: [['shear', 0.08]], d: 80 })] };
+    case 'idle': {
+      if (bony) return { loop: true, frames: [f(1, S0, { d: 220 }), f(1, S0, { pre: [['shake', 1]], d: 180 }), f(1, S0, { d: 220 }), f(1, S0, { pre: [['shake', -1]], d: 180 })] };
+      if (floaty) return { loop: true, frames: [f(1, { bob: -1 }, { d: 320 }), f(1, { bob: 0 }, { d: 280 }), f(1, { bob: 1 }, { d: 320 }), f(1, { bob: 0 }, { d: 280 })] };
+      if (sp === 'penguin') return { loop: true, frames: [f(1, { step: -1 }, { d: 380 }), f(1, { step: 0 }, { d: 300 }), f(1, { step: 1 }, { d: 380 }), f(1, { step: 0, eyes: 'closed' }, { d: 140 })] };
+      if (role === 'young') return { loop: true, frames: [f(1, S0, { d: 200 }), f(1, S0, { pre: [['lift', 2]], d: 140 }), f(1, S0, { pre: [['lift', 1]], d: 120 }), f(1, S0, { d: 260 })] };
+      const w = winged ? [0, 1, 2, 1] : [1, 1, 1, 1], d0 = golem ? 700 : 440;
+      return { loop: true, frames: [f(w[0], S0, { d: d0 }), f(w[1], S0, { pre: [['breathe', 1]], d: d0 }), f(w[2], living ? { ...S0, eyes: 'closed' } : S0, { pre: [['breathe', 1]], d: living ? 130 : d0 }), f(w[3], S0, { d: d0 })] };
+    }
+    case 'call': {
+      if (sp === 'penguin' || sp === 'monkey') return { loop: true, frames: [f(1, { arms2: 'up', mouth: true, step: 0 }, { pre: [['mouth']], fx: [['sound']], d: 200 }), f(1, S0, { d: 140 }), f(1, { arms2: 'up', mouth: true, step: 0 }, { pre: [['mouth'], ['lift', 1]], fx: [['sound']], d: 200 }), f(1, S0, { d: 200 })] };
+      if (bony) return { loop: true, frames: [f(1, S0, { pre: [['mouth']], fx: [['sound']], d: 150 }), f(1, S0, { pre: [['shake', 1]], d: 120 }), f(1, S0, { pre: [['mouth']], fx: [['sound']], d: 150 }), f(1, S0, { pre: [['shake', -1]], d: 200 })] };
+      if (golem) return { loop: true, frames: [f(1, S0, { pre: [['shake', 1]], fx: [['sparkle', '#80e0ff']], d: 200 }), f(1, S0, { pre: [['shake', -1]], fx: [['sound']], d: 200 }), f(1, S0, { d: 300 })] };
+      if (floaty) return { loop: true, frames: [f(1, { arm: 'up', bob: -1 }, { fx: [['sound']], d: 260 }), f(1, { arm: 'up', bob: 0 }, { fx: [['magic', CASTER[sp]]], d: 260 }), f(1, { bob: 0 }, { d: 260 })] };
+      if (sp.startsWith('goblin') || sp === 'hobgoblin') return { loop: true, frames: [f(1, { arm: 'up', wrot: V(30, 20, -20), step: 0 }, { pre: [['mouth']], fx: [['sound']], d: 180 }), f(1, { arm: 'up', wrot: 0, step: 0 }, { pre: [['lift', 1]], d: 160 }), f(1, { arm: 'up', wrot: V(30, 20, -20), step: 0 }, { pre: [['mouth']], fx: [['sound']], d: 180 }), f(1, S0, { d: 220 })] };
+      return { loop: true, frames: [f(1, { arms2: 'up', step: 0 }, { pre: [['breathe', 1]], d: 200 }), f(1, { arms2: 'up', step: 0 }, { pre: [['mouth']], fx: [['roar'], ['angry']], d: 280 }), f(1, { arms2: 'up', step: 0 }, { pre: [['mouth']], fx: [['roar']], d: 240 }), f(1, S0, { d: 200 })] };
+    }
+    case 'attack': {
+      if (CASTER[sp]) {
+        const c = CASTER[sp];
+        if (sp === 'demonlord') return { loop: true, frames: [f(1, { arms2: 'up', step: 0 }, { fx: [['magic', c]], d: 260 }), f(1, { arms2: 'up', step: 0 }, { pre: [['lift', 1]], fx: [['magic', c], ['sparkle', '#ff6080']], d: 220 }), f(1, { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, { pre: [['fwd', 1]], fx: [['burst', c]], d: 110 }), f(1, { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, { fx: [['burst', c]], d: 170 }), f(1, S0, { d: 200 })] };
+        return { loop: true, frames: [f(1, { arm: 'up', step: 0 }, { fx: [['magic', c]], d: 240 }), f(1, { arm: 'up', step: 0 }, { fx: [['magic', c]], d: 180 }), f(1, { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, { pre: [['fwd', 1]], fx: [['bolt', c]], d: 90 }), f(1, { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, { fx: [['bolt', c]], d: 150 }), f(1, S0, { d: 160 })] };
+      }
+      if (sp === 'mummy') return { loop: true, frames: [f(1, { arms2: 'fwd', step: 0 }, { pre: [['fwd', -1]], d: 240 }), f(1, { arms2: 'fwd', step: 0 }, { pre: [['fwd', 3], ['shear', 0.1]], fx: [['slash']], d: 90 }), f(1, { arms2: 'fwd', step: 0 }, { pre: [['fwd', 3]], fx: [['impact']], d: 170 }), f(1, { arms2: 'fwd', step: 0 }, { pre: [['fwd', 1]], d: 150 })] };
+      if (golem) return { loop: true, frames: [f(1, { arms2: 'up', step: 0 }, { pre: [['lift', 1]], d: 300 }), f(1, { arms2: 'up', step: 0 }, { pre: [['lift', 2]], d: 180 }), f(1, { crouch: 2, step: 0 }, { pre: [['shake', 1]], fx: [['crack'], ['dust']], d: 90 }), f(1, { crouch: 2, step: 0 }, { pre: [['shake', -1]], fx: [['crack'], ['dust']], d: 220 }), f(1, S0, { d: 200 })] };
+      if (sp === 'monkey') return { loop: true, frames: [f(1, { arm: 'up', step: 0 }, { pre: [['mouth']], d: 160 }), f(1, { arm: 'fwd', step: 0 }, { pre: [['fwd', 2]], fx: [['slash']], d: 70 }), f(1, { arm: 'fwd', step: 0 }, { pre: [['fwd', 2]], fx: [['impact']], d: 150 }), f(1, S0, { d: 130 })] };
+      if (sp === 'penguin') return { loop: true, frames: [f(1, { arms2: 'up', step: 0 }, { pre: [['fwd', -1]], d: 180 }), f(1, { mouth: true, step: 0 }, { pre: [['fwd', 3], ['shear', 0.15]], fx: [['bite']], d: 80 }), f(1, S0, { pre: [['fwd', 3]], fx: [['impact']], d: 150 }), f(1, S0, { d: 140 })] };
+      return { loop: true, frames: [f(1, swingW.back, { pre: [['fwd', -1]], d: bony ? 180 : 210 }), f(1, swingW.hit, { pre: [['fwd', 2], ['shear', 0.08]], fx: [['swing']], d: 70 }), f(1, swingW.hit, { pre: [['fwd', 2]], fx: [['impact', 'tip']], d: 160 }), f(1, swingW.down, { pre: [['fwd', 1]], d: 140 })] };
+    }
+    case 'hurt': return hurtSpec({ step: 0 }, { step: 0 }, hk);
+    case 'dying': return { loop: true, frames: [
+      f(1, { crouch: 2, step: 0 }, { pre: [['shear', 0.06]], fx: [['dizzy']], d: 320 }), f(1, { crouch: 3, step: -1 }, { pre: [['shear', -0.04]], fx: [['dizzy']], d: 320 }),
+      f(1, { crouch: 2, step: 0, eyes: living ? 'closed' : undefined }, { pre: [['shear', 0.02]], fx: [['dizzy'], ...(living ? [['sweat']] : [])], d: 320 }), f(1, { crouch: 3, step: 1 }, { fx: [['dizzy']], d: 320 })] };
+    case 'dead': {
+      const flash = f(1, { eyes: 'closed', step: 0 }, { pre: [['fwd', -1]], post: [['tint', '#ffffff', 0.45]], d: 120 });
+      if (bony || golem) { const bs = golem ? 4 : 3; return { loop: false, frames: [flash, f(1, S0, { pre: [['crumble', 0.35, bs]], d: 120 }), f(1, S0, { pre: [['crumble', 0.7, bs]], fx: golem ? [['dust']] : [], d: 130 }), f(1, S0, { pre: [['crumble', 1, bs]], fx: [['dust']], d: 180 }), f(1, S0, { pre: [['crumble', 1, bs]], post: [['gray', golem ? 0.4 : 0.15]], d: HOLD })] }; }
+      if (sp === 'demonlord') return { loop: false, frames: [flash, f(1, { crouch: 4, step: 0 }, { post: [['light', 0.15]], fx: [['beam']], d: 220 }), f(1, { crouch: 4, step: 0 }, { post: [['light', 0.4]], fx: [['beam']], d: 220 }), f(1, { crouch: 4, step: 0 }, { post: [['light', 0.7]], fx: [['beam']], d: 220 }), f(1, { crouch: 4, step: 0 }, { post: [['light', 1]], fx: [['beam']], d: 260 }), f(1, S0, { post: [['fade', 1]], fx: [['sparkle']], d: HOLD })] };
+      if (floaty) return { loop: false, frames: [flash, f(1, { bob: 1 }, { post: [['fade', 0.3]], fx: [['soul']], d: 180 }), f(1, { bob: 2 }, { post: [['fade', 0.6]], fx: [['soul']], d: 180 }), f(1, { bob: 3 }, { post: [['fade', 0.85]], fx: [['soul']], d: 200 }), f(1, { bob: 3 }, { post: [['fade', 1]], d: HOLD })] };
+      const fall = [flash, f(1, { crouch: 3, step: 0, eyes: 'closed' }, { pre: [['rot', -30, 'b']], d: 130 }), f(1, { step: 0, eyes: 'closed' }, { pre: [['rot', -90, 'b'], ['settle']], fx: [['dust']], d: 170 })];
+      if (demon) return { loop: false, frames: [...fall, f(1, { step: 0, eyes: 'closed' }, { pre: [['rot', -90, 'b'], ['settle']], post: [['fade', 0.4]], fx: [['smokeDark']], d: 200 }), f(1, { step: 0, eyes: 'closed' }, { pre: [['rot', -90, 'b'], ['settle']], post: [['fade', 0.8]], fx: [['smokeDark']], d: 200 }), f(1, S0, { post: [['fade', 1]], d: HOLD })] };
+      if (sp === 'mummy') return { loop: false, frames: [...fall, f(1, { step: 0 }, { pre: [['rot', -90, 'b'], ['settle']], post: [['gray', 0.3]], fx: [['soul']], d: 240 }), f(1, { step: 0 }, { pre: [['rot', -90, 'b'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+      return { loop: false, frames: [...fall, f(1, { step: 0, eyes: 'closed' }, { pre: [['rot', -90, 'b'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+    }
+    case 'graze': case 'eat': {
+      if (!living || sp === 'imp' || sp === 'demonsoldier' || sp === 'demongeneral' || sp === 'demonlord') return specBiped('rest', x);
+      const food = sp === 'monkey' ? 'banana' : sp === 'penguin' ? 'fishy' : 'food';
+      return { loop: true, frames: [f(1, { sit: true, arm: 'mouth' }, { pre: [['mouth']], fx: [[food]], d: 220 }), f(1, { sit: true, arm: 'mouth' }, { fx: [[food]], d: 200 }), f(1, { sit: true, arm: 'mouth' }, { pre: [['mouth']], fx: [[food]], d: 220 }), f(1, { sit: true }, { fx: [[food]], d: 300 })] };
+    }
+    case 'drink':
+      if (!living) return specBiped('guard', x);
+      return { loop: true, frames: [f(1, { crouch: 3, arm: 'down', step: 0 }, { fx: [['water']], d: 300 }), f(1, { crouch: 2, arm: 'mouth', step: 0 }, { pre: [['mouth']], fx: [['water']], d: 360 }), f(1, { crouch: 2, arm: 'mouth', step: 0 }, { fx: [['water']], d: 300 })] };
+    case 'sleep': {
+      if (!living || floaty) return specBiped('rest', x);
+      const q = { sit: true, eyes: 'closed' };
+      return { loop: true, frames: [f(1, q, { pre: [['head', 0, 1]], fx: [['zzz']], d: 700 }), f(1, q, { pre: [['head', 0, 1], ['breathe', 1]], fx: [['zzz']], d: 700 }), f(1, q, { pre: [['head', 0, 1]], fx: [['zzz']], d: 700 })] };
+    }
+    case 'rest':
+      if (floaty) return { loop: true, frames: [f(1, { bob: 1 }, { d: 600 }), f(1, { bob: 2 }, { d: 600 })] };
+      if (role === 'overlord') return specBiped('guard', x);
+      return { loop: true, frames: [f(1, { sit: true }, { d: 600 }), f(1, { sit: true }, { pre: [['breathe', 1]], d: 600 }), f(1, { sit: true, eyes: living ? 'closed' : undefined }, { d: living ? 150 : 600 })] };
+    case 'groom':
+      if (bony) return specBiped('idle', x);
+      if (golem || floaty) return specBiped('guard', x);
+      return { loop: true, frames: [f(1, { sit: true, arm: 'up', wrot: 0 }, { d: 200 }), f(1, { sit: true, arm: 'up', wrot: 0 }, { pre: [['head', 1, 0]], d: 160 }), f(1, { sit: true, arm: 'up', wrot: 0 }, { d: 200 }), f(1, { sit: true }, { d: 300 })] };
+    case 'work': {
+      if (WEAPON_SP.has(sp) && sp !== 'demongeneral') return { loop: true, frames: [f(1, { arm: 'up', wrot: V(40, 0, 0), step: 0 }, { d: 260 }), f(1, { arm: 'down', wrot: V(-150, 180, 180), crouch: 1, step: 0 }, { fx: [['dirt'], ['dust']], d: 90 }), f(1, { arm: 'down', wrot: V(-150, 180, 180), crouch: 1, step: 0 }, { d: 200 }), f(1, S0, { d: 200 })] };
+      if (sp === 'demongeneral') return { loop: true, frames: [f(1, S0, { d: 300 }), f(1, { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, { pre: [['mouth']], fx: [['bang'], ['sound']], d: 400 }), f(1, { arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90), step: 0 }, { fx: [['sound']], d: 300 }), f(1, S0, { d: 300 })] };
+      if (sp === 'lich' || sp === 'pharaoh') return { loop: true, frames: [f(1, { arm: 'up', bob: -1 }, { under: [['circle', CASTER[sp]]], fx: [['magic', CASTER[sp]]], d: 260 }), f(1, { arm: 'up', bob: 0 }, { under: [['circle', CASTER[sp]]], fx: [['magic', CASTER[sp]], ['sparkle', CASTER[sp]]], d: 260 }), f(1, { arm: 'up', bob: 1 }, { under: [['circle', CASTER[sp]]], fx: [['magic', CASTER[sp]]], d: 260 })] };
+      if (sp === 'imp') return { loop: true, frames: [f(0, { arm: 'up', wrot: 0, step: 0 }, { pre: [['lift', 3]], fx: [['letter']], d: 140 }), f(1, { arm: 'up', wrot: 0, step: 0 }, { pre: [['lift', 4]], fx: [['letter']], d: 140 }), f(2, { arm: 'up', wrot: 0, step: 0 }, { pre: [['lift', 3]], fx: [['letter']], d: 140 }), f(1, { arm: 'up', wrot: 0, step: 0 }, { pre: [['lift', 2]], fx: [['letter']], d: 140 })] };
+      if (sp === 'demonlord') return specBiped('guard', { ...x, role: 'overlord' });
+      if (golem) return { loop: true, frames: [f(1, { crouch: 2, step: 0 }, { d: 400 }), f(1, { arms2: 'up', step: 0 }, { fx: [['rock']], d: 600 }), f(1, { arms2: 'up', step: 0 }, { pre: [['shake', 1]], fx: [['rock']], d: 300 }), f(1, { arms2: 'up', step: 0 }, { fx: [['rock']], d: 600 })] };
+      if (sp === 'mummy') return { loop: true, frames: [f(0, { arms2: 'fwd' }, { d: 260 }), f(1, { arms2: 'fwd' }, { d: 260 }), f(2, { arms2: 'fwd' }, { d: 260 }), f(1, { arms2: 'fwd' }, { d: 260 })] };
+      if (sp === 'monkey') return { loop: true, frames: [f(1, { arm: 'mouth', step: 0 }, { pre: [['mouth']], fx: [['banana']], d: 200 }), f(1, { arm: 'mouth', step: 0 }, { fx: [['banana']], d: 200 }), f(1, S0, { fx: [['banana']], d: 300 })] };
+      if (sp === 'penguin') return { loop: true, frames: [f(1, { arms2: 'fwd' }, { pre: [['rot', 90, 'c', 'S'], ['squash', 0.6, 1.1, 'FB'], ['settle']], fx: [['dust']], d: 160 }), f(1, { arms2: 'fwd' }, { pre: [['rot', 90, 'c', 'S'], ['squash', 0.6, 1.1, 'FB'], ['settle'], ['fwd', 2]], d: 160 }), f(1, { arms2: 'fwd' }, { pre: [['rot', 90, 'c', 'S'], ['squash', 0.6, 1.1, 'FB'], ['settle'], ['fwd', 4]], fx: [['dust']], d: 160 })] };
+      return specBiped('idle', x);
+    }
+    case 'guard': {
+      if (role === 'overlord') return { loop: true, frames: [f(1, { sit: true }, { under: [['throne']], d: 800 }), f(1, { sit: true }, { under: [['throne']], pre: [['breathe', 1]], d: 700 }), f(1, { sit: true, arm: V('fwd', 'across', 'across'), wrot: V(-90, -90, 90) }, { under: [['throne']], fx: [['magic', CASTER.demonlord]], d: 700 }), f(1, { sit: true, arm: 'mouth' }, { under: [['throne']], d: 900 })] };
+      if (role === 'treasure') return { loop: true, frames: [f(1, { sit: true }, { under: [['treasure']], d: 700 }), f(1, { sit: true }, { under: [['treasure']], pre: [['head', 1, 0, 'FB']], d: 600 }), f(1, { sit: true }, { under: [['treasure']], pre: [['breathe', 1]], d: 600 }), f(1, { sit: true }, { under: [['treasure']], pre: [['head', -1, 0, 'FB']], d: 600 })] };
+      const bob = floaty ? { bob: 0 } : S0;
+      return { loop: true, frames: [f(1, bob, { d: 700 }), f(1, bob, { pre: [['head', 1, 0, 'FB']], d: 600 }), f(1, bob, { pre: [['breathe', 1]], d: 500 }), f(1, bob, { pre: [['head', -1, 0, 'FB']], d: 600 })] };
+    }
+    case 'play': return { loop: true, frames: [f(1, { crouch: 2, step: 0 }, { d: 160 }), f(1, { arms2: 'up', step: 0 }, { pre: [['lift', 4]], d: 180 }), f(1, { arms2: 'up', step: 0 }, { pre: [['lift', 2]], d: 140 }), f(1, { crouch: 1, step: 0 }, { d: 200 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- 大蜘蛛・アラクネ
+function specSpider(anim, x) {
+  const { sp } = x;
+  const ar = sp === 'arachne';
+  switch (anim) {
+    case 'walk': return walkSpec(120);
+    case 'run': case 'fly': return { ...walkSpec(70), plain: false };
+    case 'idle': return { loop: true, frames: [f(1, {}, { d: 420 }), f(1, { curl: 0.1 }, { pre: [['breathe', 1]], d: 420 }), f(1, {}, { d: 300 }), f(1, { mouth: true }, { d: 160 })] };
+    case 'call': return ar
+      ? { loop: true, frames: [f(1, { arm: 'up' }, { fx: [['sound']], d: 240 }), f(1, { arm: 'up', rear: 0.3 }, { fx: [['sound']], d: 240 }), f(1, {}, { d: 240 })] }
+      : { loop: true, frames: [f(1, { rear: 0.5, mouth: true }, { fx: [['sound']], d: 240 }), f(1, { rear: 0.8, mouth: true }, { fx: [['sound']], d: 240 }), f(1, { rear: 0.5 }, { d: 200 }), f(1, {}, { d: 200 })] };
+    case 'attack': return ar
+      ? { loop: true, frames: [f(1, { arm: 'up', rear: 0.3 }, { pre: [['fwd', -1]], d: 200 }), f(1, { arm: 'fwd' }, { pre: [['fwd', 3]], fx: [['slash']], d: 70 }), f(1, { arm: 'fwd' }, { pre: [['fwd', 3]], fx: [['impact']], d: 160 }), f(1, {}, { pre: [['fwd', 1]], fx: [['web']], d: 140 })] }
+      : { loop: true, frames: [f(1, { rear: 0.8, mouth: true }, { pre: [['fwd', -1]], d: 210 }), f(1, { rear: 0.3, mouth: true }, { pre: [['fwd', 4]], fx: [['bite']], d: 70 }), f(1, { rear: 0.2 }, { pre: [['fwd', 4]], fx: [['impact'], ['poison']], d: 170 }), f(1, {}, { pre: [['fwd', 1]], d: 140 })] };
+    case 'hurt': return hurtSpec({ curl: 0.3 }, { curl: 0.2 }, 'blood');
+    case 'dying': return { loop: true, frames: [f(1, { curl: 0.3 }, { pre: [['shake', 1]], fx: [['dizzy']], d: 280 }), f(1, { curl: 0.4, eyes: 'closed' }, { fx: [['dizzy']], d: 280 }), f(1, { curl: 0.3 }, { pre: [['shake', -1]], fx: [['dizzy']], d: 280 })] };
+    case 'dead': return ar
+      ? { loop: false, frames: [f(1, { curl: 0.3, eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { curl: 0.6, eyes: 'closed' }, { pre: [['rot', 30, 'b']], d: 150 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 90, 'b'], ['settle']], fx: [['dust']], d: 170 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 90, 'b'], ['settle']], post: [['gray', 0.35]], d: HOLD })] }
+      : { loop: false, frames: [f(1, { curl: 0.3, eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { curl: 0.7, eyes: 'closed' }, { pre: [['lift', 3]], d: 140 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], fx: [['dust']], d: 170 }), f(1, { curl: 1, eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'eat': return { loop: true, frames: [f(1, { mouth: true, rear: 0.2 }, { fx: [['cocoon']], d: 240 }), f(1, { rear: 0.1 }, { fx: [['cocoon']], d: 200 }), f(1, { mouth: true, rear: 0.2 }, { fx: [['cocoon']], d: 240 })] };
+    case 'drink': return { loop: true, frames: [f(1, { mouth: true }, { pre: [['lift', -1]], fx: [['water']], d: 300 }), f(1, {}, { pre: [['lift', -1]], fx: [['water']], d: 300 })] };
+    case 'sleep': return { loop: true, frames: [f(1, { curl: 0.25, eyes: 'closed' }, { fx: [['zzz']], d: 700 }), f(1, { curl: 0.25, eyes: 'closed' }, { pre: [['breathe', 1]], fx: [['zzz']], d: 700 })] };
+    case 'rest': return { loop: true, frames: [f(1, { curl: 0.2 }, { d: 600 }), f(1, { curl: 0.2 }, { pre: [['breathe', 1]], d: 600 })] };
+    case 'groom': return { loop: true, frames: [f(1, { rear: 0.3, mouth: true }, { d: 200 }), f(1, { rear: 0.1 }, { d: 200 }), f(1, { rear: 0.3 }, { d: 200 }), f(1, {}, { d: 300 })] };
+    case 'work': return { loop: true, frames: [0, 1, 2, 3].map((k) => f(k % 2 ? 0 : 2, {}, { under: [['web']], d: 260 })) };
+    case 'guard': return ar
+      ? { loop: true, frames: [f(1, {}, { d: 600 }), f(1, {}, { pre: [['head', 1, 0, 'FB']], d: 500 }), f(1, { rear: 0.2 }, { d: 400 }), f(1, {}, { pre: [['head', -1, 0, 'FB']], d: 500 })] }
+      : { loop: true, frames: [f(1, { rear: 0.2 }, { d: 600 }), f(1, { rear: 0.3 }, { d: 400 }), f(1, { rear: 0.2, mouth: true }, { d: 300 })] };
+    case 'play': return { loop: true, frames: [f(1, { curl: 0.2 }, { d: 140 }), f(1, {}, { pre: [['lift', 3]], d: 160 }), f(1, {}, { pre: [['lift', 1]], d: 120 }), f(1, {}, { d: 200 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- ワイバーン・ドラゴン
+function specDragon(anim, x) {
+  const { sp } = x;
+  const big = sp === 'dragon';
+  const W0 = { flap: 0.35, wingK: 0.55 };
+  switch (anim) {
+    case 'walk': return walkSpec(big ? 190 : 160);
+    case 'run': return { loop: true, frames: [f(0, { flap: 0.6, wingK: 0.8 }, { d: 110 }), f(1, { flap: 0.35, wingK: 0.8 }, { d: 100 }), f(2, { flap: 0.6, wingK: 0.8 }, { d: 110 }), f(1, { flap: 0.35, wingK: 0.8 }, { d: 100 })] };
+    case 'fly': return { air: true, loop: true, frames: [f(1, { flap: 1, fold: 0.6, wingK: 1, step: 0 }, { pre: [['lift', 4]], d: 140 }), f(1, { flap: 0.35, fold: 0.6, wingK: 1, step: 0 }, { pre: [['lift', 5]], d: 120 }), f(1, { flap: -0.25, fold: 0.6, wingK: 1, step: 0 }, { pre: [['lift', 6]], d: 140 }), f(1, { flap: 0.35, fold: 0.6, wingK: 1, step: 0 }, { pre: [['lift', 5]], d: 120 })] };
+    case 'idle': return { loop: true, frames: [f(1, { ...W0, tph: 0 }, { d: 520 }), f(1, { ...W0, tph: 1 }, { pre: [['breathe', 1]], d: 520 }), f(1, { ...W0, tph: 2 }, { pre: [['breathe', 1]], fx: big ? [['smoke']] : [], d: 520 }), f(1, { ...W0, tph: 1, eyes: 'closed' }, { d: 150 })] };
+    case 'call': return { loop: true, frames: [f(1, { hdy: -2, flap: 1, wingK: 1 }, { d: 220 }), f(1, { hdy: -3, mouth: true, flap: 1, wingK: 1 }, { fx: [['roar']], d: 320 }), f(1, { hdy: -3, mouth: true, flap: 0.6, wingK: 1 }, { fx: [['roar']], d: 320 }), f(1, { hdy: -1, flap: 0.35, wingK: 0.7 }, { d: 220 })] };
+    case 'attack': return big
+      ? { loop: true, frames: [f(1, { hdy: -2, flap: 0.8, wingK: 1 }, { pre: [['fwd', -1], ['breathe', 1]], d: 280 }), f(1, { hdy: 1, mouth: true, flap: 0.3, wingK: 1 }, { fx: [['fire']], d: 110 }), f(1, { hdy: 1, mouth: true, flap: 0.3, wingK: 1 }, { fx: [['fire']], d: 110 }), f(1, { hdy: 1, mouth: true, flap: 0.3, wingK: 1 }, { fx: [['fire']], d: 110 }), f(1, { hdy: 1, mouth: true, flap: 0.3, wingK: 1 }, { fx: [['fire'], ['smoke']], d: 110 }), f(1, { flap: 0.35, wingK: 0.7 }, { fx: [['smoke']], d: 220 })] }
+      : { loop: true, frames: [f(1, { hdy: -2, flap: 1, wingK: 1 }, { pre: [['fwd', -2]], d: 210 }), f(1, { hdy: 1, mouth: true, flap: -0.25, wingK: 1 }, { pre: [['fwd', 4]], fx: [['bite']], d: 80 }), f(1, { hdy: 1, flap: -0.25, wingK: 1, tailDn: -4 }, { pre: [['fwd', 4]], fx: [['impact'], ['poison']], d: 170 }), f(1, { flap: 0.35 }, { pre: [['fwd', 1]], d: 150 })] };
+    case 'hurt': return hurtSpec({ flap: 1, wingK: 1 }, { flap: 0.6, wingK: 1 }, 'blood');
+    case 'dying': return { loop: true, frames: [f(1, { fold: 0.3, hg: 0.3, flap: -0.25, wingK: 0.8 }, { fx: [['dizzy']], d: 340 }), f(1, { fold: 0.35, hg: 0.4, flap: -0.25, wingK: 0.8, eyes: 'closed' }, { fx: [['dizzy']], d: 340 }), f(1, { fold: 0.3, hg: 0.3, flap: 0, wingK: 0.8 }, { fx: [['dizzy'], ['sweat']], d: 340 })] };
+    case 'dead': return { loop: false, frames: [f(1, { flap: 1, wingK: 1, eyes: 'closed' }, { pre: [['fwd', -1]], post: [['tint', '#ffffff', 0.4]], d: 130 }), f(1, { fold: 0.6, hg: 0.6, flap: -0.25, wingK: 1, eyes: 'closed' }, { d: 170 }), f(1, { fold: 1, hg: 1, flap: -0.5, wingK: 1, eyes: 'closed' }, { pre: big ? [['shake', 1]] : [], fx: [['dust']], d: 200 }), f(1, { fold: 1, hg: 1, flap: -0.5, wingK: 1, eyes: 'closed' }, { post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'eat': return { loop: true, frames: [f(1, { ...W0, hg: 0.9, mouth: true }, { fx: [['meat']], d: 240 }), f(1, { ...W0, hg: 1 }, { fx: [['meat']], d: 200 }), f(1, { ...W0, hg: 0.6, mouth: true }, { fx: [['meat']], d: 260 })] };
+    case 'drink': return { loop: true, frames: [f(1, { ...W0, hg: 1, fold: 0.2 }, { fx: [['water']], d: 320 }), f(1, { ...W0, hg: 1, fold: 0.2, mouth: true }, { fx: [['water']], d: 220 })] };
+    case 'sleep': { const q = { fold: 1, hg: 0.9, wingK: 0.5, flap: 0.2, eyes: 'closed', tph: 0 }; return { loop: true, frames: [f(1, q, { fx: [['zzz']], d: 700 }), f(1, q, { pre: [['breathe', 1]], fx: [['zzz'], ...(big ? [['smoke']] : [])], d: 700 }), f(1, q, { fx: [['zzz']], d: 700 })] }; }
+    case 'rest': return { loop: true, frames: [f(1, { fold: 1, hg: 0.3, wingK: 0.5, flap: 0.2 }, { d: 600 }), f(1, { fold: 1, hg: 0.3, wingK: 0.5, flap: 0.2, tph: 1 }, { pre: [['breathe', 1]], d: 600 })] };
+    case 'groom': return { loop: true, frames: [f(1, { hdx: -6, hdy: 3, mouth: true, wingK: 1, flap: 0.6 }, { d: 260 }), f(1, { hdx: -6, hdy: 4, wingK: 1, flap: 0.6 }, { d: 220 }), f(1, { hdx: -5, hdy: 3, mouth: true, wingK: 1, flap: 0.5 }, { d: 260 }), f(1, { ...W0 }, { d: 300 })] };
+    case 'work': return { loop: true, frames: [f(1, { fold: 0.6, hdy: -1, ...W0 }, { under: [['treasure']], fx: [['smoke']], d: 600 }), f(1, { fold: 0.6, hdy: -1, hdx: 1, ...W0 }, { under: [['treasure']], d: 500 }), f(1, { fold: 0.6, hdy: -1, ...W0 }, { under: [['treasure']], pre: [['breathe', 1]], d: 500 })] };
+    case 'guard': return { loop: true, frames: [f(1, { hdy: -2, ...W0 }, { fx: big ? [['smoke']] : [], d: 600 }), f(1, { hdy: -2, hdx: V(1, 1, 1), ...W0 }, { d: 500 }), f(1, { hdy: -2, ...W0 }, { pre: [['breathe', 1]], d: 400 }), f(1, { hdy: -2, hdx: V(-1, -1, -1), ...W0 }, { d: 500 })] };
+    case 'play': return { loop: true, frames: [f(1, { flap: 1, wingK: 1 }, { d: 140 }), f(1, { flap: -0.25, wingK: 1 }, { pre: [['lift', 4]], d: 160 }), f(1, { flap: 1, wingK: 1 }, { pre: [['lift', 2]], d: 140 }), f(1, W0, { d: 200 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- サソリ
+function specBug(anim, x) {
+  switch (anim) {
+    case 'walk': return walkSpec(110);
+    case 'run': case 'fly': return { ...walkSpec(70), plain: false };
+    case 'idle': return { loop: true, frames: [f(1, { sway: 0 }, { d: 380 }), f(1, { sway: 1, mouth: true }, { d: 260 }), f(1, { sway: 0 }, { d: 380 }), f(1, { sway: -1 }, { d: 300 })] };
+    case 'call': return { loop: true, frames: [f(1, { sting: 0.3, mouth: true }, { fx: [['sound']], d: 220 }), f(1, { sting: 0.4 }, { fx: [['sound']], d: 220 }), f(1, { sting: 0.3, mouth: true }, { d: 220 })] };
+    case 'attack': return { loop: true, frames: [f(1, { mouth: true }, { pre: [['fwd', -1]], d: 200 }), f(1, { sting: 0.6, mouth: true }, { pre: [['fwd', 1]], d: 80 }), f(1, { sting: 1 }, { pre: [['fwd', 2]], fx: [['impact', 'tip'], ['poison']], d: 170 }), f(1, { sting: 0.3 }, { pre: [['fwd', 1]], d: 140 })] };
+    case 'hurt': return hurtSpec({}, {}, 'blood');
+    case 'dying': return { loop: true, frames: [f(1, { sway: 1 }, { pre: [['shake', 1]], fx: [['dizzy']], d: 280 }), f(1, { sway: -1, eyes: 'closed' }, { fx: [['dizzy']], d: 280 }), f(1, { sway: 0 }, { pre: [['shake', -1]], fx: [['dizzy']], d: 280 })] };
+    case 'dead': return { loop: false, frames: [f(1, { eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { eyes: 'closed' }, { pre: [['lift', 3]], d: 140 }), f(1, { eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], fx: [['dust']], d: 170 }), f(1, { eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+    case 'graze': case 'eat': return { loop: true, frames: [f(1, { mouth: true }, { fx: [['meat']], d: 220 }), f(1, {}, { fx: [['meat']], d: 200 })] };
+    case 'drink': return { loop: true, frames: [f(1, {}, { fx: [['water']], d: 300 }), f(1, { mouth: true }, { fx: [['water']], d: 300 })] };
+    case 'sleep': return { loop: true, frames: [f(1, { eyes: 'closed', sway: 0 }, { fx: [['zzz']], d: 700 }), f(1, { eyes: 'closed', sway: 0 }, { fx: [['zzz']], d: 700 })] };
+    case 'rest': return { loop: true, frames: [f(1, { sway: 0 }, { d: 600 }), f(1, { sway: 1 }, { d: 600 })] };
+    case 'groom': return { loop: true, frames: [f(1, { mouth: true }, { d: 160 }), f(1, {}, { d: 160 }), f(1, { mouth: true, sway: 1 }, { d: 160 }), f(1, {}, { d: 300 })] };
+    case 'work': return { loop: true, frames: [f(0, {}, { fx: [['dirt']], d: 140 }), f(2, {}, { fx: [['dirt']], d: 140 })] };
+    case 'guard': return { loop: true, frames: [f(1, { sting: 0.2, mouth: true }, { d: 600 }), f(1, { sting: 0.3 }, { d: 400 })] };
+    case 'play': return { loop: true, frames: [f(1, {}, { d: 140 }), f(1, {}, { pre: [['lift', 2]], d: 140 })] };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------- カエル・ヘビ・カメ・ワニ
+function specLizard(anim, x) {
+  const { sp } = x;
+  const flip = (hold = true) => ({ loop: false, frames: [f(1, { eyes: 'closed' }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { eyes: 'closed' }, { pre: [['lift', 2]], d: 140 }), f(1, { eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], fx: [['dust']], d: 170 }), f(1, { eyes: 'closed' }, { pre: [['rot', 180, 'c'], ['settle']], post: [['gray', 0.35]], d: HOLD })] });
+  const dizzy = (q = {}) => ({ loop: true, frames: [f(1, q, { pre: [['shake', 1]], fx: [['dizzy']], d: 300 }), f(1, { ...q, eyes: 'closed' }, { fx: [['dizzy']], d: 300 }), f(1, q, { pre: [['shake', -1]], fx: [['dizzy']], d: 300 })] });
+  const zz = (q) => ({ loop: true, frames: [f(1, q, { fx: [['zzz']], d: 700 }), f(1, q, { pre: [['breathe', 1]], fx: [['zzz']], d: 700 })] });
+  if (sp === 'frog') {
+    const Z = { hop: 0, crouch: 0 };
+    switch (anim) {
+      case 'walk': return walkSpec(130);
+      case 'run': case 'fly': case 'play': return { loop: true, frames: [f(1, { hop: 0, crouch: 1 }, { d: 120 }), f(1, { hop: 3, crouch: 0 }, { d: 140 }), f(1, { hop: 1, crouch: 0 }, { d: 100 }), f(1, Z, { d: 140 })] };
+      case 'idle': return { loop: true, frames: [f(1, Z, { d: 420 }), f(1, { ...Z, sac: 0.7 }, { d: 260 }), f(1, Z, { d: 420 }), f(1, { ...Z, eyes: 'closed' }, { d: 140 })] };
+      case 'call': return { loop: true, frames: [f(1, { ...Z, sac: 0.8 }, { d: 200 }), f(1, { ...Z, sac: 1.3 }, { fx: [['sound']], d: 300 }), f(1, { ...Z, sac: 0.6 }, { d: 200 })] };
+      case 'attack': case 'eat': case 'work': return { loop: true, frames: [f(1, { hop: 0, crouch: 1 }, { fx: anim !== 'attack' ? [['fly']] : [], d: 220 }), f(1, { ...Z, tongue: 4 }, { d: 60 }), f(1, { ...Z, tongue: 8 }, { fx: [anim === 'attack' ? ['impact'] : ['fly']], d: 140 }), f(1, { ...Z, tongue: 2 }, { d: 90 }), f(1, Z, { d: 260 })] };
+      case 'hurt': return hurtSpec(Z, Z, 'blood');
+      case 'dying': return dizzy({ hop: 0, crouch: 1 });
+      case 'dead': return flip();
+      case 'graze': return specLizard('eat', x);
+      case 'drink': return { loop: true, frames: [f(1, { hop: 0, crouch: 1 }, { fx: [['water']], d: 400 }), f(1, Z, { fx: [['water']], d: 400 })] };
+      case 'sleep': return zz({ hop: 0, crouch: 1, eyes: 'closed' });
+      case 'rest': case 'groom': case 'guard': return { loop: true, frames: [f(1, { hop: 0, crouch: 1 }, { d: 600 }), f(1, { hop: 0, crouch: 1, sac: 0.5 }, { d: 400 })] };
+    }
+  }
+  if (sp === 'snake') {
+    switch (anim) {
+      case 'walk': return walkSpec(160);
+      case 'run': case 'fly': return { ...walkSpec(90), plain: false };
+      case 'idle': return { loop: true, frames: [f(1, { tph: 0, tongue: false }, { d: 360 }), f(1, { tph: 1, tongue: true }, { d: 200 }), f(1, { tph: 2, tongue: false }, { d: 360 }), f(1, { tph: 1, tongue: true }, { d: 200 })] };
+      case 'call': return { loop: true, frames: [f(1, { coil: true, strike: 0.3, mouth: true }, { fx: [['sound']], d: 260 }), f(1, { coil: true, strike: 0.5, tongue: true }, { fx: [['sound']], d: 260 }), f(1, { coil: true, strike: 0.3 }, { d: 200 })] };
+      case 'attack': return { loop: true, frames: [f(1, { strike: 0, tongue: false }, { pre: [['fwd', -1]], d: 200 }), f(1, { strike: 1, mouth: true }, { fx: [['bite']], d: 70 }), f(1, { strike: 1 }, { fx: [['impact']], d: 170 }), f(1, { strike: 0.3 }, { d: 160 })] };
+      case 'hurt': return hurtSpec({ tongue: false }, { tongue: false }, 'blood');
+      case 'dying': return dizzy({ tongue: false, low: true });
+      case 'dead': return { loop: false, frames: [f(1, { eyes: 'closed', tongue: false }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { eyes: 'closed', tph: 0, tongue: false, low: true }, { d: 160 }), f(1, { eyes: 'closed', tph: 0, tongue: false, low: true }, { pre: [['rot', 180, 'c', 'S'], ['settle']], d: 170 }), f(1, { eyes: 'closed', tph: 0, tongue: false, low: true }, { pre: [['rot', 180, 'c', 'S'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+      case 'graze': case 'eat': return { loop: true, frames: [f(1, { mouth: true, strike: 0.3 }, { fx: [['meat']], d: 300 }), f(1, { strike: 0.2, tongue: false }, { fx: [['meat']], d: 300 })] };
+      case 'drink': return { loop: true, frames: [f(1, { low: true, tongue: true }, { fx: [['water']], d: 300 }), f(1, { low: true, tongue: false }, { fx: [['water']], d: 300 })] };
+      case 'sleep': return zz({ coil: true, eyes: 'closed', tongue: false });
+      case 'rest': case 'groom': return { loop: true, frames: [f(1, { coil: true, tongue: false }, { d: 600 }), f(1, { coil: true, tongue: true }, { d: 200 })] };
+      case 'work': return { loop: true, frames: [0, 1, 2, 3].map((k) => f(1, { tph: k, tongue: k & 1 }, { d: 130 })) };
+      case 'guard': return { loop: true, frames: [f(1, { coil: true, strike: 0.2, tongue: false }, { d: 500 }), f(1, { coil: true, strike: 0.3, tongue: true }, { d: 200 })] };
+      case 'play': return { loop: true, frames: [f(1, { coil: true, strike: 0.2 }, { d: 300 }), f(1, { coil: true, strike: 0.5 }, { d: 300 })] };
+    }
+  }
+  if (sp === 'turtle') {
+    switch (anim) {
+      case 'walk': return walkSpec(260);
+      case 'run': case 'fly': return { ...walkSpec(180), plain: false };
+      case 'idle': return { loop: true, frames: [f(1, { hdx: 0 }, { d: 520 }), f(1, { hdx: -1 }, { d: 400 }), f(1, { hdx: 0 }, { d: 520 }), f(1, { eyes: 'closed' }, { d: 160 })] };
+      case 'call': return { loop: true, frames: [f(1, { hdy: -1, mouth: true }, { fx: [['sound']], d: 300 }), f(1, { hdy: -1 }, { d: 300 })] };
+      case 'attack': return { loop: true, frames: [f(1, { hdx: -1 }, { d: 240 }), f(1, { hdx: 1, mouth: true }, { pre: [['fwd', 2]], fx: [['bite']], d: 80 }), f(1, { hdx: 1 }, { pre: [['fwd', 2]], fx: [['impact']], d: 170 }), f(1, {}, { d: 160 })] };
+      case 'hurt': return { loop: false, frames: [f(1, { hide: 1 }, { pre: [['fwd', -1]], fx: [['hit', 'blood']], post: [['tint', '#ffffff', 0.55]], d: 90 }), f(1, { hide: 1 }, { d: 240 })] };
+      case 'dying': return dizzy({ hide: 0.5 });
+      case 'dead': return { loop: false, frames: [f(1, { hide: 1 }, { post: [['tint', '#ffffff', 0.4]], d: 120 }), f(1, { hide: 1 }, { pre: [['lift', 2]], d: 140 }), f(1, { hide: 1 }, { pre: [['rot', 180, 'c'], ['settle']], fx: [['dust']], d: 170 }), f(1, { hide: 1 }, { pre: [['rot', 180, 'c'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+      case 'graze': case 'eat': return { loop: true, frames: [f(1, { hdy: 1, mouth: true }, { fx: [['grass']], d: 300 }), f(1, { hdy: 1 }, { fx: [['grass']], d: 300 })] };
+      case 'drink': return { loop: true, frames: [f(1, { hdy: 1 }, { fx: [['water']], d: 360 }), f(1, { hdy: 1, mouth: true }, { fx: [['water']], d: 300 })] };
+      case 'sleep': return zz({ hide: 1 });
+      case 'rest': case 'groom': return { loop: true, frames: [f(1, { eyes: 'closed' }, { d: 700 }), f(1, {}, { d: 500 })] };
+      case 'work': return { loop: true, frames: [f(1, { hdy: -1, eyes: 'closed' }, { fx: [['sparkle', '#fff0a0']], d: 600 }), f(1, { hdy: -1, eyes: 'closed' }, { d: 600 })] };
+      case 'guard': return { loop: true, frames: [f(1, { hide: 1 }, { d: 700 }), f(1, { hide: 0.5 }, { d: 500 })] };
+      case 'play': return specLizard('idle', x);
+    }
+  }
+  // ワニ
+  switch (anim) {
+    case 'walk': return walkSpec(170);
+    case 'run': case 'fly': return { ...walkSpec(90), plain: false };
+    case 'idle': return { loop: true, frames: [f(1, { tph: 0 }, { d: 520 }), f(1, { tph: 1 }, { pre: [['breathe', 1]], d: 520 }), f(1, { tph: 2 }, { d: 520 }), f(1, { tph: 1, eyes: 'closed' }, { d: 160 })] };
+    case 'call': return { loop: true, frames: [f(1, { mouth: 2 }, { fx: [['sound']], d: 300 }), f(1, { mouth: 3 }, { fx: [['roar']], d: 300 }), f(1, { mouth: 1 }, { d: 200 })] };
+    case 'attack': return { loop: true, frames: [f(1, { mouth: 3 }, { pre: [['fwd', -1]], d: 220 }), f(1, { mouth: 1 }, { pre: [['fwd', 4]], fx: [['bite']], d: 70 }), f(1, { mouth: 0 }, { pre: [['fwd', 4]], fx: [['impact']], d: 170 }), f(1, {}, { pre: [['fwd', 1]], d: 150 })] };
+    case 'hurt': return hurtSpec({}, {}, 'blood');
+    case 'dying': return dizzy({ lie: true });
+    case 'dead': return flip();
+    case 'graze': case 'eat': return { loop: true, frames: [f(1, { mouth: 3 }, { fx: [['meat']], d: 260 }), f(1, { mouth: 0 }, { fx: [['meat']], d: 200 }), f(1, { mouth: 2, tph: 1 }, { pre: [['lift', 1]], fx: [['meat']], d: 260 })] };
+    case 'drink': return { loop: true, frames: [f(1, { lie: true }, { fx: [['water']], d: 360 }), f(1, { lie: true, mouth: 1 }, { fx: [['water']], d: 300 })] };
+    case 'sleep': return zz({ lie: true, eyes: 'closed' });
+    case 'rest': case 'groom': case 'work': return { loop: true, frames: [f(1, { lie: true, mouth: 2 }, { d: 800 }), f(1, { lie: true, mouth: 2, tph: 1 }, { pre: [['breathe', 1]], d: 800 })] };
+    case 'guard': return { loop: true, frames: [f(1, { lie: true }, { d: 700 }), f(1, { lie: true, tph: 1 }, { d: 600 })] };
+    case 'play': return { loop: true, frames: [f(1, { tailUp: 3, tph: 0 }, { d: 200 }), f(1, { tph: 2 }, { fx: [['dust']], d: 200 })] };
+  }
+  return null;
+}
+
+// ================================================================ 組み立て
+const SPECS = { quad: specQuad, bird: null, fish: specFish, blob: specBlob, biped: specBiped, spider: specSpider, dragon: specDragon, bug: specBug, lizard: specLizard };
+function specOf(c, def, anim) {
+  const shape = def.shape || 'quad';
+  const x = { sp: c.sp, def, role: c.role || null, lv: c.lv || 1 };
+  let fn = SPECS[shape] || specQuad;
+  if (shape === 'bird') fn = c.sp === 'chicken' || c.sp === 'duck' ? specBirdG : specFlyer;
+  return fn(anim, x) || fn('idle', x);
+}
+const resolveQ = (q, view, plain) => {
+  const o = plain ? {} : { anim: true };
+  for (const k in q) { const v = q[k]; o[k] = v && typeof v === 'object' && !Array.isArray(v) && ('S' in v || 'F' in v || 'B' in v) ? v[view] : v; }
+  return o;
+};
+function mirrorAnchors(An) {
+  const M = { ...An }, mx = (x) => SW - 1 - x;
+  for (const k of ['mouth', 'tip', 'hand', 'tail', 'grip']) if (An[k]) M[k] = [mx(An[k][0]), An[k][1]];
+  for (const k of ['head', 'body']) if (An[k]) M[k] = [SW - An[k][0] - An[k][2], An[k][1], An[k][2], An[k][3]];
+  if (An.front != null) M.front = mx(An.front); if (An.back != null) M.back = mx(An.back);
+  return M;
+}
+// 1コマを1つの向きで描く（輪郭・仕上げまで）。S は顔の向き（右＝+1）で描き、反対向きは呼び出し側で反転する
+function paintFrame(c, def, view, fr, spec, frame) {
+  const painter = PAINTERS[def.shape] || paintQuad;
+  const R = rngFrom('creature:' + c.id);
+  R.role = c.role || null; CUR_ROLE = c.role || null;
+  Q = resolveQ(frame.q || {}, view, spec.plain); A = {};
+  const P = new Pix(SW, SH);
+  let info;
+  try { info = painter(P, R, c.sp, def, c.lv || 1, view, fr) || { grounded: true }; }
+  finally { CUR_ROLE = null; }
+  const An = A, q = Q; Q = {}; A = {};
+  const face = def.shape === 'biped' ? -1 : 1;
+  const pre = [...(frame.pre || [])];
+  if (def.shape === 'biped' && q.eyes && !def.undead && c.sp !== 'golem') pre.push(['closeEyes']);
+  for (const t of pre) applyPre(P, An, t, view, face);
+  P.outline();
+  for (const t of frame.post || []) applyPost(P, t);
+  return { P, An, info, face };
+}
+function drawLayer(list, tbl, P0, An, view, face, k) {
+  if (!list || !list.length) return P0;
+  for (const [name, ...args] of list) { const fn = tbl[name]; if (fn) fn(P0, An, view, face, k, ...args); }
+  return P0;
+}
+function compose(base, An, view, face, k, frame) {
+  let out = base;
+  if (frame.under && frame.under.length) {
+    const U = new Pix(SW, SH);
+    for (const [name, ...args] of frame.under) { const fn = UNDER[name]; if (fn) fn(U, An, view, face, k, ...(name === 'puddle' && !args.length ? [An.col] : args)); }
+    U.outline();
+    U.blit(base, 0, 0, SW, SH, 0, 0);
+    out = U;
+  }
+  drawLayer(frame.fx, FX, out, An, view, face, k);
+  return out;
+}
+const _refCache = new Map();
+// 飛ぶ種・泳ぐ種の基準線（歩行シートの下端）。歩行シートと上下の位置を合わせる
+function refLineOf(c, def) {
+  const key = c.sp + '|' + c.id;
+  if (_refCache.has(key)) return _refCache.get(key);
+  let y1 = -1;
+  for (const v of ['F', 'S', 'B']) for (let fr = 0; fr < 3; fr++) { const { P } = paintFrame(c, def, v, fr, { plain: true }, { q: {} }); const b = P.bbox(); if (b) y1 = Math.max(y1, b[3]); }
+  if (_refCache.size > 800) _refCache.clear();
+  _refCache.set(key, y1);
+  return y1;
+}
+function buildAnim(c, def, anim) {
+  const spec = specOf(c, def, anim);
+  const rows = [[], [], [], []];
+  let grounded = true, An0 = null;
+  spec.frames.forEach((frame, k) => {
+    for (const view of ['F', 'S', 'B']) {
+      const { P, An, info, face } = paintFrame(c, def, view, frame.fr ?? 1, spec, frame);
+      if (view === 'F' && k === 0) { grounded = spec.ground ?? info.grounded !== false; An0 = An; }
+      if (view === 'S') {
+        const nat = face > 0 ? 2 : 1, oth = 3 - nat;
+        const M = P.clone(); M.flipX();
+        rows[nat].push(compose(P, An, 'S', face, k, frame));
+        rows[oth].push(compose(M, mirrorAnchors(An), 'S', -face, k, frame));
+      } else rows[view === 'F' ? 0 : 3].push(compose(P, An, view, face, k, frame));
+    }
+  });
+  // 全コマを同じ枠で切る（横は中心線 x=60 で左右対称、縦は足元をそろえる）
+  const mid = SW / 2;
+  let x0 = SW, y0 = SH, x1 = -1, y1 = -1;
+  for (const row of rows) for (const P of row) { const b = P.bbox(); if (!b) continue; x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3]); }
+  if (x1 < 0) { x0 = mid - 1; x1 = mid; y0 = GROUND - 1; y1 = GROUND; }
+  const air = spec.air ?? (!!def.flies && !grounded);
+  const ref = grounded ? GROUND : refLineOf(c, def);
+  const bottom = grounded ? GROUND : Math.max(y1, ref);
+  y0 = Math.min(y0, bottom);
+  const half = Math.ceil(Math.max(mid - x0, x1 + 1 - mid, 1));
+  const fx0 = Math.floor(mid - half), fw = half * 2, fh = bottom - y0 + 1;
+  const n = spec.frames.length;
+  const S = new Pix(fw * n, fh * 4);
+  for (let r = 0; r < 4; r++) for (let k = 0; k < n; k++) S.blit(rows[r][k], fx0, y0, fw, fh, k * fw, r * fh);
+  const durs = spec.frames.map((fm) => fm.d ?? 300);
+  const fin = durs.filter((d) => d < HOLD);
+  const avg = fin.length ? fin.reduce((a, b) => a + b, 0) / fin.length : 300;
+  const meta = { frameW: fw, frameH: fh, cols: n, rows: 4, frames: n, fps: Math.max(1, Math.round(1000 / avg)), loop: spec.loop !== false, durs, anchorY: bottom - ref, airborne: !!air, grounded, anim, worldH: fh * PIXEL_SCALE, worldW: fw * PIXEL_SCALE, scale: PIXEL_SCALE, kind: 'creature' };
+  const canvas = S.toCanvas(meta);
+  return { canvas, ...meta };
+}
+
+// ---- キャッシュ（遅延生成）。同じ個体・同じ種・同じレベル・同じ役割・同じアニメなら使い回す
+const _cache = new Map();
+let CACHE_MAX = 1200;
+export function drawCreatureAnim(c, def, anim = 'idle') {
+  if (!ANIM_NAMES.includes(anim)) anim = 'idle';
+  def = def || {};
+  const key = `${c.id}|${c.sp}|${c.lv || 1}|${c.role || ''}|${anim}`;
+  const hit = _cache.get(key);
+  if (hit) { _cache.delete(key); _cache.set(key, hit); return hit; }
+  const res = buildAnim(c, def, anim);
+  _cache.set(key, res);
+  while (_cache.size > CACHE_MAX) _cache.delete(_cache.keys().next().value);
+  return res;
+}
+// 個体が消えたとき・進化したときに呼ぶ（呼ばなくても古いものから自然に捨てられる）
+export function forgetCreatureAnim(id) { for (const k of [..._cache.keys()]) if (k.startsWith(id + '|')) _cache.delete(k); }
+export function setCreatureAnimCacheSize(n) { CACHE_MAX = Math.max(50, n | 0); }
+// 経過時間（ms）から何コマ目かを返す。loop=false のアニメは最後のコマで止まる
+export function animFrameAt(a, ms) {
+  const durs = a.durs; let total = 0; for (const d of durs) total += Math.min(d, HOLD);
+  if (a.loop) { let t = ms % total; for (let i = 0; i < durs.length; i++) { if (t < durs[i]) return i; t -= durs[i]; } return durs.length - 1; }
+  let t = ms; for (let i = 0; i < durs.length; i++) { if (t < durs[i]) return i; t -= durs[i]; } return durs.length - 1;
+}
+
+// ================================================================ 状態 → アニメ
+const NOCTURNAL = new Set(['owl', 'bat', 'rat', 'cat', 'fox', 'wolf', 'tiger', 'croc', 'frog', 'spider', 'arachne', 'scorpion', 'snake']);
+const NO_SLEEP = new Set(['skeleton', 'skelknight', 'lich', 'mummy', 'pharaoh', 'golem', 'demonlord', 'demongeneral', 'demonsoldier', 'slime', 'bigslime', 'kingslime']);
+const GRAZE_SP = new Set(['cow', 'sheep', 'pig', 'horse', 'goat', 'deer', 'reindeer', 'boar', 'rabbit', 'camel', 'donkey', 'unicorn', 'turtle']);
+function pickW(h, table) { let tot = 0; for (const k in table) tot += table[k]; let x = h * tot; for (const k in table) { x -= table[k]; if (x <= 0) return k; } return Object.keys(table)[0]; }
+// ctx（描画側が知っていること）：{ moving, running, hurt, dead }
+//   moving …… この画面更新で位置が動いたか   hurt …… 直前に攻撃を受けたか（0.3秒ほど）
+export function creatureAnimState(sim, c, ctx = {}) {
+  const def = SPECIES_OF(c);
+  if (ctx.dead || c.hp <= 0) return 'dead';
+  if (ctx.hurt) return 'hurt';
+  const S = sim.S;
+  if (c.fight) {
+    const t = sim.entity ? sim.entity(c.fight.target) : null;
+    const d = t ? Math.hypot(t.pos.x - c.pos.x, t.pos.z - c.pos.z) : 99;
+    if (d <= 1.5) return 'attack';
+    return def.flies && (def.shape === 'bird' || def.shape === 'dragon') ? 'fly' : 'run';
+  }
+  const frac = c.maxhp ? c.hp / c.maxhp : 1;
+  if (ctx.moving) {
+    if (def.shape === 'dragon') return 'fly';
+    if (c.role === 'herder' && c.sp === 'dog') return 'work';
+    if (c.role === 'plow' && c.sp === 'cow' && c.goal && !c.goal.run) return 'work';
+    if (c.fleeUntil && S.t < c.fleeUntil) return def.flies && def.shape === 'bird' ? 'fly' : 'run';
+    if (frac < 0.25) return 'walk';
+    return c.goal?.run || ctx.running ? (def.shape === 'bird' && def.flies ? 'fly' : 'run') : 'walk';
+  }
+  if (frac < 0.25) return 'dying';
+  const hour = sim.hour ? sim.hour() : 12;
+  const night = hour >= 21 || hour < 5, day = hour >= 8 && hour < 17;
+  const role = c.role;
+  if (role === 'overlord') return 'guard';
+  if (role === 'treasure' || (c.named && Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z) < 2)) return def.shape === 'dragon' ? 'work' : 'guard';
+  if (c.barking != null && S.t - c.barking < 4) return 'call';
+  const slot = Math.floor((S.t || 0) / 12);
+  const h = strHash(c.id + ':' + slot) / 4294967296;
+  const asleep = !NO_SLEEP.has(c.sp) && def.kind !== 'demon' && (NOCTURNAL.has(c.sp) ? day : night);
+  if (asleep) return h < 0.85 ? 'sleep' : 'rest';
+  if (role === 'plow' && hour >= 8 && hour < 16) return 'work';
+  if (role === 'dairy' && (hour === 6 || hour === 17)) return 'work';
+  if (role === 'layer' && hour >= 9 && hour < 12) return 'work';
+  if (role === 'wool' && hour === 10 && (sim.seasonIdx ? sim.seasonIdx() === 1 : false)) return 'work';
+  if (role === 'pest') return h < 0.5 ? 'work' : 'idle';
+  if (role === 'sentry' || role === 'scout' || role === 'castleguard' || role === 'guardian') return h < 0.55 ? 'guard' : h < 0.75 ? 'idle' : h < 0.88 ? 'call' : 'rest';
+  if (role === 'young') return h < 0.35 ? 'play' : h < 0.6 ? 'idle' : h < 0.8 ? (GRAZE_SP.has(c.sp) ? 'graze' : 'rest') : 'rest';
+  const hungry = (c.hunger ?? 60) < 45;
+  const grazer = GRAZE_SP.has(c.sp) || def.diet === 'grass' && def.shape !== 'biped';
+  let table;
+  if (def.kind === 'demon' || def.undead || c.sp === 'golem') table = { guard: 4, idle: 4, call: 1, work: 2, rest: 1 };
+  else if (def.shape === 'blob') table = { idle: 5, graze: 2, rest: 2, play: 1, groom: 1, call: 1 };
+  else if (grazer) table = { graze: hungry ? 8 : 5, idle: 3, rest: 2, drink: 1, groom: 1, call: 1, ...(role === 'leader' ? { guard: 2 } : {}) };
+  else if (def.diet === 'meat') table = { idle: 4, rest: 3, groom: 2, eat: hungry ? 3 : 1, drink: 1, call: role === 'leader' ? 2 : 1, guard: 1, ...(night && c.sp === 'wolf' ? { call: 3 } : {}) };
+  else table = { idle: 4, eat: 2, rest: 2, groom: 1, drink: 1, call: 1, work: 1 };
+  if (c.hostile && c.lair != null) table.guard = (table.guard || 0) + 3;
+  if (def.shape === 'biped' && !def.undead && def.kind !== 'demon' && c.sp !== 'golem') table.work = (table.work || 0) + 1;
+  return pickW(h, table);
+}
+function SPECIES_OF(c) { return SPECIES[c.sp] || {}; }

@@ -7,6 +7,7 @@ import { ITEMS, itemName, itemValue } from './items.js';
 import { InteriorView } from './interior.js';
 import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
+import { financeSummary } from './finance.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
@@ -33,6 +34,7 @@ const PREF_LABEL = {
   sleep: '眠ること', eat: '食事', shop: '買い物', tavern: '酒場', plaza: '広場でのんびり', stroll: '散歩', pray: '祈り', play: '遊び', rest: '家で休むこと', home: '家で過ごすこと',
   festival: '祭り', visit: '人を訪ねること', train: '鍛錬', work: '仕事', guild: 'ギルド通い', quest: '冒険', school: '勉強', storytell: '昔話', perform: '歌', court: '恋', trade: '商い', beg: '物乞い', steal: '盗み', buygear: '装備選び',
 };
+Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来ている' }); Object.assign(ACTION_GO, { collect: '借金を取り立てに向かっている' }); Object.assign(PREF_LABEL, { collect: '取り立て' });
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -108,7 +110,7 @@ export class UI {
   select(id, focus) {
     const e = this.sim.entity(id);
     if (!e) return;
-    this.selected = id; this.selBuilding = null; this.selTile = null; this.memLimit = 25;
+    this.selected = id; this.selBuilding = null; this.selTile = null; this.memLimit = 25; this.talkLimit = 6;
     if (focus && (e.deathYear == null) && e.pos) this.r.focusOn(e);
     $('inspector').hidden = false; $('menu').hidden = true;
     this.renderInspector(true);
@@ -539,13 +541,17 @@ export class UI {
       if (!e) { body.innerHTML = '<div class="psub">この生き物はもういない。</div>'; return; }
       if (typeof e.id === 'number') {
         if (e.deathYear == null && (!e.thought || force)) e.thought = innerThought(this.sim, e);
+        const openK = new Set([...body.querySelectorAll('details[open]')].map((d) => d.dataset.k));
         body.innerHTML = this.personHtml(e);
+        for (const d of body.querySelectorAll('details[data-k]')) if (openK.has(d.dataset.k)) d.open = true;
       } else body.innerHTML = this.creatureHtml(e);
       this.drawPortrait(e);
       const fb = $('followBtn');
       if (fb) fb.onclick = () => { this.follow = this.follow === e.id ? null : e.id; this.renderInspector(false); };
       const lb = $('lookBtn');
       if (lb) lb.onclick = () => this.r.focusOn(e);
+      const tb = $('moreTalk');
+      if (tb) tb.onclick = () => { this.talkLimit = 20; this.renderInspector(false); };
       const mb = $('moreMem');
       if (mb) mb.onclick = () => { this.memLimit += 40; this.renderInspector(false); };
     }
@@ -588,7 +594,8 @@ export class UI {
     if (dead) {
       if (p.lastWords) h += `<div class="thought"><b>最期に思っていたこと</b>${esc(p.lastWords)}</div>`;
     } else {
-      h += `<div class="psub">いま：${esc(this.actionText(p))}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
+      const fin = financeSummary(this.sim, p);
+      h += `<div class="psub">いま：${esc(this.actionText(p))}${fin ? `<br>${esc(fin)}` : ''}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
       h += `<div class="thought"><b>心の声</b>${esc(p.thought || '……')}</div>`;
       h += `<div class="row-btns"><button id="followBtn" class="${this.follow === p.id ? 'on' : ''}">${this.follow === p.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">この人を見る</button></div>`;
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
@@ -633,6 +640,12 @@ export class UI {
       h += `<div class="section"><h4>好きな人</h4><ul class="rels">${liked.map(relLi).join('') || '<li>—</li>'}</ul></div>`;
       if (disliked.length) h += `<div class="section"><h4>苦手な人${p.revenge != null ? '・恨んでいる人' : ''}</h4><ul class="rels">${disliked.map(relLi).join('')}</ul></div>`;
       const mems = p.memories.slice().sort((a, b) => (b.min ?? b.t * 1440) - (a.min ?? a.t * 1440));
+      if (p.talkLog?.length) {
+        const logs = p.talkLog.slice().reverse().slice(0, this.talkLimit || 6);
+        const whenT = (t) => { const d = this.sim.dayIndex - Math.floor(t / 1440); const hm = `${String(Math.floor((t % 1440) / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`; return d <= 0 ? `今日 ${hm}` : d === 1 ? `昨日 ${hm}` : `${d}日前`; };
+        const mk = { '-1': '口論', 1: 'なごやか', 2: 'ときめき', 0: '' };
+        h += `<div class="section"><h4>会話の記録（${p.talkLog.length}）</h4><div class="talklog">${logs.map((r) => { const o = this.sim.S.people[r.with]; return `<details data-k="${r.t}-${r.with}"><summary><span class="when">${whenT(r.t)}</span> ${o ? this.pLink(o, o.given) : '誰か'}と${mk[r.mood] ? `<span class="${r.mood < 0 ? 'neg' : 'pos'}">（${mk[r.mood]}）</span>` : ''}：${esc((r.lines.find((l) => l[0] !== p.id) || r.lines[0] || ['', ''])[1].slice(0, 18))}…</summary>${r.lines.map(([id, t]) => { const sp = this.sim.S.people[id]; return `<div class="tl-line${id === p.id ? ' me' : ''}"><b>${esc(sp ? sp.given : '?')}</b>「${esc(t)}」</div>`; }).join('')}</details>`; }).join('')}</div>${p.talkLog.length > (this.talkLimit || 6) ? '<div class="row-btns"><button id="moreTalk">もっと見る</button></div>' : ''}</div>`;
+      }
       h += `<div class="section"><h4>記憶（${mems.length}）</h4><ul class="mems">${mems.slice(0, this.memLimit).map((m) => `<li><span class="when">${this.whenLabel(m)}</span><span class="${m.emo > 0.25 ? 'pos' : m.emo < -0.25 ? 'neg' : ''}">${esc(m.txt)}</span></li>`).join('')}</ul>${mems.length > this.memLimit ? '<div class="row-btns"><button id="moreMem">もっと思い出す</button></div>' : ''}</div>`;
     }
     return h;

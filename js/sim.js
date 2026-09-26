@@ -18,6 +18,7 @@ import { partiesDaily } from './guild.js';
 import { rumorBirth, rumorRelay, rumorHeardText, rumorCorrect } from './rumor.js';
 import { calendarDaily, calendarHalfDay } from './calendar.js';
 import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, harvestMul, roadsClosed, weatherMoodDelta, legacyWeatherAt } from './weather.js';
+import { financeDaily, financeHourly, financeCandidates, financeArrive } from './finance.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -613,6 +614,7 @@ export class Sim {
     add(1.2 + (1 - p.pers.E) + (100 - n.sloth) / 18 + (p.hp < p.maxhp * 0.7 ? 2 : 0), 'rest', this.placeFor(p, 'home'), R.int(30, 80));
 
     choreOptions(this, p, add);
+    financeCandidates(this, p, add);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -811,6 +813,7 @@ export class Sim {
       case 'report': reportQuest(this, p); a.until = this.S.t + 10; break;
       case 'buygear': this.buyGear(p); a.until = this.S.t + 10; break;
       case 'hunt': huntBounty(this, p, this.S.people[a.friend]); a.until = this.S.t + 5; break;
+      case 'collect': financeArrive(this, p); break;
     }
     choreArrive(this, p, a);
   }
@@ -1421,6 +1424,9 @@ export class Sim {
     if (!a || !b) return;
     const e = talk.effects;
     a.talk = null; b.talk = null;
+    // 会話の記録（誰と、いつ、何を話したか）
+    const rec = { t: this.S.t, lines: talk.lines.map((l) => [l.id, l.text]), topics: e.topics?.slice(0, 4) || [], mood: e.argument ? -1 : e.romance ? 2 : (e.daA + e.daB) > 4 ? 1 : 0 };
+    for (const [p, o] of [[a, b], [b, a]]) { p.talkLog = p.talkLog || []; p.talkLog.push({ ...rec, with: o.id }); if (p.talkLog.length > 20) p.talkLog.splice(0, p.talkLog.length - 20); }
     if (a.deathYear != null || b.deathYear != null) return;
     a.cooldown = this.rng.range(40, 120); b.cooldown = this.rng.range(40, 120);
     a.talkedToday[b.id] = 1; b.talkedToday[a.id] = 1;
@@ -1543,6 +1549,7 @@ export class Sim {
     demonHourly(this);
     weatherHourly(this);
     choreHourly(this);
+    financeHourly(this);
   }
 
   newDay() {
@@ -1643,6 +1650,7 @@ export class Sim {
     partiesDaily(this);
     propertyDaily(this);
     choreDaily(this);
+    financeDaily(this);
     creatureDaily(this);
     justiceDaily(this);
     politicsDaily(this);
@@ -1773,6 +1781,7 @@ export class Sim {
     this.chron(line, town.kingdom);
     if (important) this.news(line, p.rank === 'king' ? 3 : 2, p.pos);
     else this.pushLog(line, 'death', [p.id], p.pos);
+    if (p.talkLog) p.talkLog = p.talkLog.slice(-5);
     for (const k of ['needs', 'memories', 'rel', 'gk', 'talkedToday', 'action', 'path', 'talk', 'inside', 'q', 'danger', 'recent', 'fight', 'mission']) delete p[k];
     if (hh && hh.members.length === 0) {
       const b = hh.house != null ? this.building(hh.house) : null;

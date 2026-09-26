@@ -73,7 +73,7 @@ export function defendTowns(sim) {
       const avail = guards.filter((p) => !p.fight);
       const ours = avail.slice(0, 4).reduce((t, p) => t + power(p), 0);
       if (ours < power(c) * 1.1) {
-        if (!c.alarmed || S.t - c.alarmed > 180) {
+        if (!c.alarmed || S.t - c.alarmed > 1440) {
           c.alarmed = S.t;
           sim.pushLog(`${s.name}に${c.name}が迫り、警鐘が鳴らされた。人々は家に籠もり、衛兵は門を固めた。`, 'event', [], s);
           for (const q of sim.living()) if (q.s === s.id && q.inside == null && !q.fight && !q.quest && q.mission?.type !== 'crusade') { q.action = null; q.mission = null; sim.startAction(q, { type: 'flee', place: sim.placeFor(q, 'home'), dur: 90 }); }

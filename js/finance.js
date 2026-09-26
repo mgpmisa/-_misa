@@ -502,9 +502,9 @@ function playGame(sim, players, bld) {
   const bw = r1(net.get(best.id));
   if (bw >= 30 && best !== caught) {
     st(sim, 'bigWins');
-    sim.gossip(best, `酒場の${game.name}で${bw}銅貨の大勝ちをした`, 0.3, sim.living().filter((q) => q.s === best.s && (q.inside === bld?.id || sim.rng.chance(0.08))), { congrat: '賭けで大勝ちしたんだって？' , silent: true });
+    sim.gossip(best, `酒場の${game.name}で${bw}銅貨の大勝ちをした`, 0.3, sim.living().filter((q) => q.s === best.s && (q.inside === bld?.id || sim.rng.chance(0.08))), { congrat: '賭けで大勝ちしたんだってね', silent: true });
     sim.pushLog(`${sim.fullName(best)}が${bld?.name || '酒場'}の${game.name}で${bw}銅貨の大勝ちをした！`, 'event', ids, pos);
-  } else if (!caught && stake * players.length >= 12) {
+  } else if (!caught && bw > 0 && stake * players.length >= 12) {
     sim.pushLog(`${bld?.name || '酒場'}で${names}が${game.verb}に興じ、${best.given}が${Math.max(0, bw)}銅貨をせしめた。`, 'event', ids, pos);
   }
   if (!caught && R.chance(0.35)) {
