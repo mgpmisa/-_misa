@@ -93,8 +93,7 @@ export function lodDue(sim, all) {
   if (!L || !L.on) return null;
   if (L.bucketAt !== L.next) {
     L.bucketAt = L.next;
-    L.b0 = []; L.b1 = [[], [], []].slice(0, LOD_PERIOD[1]); L.b2 = Array.from({ length: LOD_PERIOD[2] }, () => []);
-    while (L.b1.length < LOD_PERIOD[1]) L.b1.push([]);
+    L.b0 = []; L.b1 = Array.from({ length: LOD_PERIOD[1] }, () => []); L.b2 = Array.from({ length: LOD_PERIOD[2] }, () => []);
     for (const c of all) {
       if (c.dormant || c.hp <= 0) continue;
       const always = c.fight || c.raid != null || c.occupier != null || c.owner != null;
