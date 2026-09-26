@@ -48,6 +48,7 @@ export class Renderer {
     this.buildTrees();
     this.buildStructures();
     this.buildBuildings();
+    this.buildMills();
     this.buildWeather();
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
     this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false;
@@ -94,7 +95,15 @@ export class Renderer {
   groundKey(t, x, z) {
     const n = z < NORTH;
     switch (t) {
-      case T.GRASS: case T.FENCE: case T.BLD: return n ? 'grassN' : 'grassS';
+      case T.BLD: {
+        const b = this.sim.S.world.buildings[this.sim.S.world.bldAt[z * W + x]];
+        if (b?.type === 'demoncastle') return 'waste';
+        if (b?.type === 'pyramid') return 'desert';
+        if (b?.type === 'cave' || b?.type === 'mine') return 'rock';
+        if (b?.type === 'castle' || b?.type === 'church' || b?.type === 'market') return 'plaza';
+        return n ? 'grassN' : 'grassS';
+      }
+      case T.GRASS: case T.FENCE: return n ? 'grassN' : 'grassS';
       case T.PASTURE: return 'pasture';
       case T.ROAD: return n ? 'roadN' : 'roadS';
       case T.PLAZA: case T.WALL: return 'plaza';
@@ -484,6 +493,23 @@ export class Renderer {
         for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, h = 0.4 + hsh(b.x, b.z, i) * 1.6; add(this.cyl(0.18, 0.2, h, 6), M.stone, Math.cos(a) * 1.1, h / 2, Math.sin(a) * 1.1); }
         add(this.box(1.2, 0.3, 0.5), M.stone, 0.2, 0.15, -0.2, 0.4);
         break;
+      case 'clinic':
+        houseLike(1.2, M.timber, M.tileRoof);
+        add(this.box(0.4, 0.12, 0.05), M.red, face[0] * (W_ / 2 + 0.06), 1.0, face[1] * (D_ / 2 + 0.06) + (face[1] ? 0 : 0.3));
+        add(this.box(0.12, 0.4, 0.05), M.red, face[0] * (W_ / 2 + 0.06), 1.0, face[1] * (D_ / 2 + 0.06) + (face[1] ? 0 : 0.3));
+        break;
+      case 'school':
+        houseLike(1.4, M.timber2, M.slate);
+        add(this.box(0.5, 0.6, 0.5), M.wood, 0, 2.4, 0); add(this.cyl(0.12, 0.2, 0.25, 8), M.gold, 0, 2.3, 0);
+        break;
+      case 'stable':
+        add(this.box(W_, 1.0, D_), M.planks, 0, 0.5, 0); add(this.prism(W_ + 0.3, D_ + 0.4, 0.6), M.thatch, 0, 1.0, 0);
+        add(this.box(W_ * 0.7, 0.8, 0.05), M.black, 0, 0.4, D_ / 2 + 0.02);
+        break;
+      case 'mill':
+        add(this.cyl(0.7, 0.9, 2.2, 8), south ? M.adobe : M.stone, 0, 1.1, 0); add(this.cone(0.95, 0.9, 8), M.thatch, 0, 2.65, 0);
+        door(1.6, 1.6, 0.6);
+        break;
       case 'lighthouse':
         for (let i = 0; i < 5; i++) add(this.cyl(0.42 - i * 0.03, 0.45 - i * 0.03, 1, 8), i % 2 ? M.red : M.white, 0, 0.5 + i, 0);
         add(this.box(0.5, 0.4, 0.5), M.lamp, 0, 5.2, 0); add(this.cone(0.45, 0.5, 8), M.red, 0, 5.65, 0);
@@ -517,6 +543,21 @@ export class Renderer {
     }
   }
   addBuilding(id) { this.addBuildingParts(this.sim.building(id), null); }
+  // 風車の羽根（回る）
+  buildMills() {
+    this.mills = [];
+    const w = this.sim.S.world;
+    const mat = new THREE.MeshLambertMaterial({ color: '#f0e6d0', side: THREE.DoubleSide });
+    for (const b of w.buildings.filter((x) => x.type === 'mill')) {
+      const g = new THREE.Group();
+      for (let i = 0; i < 4; i++) { const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.6, 0.03), mat); blade.position.y = 0.8; const arm = new THREE.Group(); arm.add(blade); arm.rotation.z = i * Math.PI / 2; g.add(arm); }
+      const face = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[b.face] || [0, 1];
+      g.position.set(wx(b.x) + 0.5 + face[0] * 0.95, topY(w.hgt[b.door.z * W + b.door.x]) + 1.9, wz(b.z) + 0.5 + face[1] * 0.95);
+      g.rotation.y = Math.atan2(face[0], face[1]);
+      for (const c of g.children) c.children[0].castShadow = true;
+      this.scene.add(g); this.mills.push(g);
+    }
+  }
 
   buildWeather() {
     const n = 1600;
@@ -680,6 +721,7 @@ export class Renderer {
     this.hemi.color.set(dayF > 0.3 ? '#dff1ff' : '#5a6aa8');
     for (const m of this.nightMats) m.emissiveIntensity = (1 - dayF) * 1.6;
     this.waterTex.offset.x = (now * 0.02) % 1;
+    for (const m of this.mills) m.rotation.z = now * 0.8 * (sim.S.weather === 'rain' ? 1.8 : 1);
     for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
     // 雨・雪（カメラの周りだけ）
     const precip = weather === 'rain' || weather === 'snow';

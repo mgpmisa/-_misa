@@ -335,6 +335,9 @@ export function generateWorld(rng, seed) {
       place('bakery', 'パン屋', 3, 3);
       place('smithy', '鍛冶場', 3, 3);
       place('workshop', '職人の工房', 3, 3);
+      place('clinic', '診療所', 3, 3);
+      place('school', '学校', 4, 3);
+      place('stable', '厩舎', 4, 2, { far: true });
       s.walls = [];
       for (let i = -R - 1; i <= R + 1; i++) for (const [x, z] of [[s.x + i, s.z - R - 1], [s.x + i, s.z + R + 1], [s.x - R - 1, s.z + i], [s.x + R + 1, s.z + i]]) {
         const t = get(x, z);
@@ -346,6 +349,7 @@ export function generateWorld(rng, seed) {
       place('tavern', `${s.name.replace('村', '')}の宿`, 4, 3);
       place('smithy', '鍛冶場', 3, 3);
       place('well', '井戸', 1, 1, { extra: { open: true } });
+      place('mill', '風車小屋', 2, 2, { far: true });
     } else {
       place('market', '魚市場', 4, 2, { extra: { open: true } });
       place('tavern', '船乗りの酒場', 4, 3);
@@ -376,7 +380,7 @@ export function generateWorld(rng, seed) {
       s.dock = [];
       for (let k = 1; k <= 5; k++) { const x = best.x + best.dx * k, z = best.z + best.dz * k; if (!inb(x, z)) break; set(x, z, T.DOCK); hgt[idx(x, z)] = 1; s.dock.push({ x, z }); }
       const b = addBuilding('lighthouse', '灯台', best.x + best.dz * 2, best.z + best.dx * 2, 1, 1, { x: best.x, z: best.z }, { settlement: s.id, kingdom: s.kingdom, open: true });
-      if (get(best.x + best.dz * 2, best.z + best.dx * 2) !== T.BLD) buildings.pop();
+      if (b) s.buildings.push(b.id);
       s.dockEnd = s.dock[s.dock.length - 1];
     }
   }

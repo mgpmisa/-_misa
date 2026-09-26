@@ -15,7 +15,7 @@ const SHIRT = ['#3b6fb6', '#b63b3b', '#3b8f5a', '#8f6a3b', '#6a3b8f', '#c9a23a',
 const PANTS = ['#4a3a2a', '#3a3a4a', '#5a4a3a', '#2a3a2a', '#6a5a4a'];
 const MORT = [[0, 0.06], [4, 0.012], [14, 0.004], [39, 0.005], [54, 0.011], [64, 0.026], [74, 0.065], [84, 0.15], [999, 0.32]];
 const mortality = (age) => { for (const [a, p] of MORT) if (age <= a) return p; return 0.3; };
-const TARGET = { capital: 40, village: 16, port: 18 };
+const TARGET = { capital: 52, village: 17, port: 19 };
 const DEMON_NAMES = ['ザルヴァーン', 'ネクロディア', 'ヴォルグラム', 'アスタロート', 'ベルゼリオン'];
 
 const EVENTS = [
@@ -440,6 +440,10 @@ export function generateHistory(rng, world) {
         const p = rng.weighted(pool, (q) => ({
           priest: q.values.faith, wizard: q.pers.O, scholar: q.pers.O + q.pers.C, knight: q.values.courage * 2, soldier: q.values.courage,
           adventurer: q.values.courage + q.pers.O, thief: 1 - q.pers.A, beggar: 1 - q.pers.C, elder: age(q, Y) / 40,
+          doctor: q.pers.C + q.pers.A, teacher: q.pers.A + q.pers.O, jester: q.pers.E * 2, musician: q.pers.E + q.pers.O, dancer: q.pers.E * 2, fortune: q.pers.O * 2,
+          painter: q.pers.O * 2, general: q.values.courage * 3 + age(q, Y) / 40, royalguard: q.values.courage * 2, pickpocket: 1 - q.pers.A, swindler: (1 - q.pers.A) + q.pers.E,
+          pirate: (1 - q.pers.A) + q.values.courage, storyteller: age(q, Y) / 20, chancellor: q.pers.C + q.pers.O + age(q, Y) / 50, treasurer: q.pers.C * 2, paladin: q.values.faith + q.values.courage,
+          cleric: q.values.faith * 2, nun: q.values.faith * 2, midwife: q.sex === 'f' ? 2 : 0.05, maid: q.sex === 'f' ? 2 : 0.1, nanny: q.sex === 'f' ? 2 : 0.1, laundress: q.sex === 'f' ? 2 : 0.2,
         }[job] ?? 1) + 0.05);
         if (p.job) cnt[p.job]--;
         p.job = job; cnt[job] = (cnt[job] || 0) + 1;
@@ -479,7 +483,8 @@ export function generateHistory(rng, world) {
     for (let i = 0; i < n; i++) {
       const b = makePerson({ sex: rng.chance(0.8) ? 'm' : 'f', family: famFor(false), birthYear: Y - rng.int(19, 45), s: S.reduce((best, s) => (Math.hypot(s.x - h.x, s.z - h.z) < Math.hypot(best.x - h.x, best.z - h.z) ? s : best), S[0]).id });
       b.pers.A = Math.min(b.pers.A, 0.3); b.values.courage = Math.max(b.values.courage, 0.6);
-      b.job = 'thief'; b.rank = 'outlaw'; b.hideout = h.id; b.bandit = true; b.origin = rng.pick(ORIGINS);
+      b.job = i === 0 ? 'banditchief' : 'thief'; b.rank = 'outlaw'; b.hideout = h.id; b.bandit = true; b.origin = rng.pick(ORIGINS);
+      if (i === 0) { b.values.courage = 0.85; b.pers.E = Math.max(b.pers.E, 0.6); }
       note(b, Y - rng.int(1, 10), rng.pick(['故郷で罪を犯し、森の盗賊団に加わった', '借金取りから逃げて、盗賊の仲間になった', '兵隊くずれで、仲間と街道を荒らすようになった']), { emo: -0.3, imp: 0.9 });
     }
   }

@@ -80,6 +80,70 @@ export const JOBS = {
   wanderer:   { name: '旅人',         place: 'road',      rank: 'wanderer' },
   beggar:     { name: '物乞い',       place: 'plaza',     rank: 'homeless' },
   bard:       { name: '吟遊詩人',     place: 'tavern',    rank: 'wanderer' },
+
+  // 宮廷
+  chancellor: { name: '宰相',         place: 'castle',    rank: 'noble', svc: 'advise', pay: 3 },
+  treasurer:  { name: '財務大臣',     place: 'castle',    rank: 'noble', svc: 'finance', pay: 3 },
+  general:    { name: '将軍',         place: 'barracks',  rank: 'knight', combat: 4, svc: 'command', pay: 3 },
+  royalguard: { name: '近衛騎士',     place: 'castle',    rank: 'knight', combat: 3, pay: 1.6 },
+  courtmage:  { name: '宮廷魔術師',   place: 'magictower', rank: 'noble', combat: 3, research: 1.6, pay: 2 },
+  butler:     { name: '執事',         place: 'castle',    rank: 'citizen', pay: 1.2 },
+  maid:       { name: '侍女',         place: 'castle',    rank: 'commoner', pay: 0.9 },
+  cook:       { name: '宮廷料理人',   place: 'castle',    rank: 'citizen', pay: 1.1, svc: 'feed' },
+  gardener:   { name: '庭師',         place: 'castle',    rank: 'commoner', pay: 0.8 },
+  jester:     { name: '道化師',       place: 'castle',    rank: 'citizen', pay: 0.8, svc: 'entertain' },
+  // 町
+  doctor:     { name: '医者',         place: 'clinic',    rank: 'citizen', svc: 'heal', pay: 1.5 },
+  herbalist:  { name: '薬師',         place: 'clinic',    rank: 'citizen', goods: 'medicine' },
+  midwife:    { name: '産婆',         place: 'clinic',    rank: 'commoner', svc: 'birth', pay: 0.8 },
+  teacher:    { name: '教師',         place: 'school',    rank: 'citizen', svc: 'teach', pay: 1.1 },
+  scribe:     { name: '書記',         place: 'castle',    rank: 'citizen', research: 0.5, pay: 1 },
+  changer:    { name: '両替商',       place: 'market',    rank: 'citizen', svc: 'bank' },
+  butcher:    { name: '肉屋',         place: 'market',    rank: 'citizen', goods: 'meat' },
+  brewer:     { name: '酒造り',       place: 'tavern',    rank: 'citizen', goods: 'ale' },
+  cobbler:    { name: '靴屋',         place: 'workshop',  rank: 'citizen', goods: 'shoes' },
+  potter:     { name: '陶工',         place: 'workshop',  rank: 'citizen', goods: 'pottery' },
+  weaver:     { name: '機織り',       place: 'workshop',  rank: 'commoner', goods: 'cloth' },
+  jeweler:    { name: '宝石職人',     place: 'workshop',  rank: 'citizen', goods: 'jewelry' },
+  alchemist:  { name: '錬金術師',     place: 'magictower', rank: 'citizen', goods: 'medicine', research: 0.6 },
+  fortune:    { name: '占い師',       place: 'plaza',     rank: 'wanderer', svc: 'entertain' },
+  painter:    { name: '画家',         place: 'plaza',     rank: 'citizen', svc: 'entertain' },
+  musician:   { name: '楽師',         place: 'tavern',    rank: 'citizen', svc: 'entertain' },
+  dancer:     { name: '踊り子',       place: 'tavern',    rank: 'commoner', svc: 'entertain' },
+  stablehand: { name: '馬丁',         place: 'stable',    rank: 'commoner', pay: 0.7 },
+  messenger:  { name: '伝令',         place: 'road',      rank: 'commoner', svc: 'news', pay: 0.9 },
+  watchman:   { name: '夜警',         place: 'patrol',    rank: 'citizen', combat: 1, pay: 0.9 },
+  gravedigger:{ name: '墓守',         place: 'church',    rank: 'commoner', pay: 0.6 },
+  laundress:  { name: '洗濯婦',       place: 'shore',     rank: 'commoner', svc: 'service' },
+  nanny:      { name: '乳母',         place: 'home',      rank: 'commoner', svc: 'childcare', pay: 0.6 },
+  barber:     { name: '床屋',         place: 'plaza',     rank: 'citizen', svc: 'service' },
+  storyteller:{ name: '語り部',       place: 'plaza',     rank: 'commoner', svc: 'story' },
+  nun:        { name: '修道女',       place: 'church',    rank: 'commoner', svc: 'heal', pay: 0.6 },
+  // 村
+  shepherd:   { name: '羊飼い',       place: 'ranch',     rank: 'commoner', goods: 'wool' },
+  beekeeper:  { name: '養蜂家',       place: 'field',     rank: 'commoner', goods: 'honey' },
+  miller:     { name: '粉屋',         place: 'mill',      rank: 'commoner', svc: 'mill' },
+  charcoal:   { name: '炭焼き',       place: 'forest',    rank: 'commoner', goods: 'wood' },
+  mason:      { name: '石工',         place: 'mine',      rank: 'commoner', goods: 'stone' },
+  gatherer:   { name: '薬草摘み',     place: 'forest',    rank: 'commoner', goods: 'herbs' },
+  // 港
+  captain:    { name: '船長',         place: 'dock',      rank: 'citizen', goods: 'fish', svc: 'trade' },
+  shipwright: { name: '船大工',       place: 'workshop',  rank: 'citizen', goods: 'furniture' },
+  keeper:     { name: '灯台守',       place: 'lighthouse', rank: 'commoner', pay: 0.7 },
+  diver:      { name: '真珠採り',     place: 'shore',     rank: 'commoner', goods: 'gem' },
+  pirate:     { name: '海賊',         place: 'dock',      rank: 'outlaw', combat: 2, crook: true },
+  smuggler:   { name: '密輸人',       place: 'dock',      rank: 'citizen', crook: true, svc: 'trade' },
+  // 冒険者
+  warrior:    { name: '戦士',         place: 'guild',     rank: 'adventurer', combat: 3 },
+  archer:     { name: '弓使い',       place: 'guild',     rank: 'adventurer', combat: 2 },
+  cleric:     { name: '僧侶',         place: 'church',    rank: 'adventurer', combat: 1, svc: 'heal' },
+  sage:       { name: '賢者',         place: 'magictower', rank: 'adventurer', combat: 3, research: 0.8 },
+  paladin:    { name: '聖騎士',       place: 'church',    rank: 'knight', combat: 4 },
+  guildmaster:{ name: 'ギルドマスター', place: 'guild',   rank: 'citizen', combat: 3, svc: 'quests' },
+  // 悪党
+  banditchief:{ name: '盗賊の頭',     place: 'hideout',   rank: 'outlaw', combat: 3, crook: true },
+  pickpocket: { name: 'スリ',         place: 'plaza',     rank: 'citizen', crook: true },
+  swindler:   { name: '詐欺師',       place: 'market',    rank: 'citizen', crook: true },
 };
 
 // 品物
@@ -96,6 +160,14 @@ export const GOODS = {
   cloth:     { name: '布',     base: 8,  meals: 0, target: 10 },
   furniture: { name: '家具',   base: 26, meals: 0, target: 4 },
   gem:       { name: '宝石',   base: 80, meals: 0, target: 3 },
+  honey:     { name: 'はちみつ', base: 5, meals: 1, target: 8 },
+  wool:      { name: '羊毛',   base: 4,  meals: 0, target: 12 },
+  herbs:     { name: '薬草',   base: 3,  meals: 0, target: 12 },
+  medicine:  { name: '薬',     base: 12, meals: 0, target: 6 },
+  shoes:     { name: '靴',     base: 10, meals: 0, target: 6 },
+  pottery:   { name: '陶器',   base: 6,  meals: 0, target: 8 },
+  jewelry:   { name: '装身具', base: 60, meals: 0, target: 3 },
+  stone:     { name: '石材',   base: 3,  meals: 0, target: 20 },
 };
 // 冒険で手に入る貴重品
 export const TREASURES = ['古代の金貨', '竜の鱗', '魔石', 'ファラオの黄金仮面', '聖銀の短剣', '星読みの水晶', '古文書', '人魚の涙', '精霊の羽根', '王家の紋章入り指輪'];
@@ -171,6 +243,17 @@ export const SPECIES = {
   eagle:    { name: 'ワシ', kind: 'wild', shape: 'bird', col: '#5a3a22', col2: '#ffffff', size: 0.5, hp: 10, atk: 4, speed: 1.6, diet: 'meat', biome: ['mountain'], flies: true },
   dolphin:  { name: 'イルカ', kind: 'wild', shape: 'fish', col: '#6a8aa8', col2: '#d8e4ee', size: 0.9, hp: 20, atk: 1, speed: 1.4, diet: 'meat', biome: ['sea'], swims: true },
   whale:    { name: 'クジラ', kind: 'wild', shape: 'fish', col: '#3a4a60', col2: '#c8d0d8', size: 2.4, hp: 200, atk: 5, speed: 0.6, diet: 'meat', biome: ['deepsea'], swims: true },
+  dog:      { name: '犬', kind: 'livestock', shape: 'quad', col: '#a8783a', col2: '#f0e0c0', size: 0.55, hp: 16, atk: 5, speed: 1.2, diet: 'meat', ears: true },
+  cat:      { name: '猫', kind: 'livestock', shape: 'quad', col: '#e0a060', col2: '#ffffff', size: 0.35, hp: 8, atk: 3, speed: 1.2, diet: 'meat', ears: true },
+  donkey:   { name: 'ロバ', kind: 'livestock', shape: 'quad', col: '#8a8078', col2: '#e0dcd8', size: 0.9, hp: 28, atk: 2, speed: 0.7, diet: 'grass', ears: true, tall: true },
+  duck:     { name: 'アヒル', kind: 'livestock', shape: 'bird', col: '#ffffff', col2: '#f0a030', size: 0.35, hp: 4, atk: 0, speed: 0.5, diet: 'grass' },
+  rat:      { name: 'ネズミ', kind: 'wild', shape: 'quad', col: '#6a6058', col2: '#c8a8a0', size: 0.22, hp: 2, atk: 1, speed: 1.2, diet: 'grass', biome: ['town'], ears: true },
+  crow:     { name: 'カラス', kind: 'wild', shape: 'bird', col: '#1a1a22', col2: '#3a3a4a', size: 0.35, hp: 4, atk: 1, speed: 1.4, diet: 'meat', biome: ['grass', 'forest', 'town'], flies: true },
+  owl:      { name: 'フクロウ', kind: 'wild', shape: 'bird', col: '#8a6a4a', col2: '#f0d8a0', size: 0.4, hp: 6, atk: 2, speed: 1.2, diet: 'meat', biome: ['forest', 'dense'], flies: true },
+  frog:     { name: 'カエル', kind: 'wild', shape: 'lizard', col: '#4f9a3a', col2: '#c8e0a0', size: 0.2, hp: 2, atk: 0, speed: 0.7, diet: 'meat', biome: ['jungle', 'river'] },
+  snake:    { name: 'ヘビ', kind: 'wild', shape: 'lizard', col: '#6a7a2a', col2: '#c8b84a', size: 0.5, hp: 10, atk: 6, speed: 0.8, diet: 'meat', biome: ['jungle', 'desert', 'grass'] },
+  turtle:   { name: 'カメ', kind: 'wild', shape: 'lizard', col: '#5a6a3a', col2: '#a88a5a', size: 0.45, hp: 20, atk: 1, speed: 0.2, diet: 'grass', biome: ['beach', 'river'] },
+  bat:      { name: 'コウモリ', kind: 'wild', shape: 'bird', col: '#3a2a3a', col2: '#6a4a5a', size: 0.3, hp: 3, atk: 1, speed: 1.5, diet: 'meat', biome: ['mountain', 'cave'], flies: true },
   // 中立の魔物
   slime:    { name: 'スライム', kind: 'neutral', shape: 'blob', col: '#4fc3e8', col2: '#1d6f9a', size: 0.5, hp: 12, atk: 2, speed: 0.5, diet: 'grass', biome: ['grass', 'forest'], evolve: 'bigslime', monster: true },
   bigslime: { name: 'ビッグスライム', kind: 'neutral', shape: 'blob', col: '#6fd86a', col2: '#2f7a2a', size: 0.9, hp: 40, atk: 6, speed: 0.5, diet: 'grass', evolve: 'kingslime', monster: true },
@@ -200,9 +283,17 @@ export const SPECIES = {
 };
 
 export const JOB_QUOTA = {
-  capital: { king: 1, beggar: 2, thief: 2, knight: 2, soldier: 4, guard: 2, jailer: 1, scholar: 2, wizard: 1, adventurer: 3, merchant: 2, priest: 1, baker: 1, smith: 1, innkeeper: 1, servant: 2, carpenter: 1, tailor: 1, noble: 2 },
-  village: { elder: 1, farmer: 6, rancher: 1, hunter: 1, woodcutter: 1, innkeeper: 1, priest: 1, smith: 1, miner: 1 },
-  port: { fisher: 4, sailor: 3, merchant: 2, innkeeper: 1, priest: 1, carpenter: 1, guard: 2, thief: 1, baker: 1 },
+  capital: {
+    king: 1, beggar: 2, thief: 1, pickpocket: 1, swindler: 1, knight: 2, soldier: 3, guard: 2, jailer: 1, watchman: 1,
+    chancellor: 1, treasurer: 1, general: 1, royalguard: 2, courtmage: 1, butler: 1, maid: 2, cook: 1, gardener: 1, jester: 1,
+    scholar: 1, wizard: 1, alchemist: 1, scribe: 1, doctor: 1, herbalist: 1, midwife: 1, teacher: 1, nun: 1,
+    adventurer: 1, warrior: 1, archer: 1, cleric: 1, sage: 1, paladin: 1, guildmaster: 1,
+    merchant: 1, changer: 1, butcher: 1, brewer: 1, cobbler: 1, potter: 1, weaver: 1, jeweler: 1, tailor: 1,
+    priest: 1, baker: 1, smith: 1, innkeeper: 1, carpenter: 1, fortune: 1, painter: 1, musician: 1, dancer: 1,
+    stablehand: 1, messenger: 1, gravedigger: 1, laundress: 1, nanny: 1, barber: 1, noble: 2,
+  },
+  village: { elder: 1, farmer: 5, rancher: 1, shepherd: 1, beekeeper: 1, miller: 1, hunter: 1, woodcutter: 1, charcoal: 1, gatherer: 1, mason: 1, innkeeper: 1, priest: 1, smith: 1, miner: 1, storyteller: 1, midwife: 1 },
+  port: { fisher: 3, sailor: 2, captain: 1, shipwright: 1, keeper: 1, diver: 1, pirate: 1, smuggler: 1, merchant: 1, innkeeper: 1, priest: 1, guard: 2, baker: 1, laundress: 1, musician: 1 },
 };
 
 // 性格の特徴ラベル
@@ -222,3 +313,11 @@ export function traitLabels(p) {
   if (E > 0.55 && A < 0.45) t.push('噂好き');
   return t.slice(0, 5);
 }
+
+// 生き物の役割
+export const ROLES = {
+  leader: '群れの長', sentry: '見張り', scout: '斥候', guardian: '巣の守り手', member: '群れの一員', loner: 'はぐれ者', parent: '子育て中', young: '子ども',
+  dairy: '乳牛', plow: '畑を耕す役', mount: '乗用馬', pack: '荷運び', layer: '卵を産む役', wool: '毛を刈られる役', meat: '食肉用',
+  herder: '牧羊犬', watchdog: '番犬', mouser: 'ネズミ捕り', pest: '食糧を荒らす', raider: '襲撃部隊', herald: '魔王の伝令', aide: '魔王の側近', castleguard: '魔王城の番兵', overlord: '魔界の支配者',
+  wanderer: 'さすらい', treasure: '宝の番人',
+};

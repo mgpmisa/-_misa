@@ -1,5 +1,5 @@
 // 画面のパネル・吹き出し・ミニマップ・ニュース・詳細
-import { JOBS, GOODS, DAYS_PER_YEAR, DAYS_PER_SEASON, SEASONS, ERA, RANKS, SPECIES, TECHS, DESIRES, KINGDOMS, DEATH_CAUSES } from './data.js';
+import { JOBS, GOODS, DAYS_PER_YEAR, DAYS_PER_SEASON, SEASONS, ERA, RANKS, SPECIES, TECHS, DESIRES, KINGDOMS, DEATH_CAUSES, ROLES } from './data.js';
 import { W, H, T, TILE_NAME, biomeOf } from './world.js';
 import { innerThought } from './speech.js';
 import * as SPR from './sprites.js';
@@ -11,14 +11,14 @@ const ACTION_LABEL = {
   sleep: '眠っている', eat: '食事をしている', shop: '市場で買い物をしている', tavern: '酒場で一杯やっている', plaza: '広場でくつろいでいる',
   stroll: '散歩している', pray: '祈っている', play: '遊んでいる', rest: '家で休んでいる', home: '家で過ごしている', festival: '祭りを楽しんでいる',
   wedding: '婚礼に出ている', funeral: '弔いに参列している', askfood: '食べ物を分けてもらっている', beg: '物乞いをしている', train: '鍛錬している',
-  quest: '冒険している', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
+  quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
   march: '前線で戦っている', crusade: '魔王討伐の旅をしている', defend: '町を守っている', flee: '逃げている', court: '想い人に会いに来ている', trade: '商いをしている', travel: '旅をしている', visit: '知り合いの家を訪ねている',
 };
 const ACTION_GO = {
   sleep: '寝床へ向かっている', eat: '食事をしに家へ向かっている', shop: '市場へ向かっている', tavern: '酒場へ向かっている', plaza: '広場へ向かっている',
   stroll: 'ぶらぶら歩いている', pray: '祈りに向かっている', play: '遊びに出かけるところ', rest: '家へ帰るところ', home: '家へ帰るところ', festival: '祭りの広場へ向かっている',
   wedding: '婚礼に向かっている', funeral: '弔いに向かっている', askfood: '食べ物を分けてもらいに行くところ', visit: '知り合いの家へ向かっている', work: '仕事場へ向かっている',
-  quest: '冒険に向かっている', train: '鍛錬に向かっている', beg: '広場へ向かっている', steal: '闇にまぎれて移動している', rob: '獲物に忍び寄っている', revenge: '恨みの相手を探している',
+  quest: '冒険に向かっている', school: '学校へ向かっている', storytell: '広場へ向かっている', deliver: '知らせを届けに走っている', train: '鍛錬に向かっている', beg: '広場へ向かっている', steal: '闇にまぎれて移動している', rob: '獲物に忍び寄っている', revenge: '恨みの相手を探している',
   march: '前線へ行軍している', crusade: '魔王城を目指して旅している', defend: '町を守りに駆けつけている', flee: '必死に逃げている', court: '想い人のもとへ向かっている', trade: '隣町へ商いに向かっている', travel: '旅をしている', perform: '酒場へ向かっている',
 };
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
@@ -544,7 +544,7 @@ export class UI {
     const mem = S.speciesMemory[c.sp] || {};
     const state = c.dormant ? '魔王城の奥で眠っている' : c.fight ? '戦っている' : c.raid != null ? `${this.sim.town(c.raid).name}を襲いに向かっている` : c.fleeUntil && S.t < c.fleeUntil ? '逃げている' : c.goal?.run ? '獲物を追っている' : 'あたりをうろついている';
     let h = `<canvas id="portrait" class="portrait" width="64" height="80"></canvas>`;
-    h += `<div class="pname">${esc(c.name)}</div><div class="psub">${KIND_NAME[d.kind]}・Lv${c.lv}${c.named ? '・名のある個体' : ''}<br>${esc(this.sim.placeName(c.pos.x, c.pos.z))}</div>`;
+    h += `<div class="pname">${esc(c.name)}</div><div class="psub">${KIND_NAME[d.kind]}・Lv${c.lv}${c.named ? '・名のある個体' : ''}<br>役割：<span class="rank">${esc(ROLES[c.role] || 'なし')}</span><br>${esc(this.sim.placeName(c.pos.x, c.pos.z))}</div>`;
     h += `<div class="psub">いま：${esc(state)}</div>`;
     h += `<div class="row-btns"><button id="followBtn" class="${this.follow === c.id ? 'on' : ''}">${this.follow === c.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">見る</button></div>`;
     const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(Math.max(0, Math.min(100, v)))}%"></i></div>`;
@@ -593,7 +593,7 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    const typeLabel = { house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    const typeLabel = { clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     const hh = b.hh != null ? S.households[b.hh] : null;
     if (hh) h += `<div class="section"><h4>暮らしている家族</h4><dl class="kv"><dt>蓄え</dt><dd>${Math.round(hh.money)}銅貨</dd><dt>食糧</dt><dd>${Math.floor(hh.food)}食分</dd></dl><ul class="rels" style="margin-top:6px">${hh.members.map((id) => S.people[id]).filter(Boolean).map((q) => `<li><span>${this.pLink(q, `${q.given}・${q.family}`)}</span><span class="dead">${sim.ageOf(q)}歳</span></li>`).join('')}</ul></div>`;

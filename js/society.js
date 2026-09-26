@@ -3,7 +3,7 @@ import { clamp } from './rng.js';
 import { JOBS, SPECIES } from './data.js';
 import { killCreature } from './creatures.js';
 
-const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer']);
+const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 
 export function humanStats(sim, p) {
   const age = sim.ageOf(p);
@@ -11,10 +11,10 @@ export function humanStats(sim, p) {
   const lv = p.lv || 1;
   const child = age < 14 ? 0.4 : age > 70 ? 0.6 : 1;
   const steel = sim.S.kingdoms && sim.hasTech?.(p, 'steel') ? 2 : 0;
-  const maxhp = Math.round((30 + lv * 8 + combat * 6) * child);
+  const maxhp = Math.round((40 + lv * 8 + combat * 6) * child);
   return {
     maxhp,
-    atk: Math.round((2 + combat * 3 + lv * 1.6 + (p.weapon ? 5 + steel : 0) + (p.holy ? 20 : 0)) * child),
+    atk: Math.round((3 + combat * 3 + lv * 1.6 + (p.weapon ? 5 + steel : 0) + (p.holy ? 20 : 0)) * child),
     def: Math.round((1 + lv * 0.8 + (p.job === 'knight' ? 3 : 0)) * child),
     hp: p.hp == null ? maxhp : Math.min(p.hp, maxhp),
   };
@@ -188,7 +188,7 @@ export function tryCrime(sim, p) {
     }
   }
   // 街道の強盗（盗賊団）
-  if (p.bandit && h >= 8 && h < 19) {
+  if (p.bandit && h >= 8 && h < 19 && p.lastRob !== sim.today) {
     const hide = sim.building(p.hideout);
     const prey = sim.living().find((q) => !q.bandit && !q.inside && q.jail == null && Math.hypot(q.pos.x - hide.x, q.pos.z - hide.z) < 14 && !sim.town(q.s) === false && Math.hypot(q.pos.x - sim.townOf(q).x, q.pos.z - sim.townOf(q).z) > sim.townOf(q).r + 2);
     if (prey) return { type: 'rob', score: 7, place: { x: Math.round(prey.pos.x), z: Math.round(prey.pos.z) }, dur: 10, crimeTarget: prey.id };
@@ -213,6 +213,8 @@ export function crimeArrive(sim, p) {
     const victims = b.type === 'market' ? null : sim.S.households[b.hh];
     const witnesses = sim.living().filter((q) => q !== p && !q.bandit && q.action?.type !== 'sleep' && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < 5 && (!q.inside || q.inside === b.id));
     const guards = witnesses.filter((q) => LAWFUL.has(q.job)).length;
+    const dogs = Object.values(sim.S.creatures).filter((c) => c.role === 'watchdog' && Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 6);
+    if (dogs.length) { witnesses.push(...sim.living().filter((q) => q.inside === b.id && q !== p).slice(0, 2)); sim.pushLog(`${b.name}の近くで犬が激しく吠えた。`, 'event', [], p.pos); }
     const skill = p.skill.thief || 0.2;
     const ok = R.chance(clamp(0.55 + p.pers.C * 0.15 + skill * 0.3 - witnesses.length * 0.15 - guards * 0.2, 0.05, 0.95));
     if (ok) {
@@ -241,6 +243,7 @@ export function crimeArrive(sim, p) {
     if (t && t.deathYear == null && Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < 3) {
       if (a.type === 'rob') {
         const loot = Math.min(40, sim.householdMoney(t) * 0.3);
+        p.lastRob = sim.today;
         if (t.values.courage < 0.5 || R.chance(0.5)) {
           sim.hh(t).money -= loot; sim.hh(p).money += loot;
           sim.remember(t, `街道で盗賊の${p.given}に${Math.round(loot)}銅貨を奪われた`, { emo: -0.8, imp: 0.8, about: [p.id], k: 'robbed' });
@@ -317,7 +320,7 @@ export function justiceDaily(sim) {
   // 盗賊のアジトに懸賞金
   for (const b of S.world.buildings) {
     if (b.type === 'hideout' && (b.robberies || 0) >= 2 && !b.bounty) {
-      b.bounty = 60 + b.robberies * 10;
+      b.bounty = Math.min(300, 60 + b.robberies * 10);
       b.robberies = 0;
       sim.news(`街道の盗賊団に${b.bounty}銅貨の懸賞金がかけられた（${b.name}）`, 2, b.door);
     }

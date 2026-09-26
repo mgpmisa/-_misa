@@ -7,12 +7,13 @@ import { startFight } from './society.js';
 
 // 生息数の目安
 const POP = {
+  rat: 16, crow: 10, owl: 6, frog: 8, snake: 6, turtle: 5, bat: 6,
   deer: 14, boar: 8, wolf: 10, bear: 5, fox: 7, rabbit: 16, squirrel: 8, camel: 6, scorpion: 8, croc: 5, monkey: 8, tiger: 4, parrot: 6,
   reindeer: 8, polarbear: 3, penguin: 8, seagull: 10, eagle: 4, dolphin: 8, whale: 3,
   slime: 12, unicorn: 2, golem: 3, goblin: 10, orc: 6, skeleton: 8, mummy: 6, spider: 6, wyvern: 2, imp: 8, demonsoldier: 4,
 };
-const PREY = new Set(['deer', 'boar', 'rabbit', 'squirrel', 'camel', 'reindeer', 'penguin', 'monkey', 'cow', 'sheep', 'pig', 'chicken', 'goat', 'horse', 'slime']);
-const PREDATOR = new Set(['wolf', 'bear', 'fox', 'tiger', 'polarbear', 'croc', 'scorpion', 'eagle']);
+const PREY = new Set(['deer', 'boar', 'rabbit', 'squirrel', 'camel', 'reindeer', 'penguin', 'monkey', 'cow', 'sheep', 'pig', 'chicken', 'goat', 'horse', 'slime', 'rat', 'frog', 'duck', 'turtle', 'donkey']);
+const PREDATOR = new Set(['wolf', 'bear', 'fox', 'tiger', 'polarbear', 'croc', 'scorpion', 'eagle', 'snake', 'owl']);
 const TIER_XP = [0, 40, 130, 400];
 const isHuman = (e) => typeof e.id === 'number';
 
@@ -26,10 +27,42 @@ export function makeCreature(sim, sp, x, z, extra = {}) {
     hunger: sim.rng.range(50, 100), goal: null, fight: null, kind: def.kind, hostile: def.kind === 'hostile' || def.kind === 'demon',
     owner: extra.owner ?? null, range: extra.range ?? 10, kills: 0, lair: extra.lair ?? null, dormant: extra.dormant || false,
   };
+  c.role = extra.role || defaultRole(sim, c);
   applyStats(c);
   c.hp = c.maxhp;
   S.creatures[id] = c;
   return c;
+}
+
+// 役割：種族と群れの状況から決まる
+function defaultRole(sim, c) {
+  const R = sim.rng, sp = c.sp, def = SPECIES[sp];
+  const LIVE = { cow: ['dairy', 'plow', 'meat'], sheep: ['wool'], pig: ['meat'], chicken: ['layer'], duck: ['layer'], goat: ['dairy'], horse: ['mount', 'pack'], donkey: ['pack'], dog: ['watchdog'], cat: ['mouser'] };
+  if (LIVE[sp]) return R.pick(LIVE[sp]);
+  if (sp === 'rat') return 'pest';
+  if (sp === 'demonlord') return 'overlord';
+  if (sp === 'demongeneral') return 'aide';
+  if (def.kind === 'demon') return c.raid ? 'raider' : sp === 'imp' && R.chance(0.2) ? 'herald' : 'castleguard';
+  if (c.lair != null) return R.pick(['guardian', 'guardian', 'sentry', 'scout', 'member']);
+  if (def.pack) return 'member';
+  if (PREY.has(sp)) return R.pick(['member', 'member', 'sentry', 'parent', 'loner']);
+  return R.pick(['loner', 'wanderer', 'parent']);
+}
+
+// 群れの長を決める（群れ・巣ごとに最も強いもの）
+function electLeaders(sim, all) {
+  const groups = {};
+  for (const c of all) {
+    if (c.role === 'overlord' || c.role === 'aide' || SPECIES[c.sp].kind === 'livestock' || c.role === 'pest') continue;
+    const key = c.lair != null ? 'L' + c.lair : SPECIES[c.sp].pack || c.role === 'member' || c.role === 'leader' ? c.sp + ':' + Math.floor(c.home.x / 12) + ',' + Math.floor(c.home.z / 12) : null;
+    if (key) (groups[key] = groups[key] || []).push(c);
+  }
+  for (const g of Object.values(groups)) {
+    if (g.length < 2) { if (g[0] && g[0].role === 'leader') g[0].role = 'loner'; continue; }
+    g.sort((a, b) => b.lv * 10 + b.atk - (a.lv * 10 + a.atk));
+    for (const c of g) { if (c.role === 'leader') c.role = c.lair != null ? 'guardian' : 'member'; c.leader = g[0].id; }
+    g[0].role = g[0].named ? 'treasure' : 'leader'; g[0].leader = null;
+  }
 }
 
 export function applyStats(c) {
@@ -73,11 +106,23 @@ export function spawnInitialCreatures(sim) {
     }
     if (s.type === 'capital') for (let i = 0; i < 3; i++) { const p = sim.randomNear(s.x, s.z, s.r - 2); if (p) makeCreature(sim, 'horse', p.x, p.z, { owner: s.id, range: 3 }); }
     if (s.type === 'village') for (let i = 0; i < 3; i++) { const p = sim.randomNear(s.x, s.z, s.r); if (p) makeCreature(sim, 'chicken', p.x, p.z, { owner: s.id, range: 3 }); }
+    // 町の犬・猫・アヒル・ロバ・ネズミ
+    const pets = { dog: s.type === 'capital' ? 3 : 2, cat: s.type === 'capital' ? 3 : 2, rat: s.type === 'capital' ? 4 : 2 };
+    if (s.type === 'village') { pets.duck = 3; pets.donkey = 1; }
+    for (const [sp, n] of Object.entries(pets)) for (let i = 0; i < n; i++) {
+      const p = sim.randomNear(s.x, s.z, s.r - 1);
+      if (!p) continue;
+      const extra = { owner: s.id, range: sp === 'dog' ? 2 : s.r - 1 };
+      if (sp === 'dog' && s.ranch && i === 0) { extra.role = 'herder'; extra.range = 0; }
+      if (sp === 'dog' && !extra.role) { const house = sim.S.world.buildings.find((b) => b.settlement === s.id && b.type === 'house' && sim.rng.chance(0.3)); if (house) Object.assign(p, house.door); }
+      if (sp === 'rat' || sp === 'cat') { extra.hx = s.x; extra.hz = s.z; }
+      makeCreature(sim, sp, p.x, p.z, extra);
+    }
   }
   // 野生動物
   for (const [sp, n] of Object.entries(POP)) {
     const def = SPECIES[sp];
-    if (!def.biome) continue;
+    if (!def.biome || sp === 'rat') continue;
     const spots = tilesOfBiome(w, def.biome, def.pack ? Math.ceil(n / 3) : n, R, (x, z, t) => (def.swims ? isWater(t) && t !== T.RIVER : walkable(t) || def.flies) && ((def.kind === 'wild' || def.kind === 'hostile') && !def.flies ? farFromTown(x, z) && w.settlements.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + (def.kind === 'hostile' ? 14 : 4)) : true));
     for (const sp0 of spots) {
       const count = def.pack ? 3 : 1;
@@ -164,6 +209,55 @@ function think(sim, c, def, all, humans) {
     if (S.t > (c.raidUntil || 0)) { c.raid = null; c.goal = { x: c.home.x, z: c.home.z, path: true }; }
     return;
   }
+  // 役割ごとのふるまい
+  switch (c.role) {
+    case 'herder': case 'plow': {
+      const s = sim.town(c.owner);
+      const h = sim.hour();
+      if (c.role === 'plow' && h > 8 && h < 16 && sim.S.world.fields.length) { const f = sim.S.world.fields.find((q) => q.s === c.owner); if (f) { c.goal = { x: f.x + R.range(-2, 2), z: f.z + R.range(-2, 2) }; return; } }
+      if (s && s.ranch) { c.goal = { x: R.range(s.ranch.x0, s.ranch.x1), z: R.range(s.ranch.z0, s.ranch.z1), run: c.role === 'herder' }; return; }
+      break;
+    }
+    case 'mouser': {
+      const rat = all.find((o) => o.sp === 'rat' && o.hp > 0 && dist(o, c) < 6);
+      if (rat) { if (dist(rat, c) < 1.2) startFightLazy(sim, c, rat); else c.goal = { x: rat.pos.x, z: rat.pos.z, run: true }; return; }
+      break;
+    }
+    case 'watchdog': {
+      c.goal = { x: c.home.x + R.range(-1.5, 1.5), z: c.home.z + R.range(-1.5, 1.5) };
+      const thief = humans.find((h) => h.action?.type === 'steal' && Math.hypot(h.pos.x - c.pos.x, h.pos.z - c.pos.z) < 5);
+      if (thief) { c.goal = { x: thief.pos.x, z: thief.pos.z, run: true }; c.barking = S.t; }
+      return;
+    }
+    case 'sentry': {
+      const seen = humans.find((h) => Math.hypot(h.pos.x - c.pos.x, h.pos.z - c.pos.z) < 8 && !inTown(sim, h.pos.x, h.pos.z, 2));
+      if (seen) {
+        // 仲間に知らせる：魔物は襲いかかり、草食動物は一斉に逃げる
+        for (const o of all) {
+          if (o === c || o.sp !== c.sp && o.lair !== c.lair) continue;
+          if (dist(o, c) > 10) continue;
+          if (o.hostile) o.goal = { x: seen.pos.x, z: seen.pos.z, run: true };
+          else if (PREY.has(o.sp)) { const dx = o.pos.x - seen.pos.x, dz = o.pos.z - seen.pos.z, d = Math.hypot(dx, dz) || 1; o.goal = { x: o.pos.x + dx / d * 6, z: o.pos.z + dz / d * 6, run: true }; }
+        }
+      }
+      if (!seen) { c.goal = { x: c.home.x + R.range(-1, 1), z: c.home.z + R.range(-1, 1) }; return; }
+      break;
+    }
+    case 'member': case 'guardian': case 'raider': {
+      const lead = c.leader && S.creatures[c.leader];
+      if (lead && lead.hp > 0 && !lead.dormant && dist(lead, c) > 3 && !c.raid) { c.goal = { x: lead.pos.x + R.range(-2, 2), z: lead.pos.z + R.range(-2, 2), run: dist(lead, c) > 8 }; return; }
+      break;
+    }
+    case 'aide': case 'castleguard': {
+      const lord = S.demon && S.creatures[S.demon.lordId];
+      if (!c.raid && lord) { c.goal = { x: lord.pos.x + R.range(-3, 3), z: lord.pos.z + R.range(-3, 3) }; return; }
+      break;
+    }
+    case 'herald': {
+      if (!c.raid) { const t = R.pick(sim.S.world.settlements); c.goal = { x: (t.x + c.home.x) / 2, z: (t.z + c.home.z) / 2, path: true }; return; }
+      break;
+    }
+  }
   // 家畜
   if (def.kind === 'livestock') {
     const s = sim.town(c.owner);
@@ -190,7 +284,7 @@ function think(sim, c, def, all, humans) {
       const d = dist(o, c);
       if (d < bd && !inTown(sim, o.pos.x, o.pos.z)) { bd = d; prey = o; }
     }
-    if (!prey && c.hunger < 25 && def.atk >= 8) {
+    if (!prey && c.hunger < 12 && def.atk >= 8) {
       const h = nearestHuman(sim, c, humans, 8, false);
       if (h) prey = h;
     }
@@ -322,7 +416,9 @@ export function killCreature(sim, c, killer) {
 export function evolveCheck(sim, c) {
   const def = SPECIES[c.sp];
   const tier = c.tier || 1;
-  if (def.evolve && (c.xp || 0) >= TIER_XP[tier]) {
+  const top = def.evolve && !SPECIES[def.evolve].evolve;
+  const topAlive = top && Object.values(sim.S.creatures).some((o) => o.sp === def.evolve && o.hp > 0);
+  if (def.evolve && (c.xp || 0) >= TIER_XP[tier] && !topAlive) {
     const old = c.name;
     c.sp = def.evolve; c.tier = tier + 1; c.lv += 2;
     applyStats(c); c.hp = c.maxhp;
@@ -349,12 +445,21 @@ export function creatureDaily(sim) {
     c.age++;
     if (SPECIES[c.sp].monster) { c.xp = (c.xp || 0) + 0.8; evolveCheck(sim, c); }
   }
+  electLeaders(sim, all);
+  // ネズミは町の食糧をかじる
+  for (const c of all) if (c.sp === 'rat' && c.owner != null && S.towns[c.owner]) { const m = S.towns[c.owner]; m.stock.wheat = Math.max(0, m.stock.wheat - 0.6); m.stock.bread = Math.max(0, m.stock.bread - 0.3); }
   // 繁殖・湧き
   for (const [sp, target] of Object.entries(POP)) {
     const def = SPECIES[sp];
     const n = count[sp] || 0;
     const demonMul = sp === 'imp' || sp === 'demonsoldier' ? (S.demon?.active ? 2.5 : 0.6) : 1;
     if (n >= target * demonMul) continue;
+    if (sp === 'rat') {
+      const s = R.pick(w.settlements);
+      const p = sim.randomNear(s.x, s.z, s.r - 1);
+      if (p && R.chance(0.4)) makeCreature(sim, 'rat', p.x, p.z, { owner: s.id, range: s.r - 1, hx: s.x, hz: s.z, age: 0 });
+      continue;
+    }
     const parent = all.find((c) => c.sp === sp && c.hp > 0);
     if (parent && R.chance(def.monster ? 0.35 : 0.6)) {
       const p = def.swims || def.flies ? { x: parent.pos.x, z: parent.pos.z } : sim.randomNear(parent.pos.x, parent.pos.z, 2);
@@ -381,7 +486,9 @@ export function creatureDaily(sim) {
     const strength = group.reduce((s, c) => s + c.atk, 0);
     const mem = S.speciesMemory[group[0].sp];
     const caution = mem ? mem.fear : 0;
-    if (group.length >= 4 + caution / 3 && strength > 40 && R.chance(0.12)) {
+    b.lastRaid = b.lastRaid ?? -99;
+    if (group.length >= 4 + caution / 3 && strength > 40 && sim.today - b.lastRaid >= 8 && R.chance(0.12)) {
+      b.lastRaid = sim.today;
       const target = w.settlements.filter((s) => !S.towns[s.id].occupied).sort((a, b2) => Math.hypot(a.x - b.x, a.z - b.z) - Math.hypot(b2.x - b.x, b2.z - b.z))[0];
       if (!target || Math.hypot(target.x - b.x, target.z - b.z) > 45) continue;
       const raiders = group.slice(0, Math.min(group.length, 6));

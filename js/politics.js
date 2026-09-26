@@ -5,8 +5,8 @@ import { makeCreature, applyStats } from './creatures.js';
 import { startFight, humanStats } from './society.js';
 import { T, W, H } from './world.js';
 
-const FIGHTERS = new Set(['knight', 'soldier', 'adventurer', 'wizard']);
-const ARMY = new Set(['knight', 'soldier']);
+const FIGHTERS = new Set(['knight', 'soldier', 'adventurer', 'wizard', 'general', 'royalguard', 'courtmage', 'warrior', 'archer', 'cleric', 'sage', 'paladin', 'guildmaster', 'watchman']);
+const ARMY = new Set(['knight', 'soldier', 'general']);
 const title = (p) => (p.sex === 'f' ? '女王' : '王');
 
 export function initPolitics(sim, hist) {
@@ -75,7 +75,7 @@ export function politicsHourly(sim) {
     }
     for (const p of people) {
       if (p.s !== +sid || p.jail != null || p.fight) continue;
-      if (FIGHTERS.has(p.job) || p.job === 'guard' || p.job === 'hunter' || (p.values.courage > 0.7 && sim.ageOf(p) >= 18 && sim.ageOf(p) < 55)) {
+      if (FIGHTERS.has(p.job) || p.job === 'guard' || p.job === 'hunter') {
         const c = raiders.reduce((best, r) => (Math.hypot(r.pos.x - p.pos.x, r.pos.z - p.pos.z) < Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z) ? r : best), raiders[0]);
         if (Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 2) startFight(sim, p, c);
         else p.mission = { type: 'defend', x: Math.round(c.pos.x), z: Math.round(c.pos.z), until: S.t + 60 };
@@ -91,7 +91,7 @@ export function politicsHourly(sim) {
       for (const p of troops) { p.mission = { type: 'defend', x: s.x, z: s.z, until: S.t + 60 * 30 }; p.action = null; }
       if (troops.length && k) sim.news(`${k.name}が${s.name}へ援軍（${troops.length}人）を送った`, 2, s);
     }
-    const defenders = people.filter((p) => (p.s === +sid || (p.mission?.type === 'defend' && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) < s.r + 3)) && (FIGHTERS.has(p.job) || p.job === 'guard' || p.job === 'hunter' || p.values.courage > 0.7) && sim.ageOf(p) >= 16 && p.jail == null);
+    const defenders = people.filter((p) => (p.s === +sid || (p.mission?.type === 'defend' && Math.hypot(p.pos.x - s.x, p.pos.z - s.z) < s.r + 3)) && (FIGHTERS.has(p.job) || p.job === 'guard' || p.job === 'hunter') && sim.ageOf(p) >= 16 && p.jail == null);
     const inTown = raiders.filter((c) => Math.hypot(c.pos.x - s.x, c.pos.z - s.z) < s.r);
     if (!defenders.length && inTown.length >= 2 && S.t - (town.threat.since || S.t) > 240 && raiders.some((c) => SPECIES[c.sp].kind === 'demon')) occupy(sim, s, raiders);
   }
@@ -259,7 +259,7 @@ export function politicsDaily(sim, opts = {}) {
   if (D && !D.active && sim.today >= D.awakenDay) awaken(sim);
   if (D && D.active) {
     D.power += 2;
-    if (sim.today - D.lastRaid >= R.int(4, 7)) sendDemonRaid(sim);
+    if (sim.today - D.lastRaid >= R.int(6, 10)) sendDemonRaid(sim);
   }
 
   for (const k of S.kingdoms) {
@@ -446,10 +446,10 @@ function endWar(sim, winner, loser) {
 function callHeroes(sim, k) {
   const S = sim.S, R = sim.rng;
   const king = S.people[k.kingId];
-  const cands = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && (FIGHTERS.has(p.job) || p.job === 'priest') && p.jail == null && sim.ageOf(p) >= 16 && sim.ageOf(p) < 60 && p.values.courage > 0.35)
+  const cands = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && (FIGHTERS.has(p.job) || p.job === 'priest' || p.job === 'cleric') && p.jail == null && sim.ageOf(p) >= 16 && sim.ageOf(p) < 60 && p.values.courage > 0.35)
     .sort((a, b) => (b.lv * 3 + b.fame / 10 + b.values.courage * 5) - (a.lv * 3 + a.fame / 10 + a.values.courage * 5));
   const members = [];
-  for (const job of ['knight', 'adventurer', 'wizard', 'priest']) { const p = cands.find((q) => q.job === job && !members.includes(q)); if (p) members.push(p); }
+  for (const job of ['paladin', 'knight', 'warrior', 'adventurer', 'sage', 'wizard', 'cleric', 'priest']) { const p = cands.find((q) => q.job === job && !members.includes(q)); if (p) members.push(p); }
   for (const p of cands) if (members.length < 4 && !members.includes(p)) members.push(p);
   if (members.length < 2) return;
   const hero = members.sort((a, b) => b.lv - a.lv)[0];
@@ -484,7 +484,7 @@ function sendDemonRaid(sim) {
     if (!p) continue;
     const sp = i === 0 && D.power > 90 ? 'demongeneral' : i < n / 2 ? 'demonsoldier' : 'imp';
     const c = makeCreature(sim, sp, p.x, p.z, { hx: w.demon.x, hz: w.demon.z, range: 10, lv: 1 + Math.floor(D.power / 50) });
-    c.raid = target.id; c.raidUntil = S.t + 60 * 36;
+    c.raid = target.id; c.raidUntil = S.t + 60 * 36; c.role = i === 0 ? 'leader' : 'raider';
     units.push(c);
   }
   S.towns[target.id].threat = { until: S.t + 60 * 40, since: S.t, by: units.map((c) => c.id) };
