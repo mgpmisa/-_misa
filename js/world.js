@@ -532,8 +532,8 @@ export function generateWorld(rng, seed) {
     const nField = s.type === 'village' ? 4 : s.type === 'capital' ? 3 : 1;
     const RR = s.type === 'capital' ? s.r + 1 : s.r;
     let made = 0;
-    for (let tries = 0; tries < 500 && made < nField; tries++) {
-      const small = tries >= 250;
+    for (let tries = 0; tries < 700 && made < nField; tries++) {
+      const small = tries >= 300;
       const a = rng.next() * Math.PI * 2, d = RR + rng.range(2, small ? 13 : 10);
       const x0 = Math.round(s.x + Math.cos(a) * d), z0 = Math.round(s.z + Math.sin(a) * d);
       const w = small ? rng.int(4, 5) : rng.int(5, 8), dd = small ? rng.int(3, 4) : rng.int(4, 6);
@@ -541,11 +541,14 @@ export function generateWorld(rng, seed) {
       // 城壁や家並みに食い込まない
       if (Math.max(Math.abs(x0 - 1 - s.x), Math.abs(z0 - 1 - s.z)) <= RR && Math.max(Math.abs(x0 + w - s.x), Math.abs(z0 + dd - s.z)) <= RR) continue;
       if (!(x0 - 1 > s.x + RR || x0 + w < s.x - RR || z0 - 1 > s.z + RR || z0 + dd < s.z - RR)) continue;
-      makePlot(s, x0, z0, w, dd, s.type === 'village' && made === 0 && !s.ranch);
+      const pasture = s.type === 'village' && made >= 1 && !s.ranch;
+      makePlot(s, x0, z0, w, dd, pasture);
       made++;
     }
-    // 外に土地がない村・港は、町はずれの空き地を畑にする（柵なし）
-    if (made === 0 && s.type !== 'capital') {
+    // 外に土地が足りない村・港は、町はずれの空き地を畑にする（柵なし）
+    const crop = fields.filter((f) => f.s === s.id).length;
+    if (crop < 8 && s.type !== 'capital') {
+      made = 0;
       const cands = [];
       for (let z0 = s.z - s.r; z0 <= s.z + s.r - 2; z0++) for (let x0 = s.x - s.r; x0 <= s.x + s.r - 2; x0++) {
         if (!free(x0, z0, x0 + 2, z0 + 2, [T.GRASS, T.SAVANNA])) continue;
