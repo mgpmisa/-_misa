@@ -274,7 +274,7 @@ export function generateWorld(rng, seed) {
 
   // --- 道（町と町を結ぶ） ---
   // goal は1点か、「ここに着いたら終わり」を返す関数（既存の道網につなぐとき）
-  function roadPath(a, b, goalFn = null) {
+  function roadPath(a, b, goalFn = null, blockFn = null) {
     const cost = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1);
     const hp = new MinHeap();
     const start = idx(a.x, a.z);
@@ -293,6 +293,7 @@ export function generateWorld(rng, seed) {
         const nx = x + dx, nz = z + dz;
         if (!inb(nx, nz)) continue;
         const j = idx(nx, nz), t = tiles[j];
+        if (blockFn && blockFn(j)) continue;
         let c;
         if (t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK) c = 0.5;
         else if (t === T.RIVER) c = 9;
@@ -399,7 +400,7 @@ export function generateWorld(rng, seed) {
       for (const [gx, gz, dx, dz] of [[s.x, s.z - R - 1, 0, -1], [s.x, s.z + R + 1, 0, 1], [s.x - R - 1, s.z, -1, 0], [s.x + R + 1, s.z, 1, 0]]) {
         if (get(gx, gz) !== T.WALL) continue;
         set(gx, gz, T.ROAD); s.walls = s.walls.filter((w) => w.x !== gx || w.z !== gz);
-        for (let k = 1; k <= 2; k++) { const t = get(gx + dx * k, gz + dz * k); if (t === T.GRASS || t === T.SAVANNA || t === T.FOREST || t === T.DESERT || t === T.SNOW || t === T.BEACH || t === T.WALL) set(gx + dx * k, gz + dz * k, T.ROAD); }
+        for (let k = 1; k <= 2; k++) { const t = get(gx + dx * k, gz + dz * k); if (t === T.GRASS || t === T.SAVANNA || t === T.FOREST || t === T.DESERT || t === T.SNOW || t === T.BEACH || t === T.WALL || t === T.DENSE || t === T.JUNGLE || t === T.SWAMP || t === T.ROCK) set(gx + dx * k, gz + dz * k, T.ROAD); }
         for (let k = 1; k <= R; k++) { const t = get(gx - dx * k, gz - dz * k); if (t === T.ROAD || t === T.PLAZA || t === T.BLD) break; if (t === T.GRASS || t === T.SAVANNA || t === T.FOREST || t === T.DESERT || t === T.SNOW || t === T.BEACH) set(gx - dx * k, gz - dz * k, T.ROAD); }
       }
     } else if (s.type === 'village') {
@@ -421,13 +422,13 @@ export function generateWorld(rng, seed) {
     s.gates = findGates(s);
     // 門の詰所（王都はすべての門、港町は一番大きな門）。門番と自警団の待機場所
     s.guardposts = [];
-    for (const g of s.type === 'capital' ? s.gates.filter((q) => q.x === s.x || q.z === s.z) : s.type === 'port' ? s.gates.slice(0, 1) : []) {
+    for (const g of s.type === 'capital' ? s.gates.slice(0, 4) : s.type === 'port' ? s.gates.slice(0, 1) : []) {
       const b = placeNear(s, g, 'guardpost', '門の詰所', 2, 2, { inside: true }) || placeNear(s, g, 'guardpost', '門の詰所', 2, 2, { inside: false });
       if (b) { g.post = b.id; s.guardposts.push(b.id); }
     }
     // 城下町：王都の門の外、街道ぞいに宿場と門前市を開く。城壁の中に入りきらなかった店もここへ
     if (s.type === 'capital') {
-      const main = s.gates.filter((g) => g.x === s.x || g.z === s.z);
+      const main = s.gates.slice(0, 4);
       const outside = [...failed, ['tavern', '門前の宿場', 3, 3, {}], ['market', '門前市', 4, 2, { extra: { open: true } }], ['stable', '駅馬車の厩', 3, 2, {}]];
       let gi = 0;
       for (const [type, name, w, d, opt] of outside) {
@@ -451,7 +452,8 @@ export function generateWorld(rng, seed) {
     for (let i = -RR; i <= RR; i++) for (const [x, z, dx, dz] of [[s.x + i, s.z - RR, 0, -1], [s.x + i, s.z + RR, 0, 1], [s.x - RR, s.z + i, -1, 0], [s.x + RR, s.z + i, 1, 0]]) {
       const t = get(x, z), t2 = get(x + dx, z + dz);
       if (t !== T.ROAD && t !== T.BRIDGE) continue;
-      if (t2 !== T.ROAD && t2 !== T.BRIDGE) continue;
+      if (s.type !== 'capital' && t2 !== T.ROAD && t2 !== T.BRIDGE) continue;
+      if (s.type === 'capital' && !walkable(t2)) continue;
       if (out.some((g) => Math.abs(g.x - x) + Math.abs(g.z - z) <= 2)) continue;
       out.push({ x, z, dx, dz });
     }
@@ -474,7 +476,6 @@ export function generateWorld(rng, seed) {
     streets.sort((a, b) => a.d - b.d);
     const proxy = { x: s.x, z: s.z, r: opt.inside ? RR - 1 : RR + reach + 2, id: s.id, kingdom: s.kingdom };
     const b = tryPlace(world0(), proxy, streets, type, name, w, d, opt, rng, opt.inside ? null : RR);
-    if (globalThis.DBG && type === 'guardpost') console.log('gp', s.name, g.x - s.x, g.z - s.z, opt.inside, streets.length, !!b, JSON.stringify(streets.slice(0, 4).map((q) => [q.x - s.x, q.z - s.z])));
     if (b) s.buildings.push(b.id);
     return b;
   }
@@ -676,11 +677,10 @@ export function generateWorld(rng, seed) {
       if (!okBox(x - 1, z - 1, 7, 5, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE])) return null;
       if (!farFromTowns(x, z, 9) || specials.some((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) < 12)) return null;
       const dv = Math.min(...vills.map((v) => Math.hypot(v.x - x, v.z - z)));
-      if (dv > 34) return null;
+      if (dv > 40) return null;
       let river = 0, road = 0;
       for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) { const t = get(x + dx, z + dz); if (t === T.RIVER) river++; if (t === T.ROAD) road++; }
-      if (road) return null;
-      return Math.min(river, 3) * 2 - Math.abs(dv - 22) * 0.2 + rng.next();
+      return Math.min(river, 3) * 2 - Math.abs(dv - 22) * 0.2 - Math.min(road, 5) + rng.next();
     }, 3000);
     if (!site) return;
     const home = vills.slice().sort((a, b) => Math.hypot(a.x - site.x, a.z - site.z) - Math.hypot(b.x - site.x, b.z - site.z))[0];
@@ -715,6 +715,17 @@ export function generateWorld(rng, seed) {
   };
   for (const s of settlements) if (!roadNet[idx(s.x, s.z)]) { connect(s.x, s.z); growNet(idx(s.x, s.z)); }
   for (const s of settlements) for (const g of s.gates || []) if (!roadNet[idx(g.x, g.z)]) connect(g.x, g.z);
+  // 王都の門は、城壁の外で街道まで道を延ばす（行き止まりの門をなくす）
+  for (const s of settlements.filter((q) => q.type === 'capital')) {
+    const RR = s.r + 1;
+    const cheb = (i) => Math.max(Math.abs((i % W) - s.x), Math.abs(((i / W) | 0) - s.z));
+    for (const g of s.gates) {
+      const ox = g.x + g.dx, oz = g.z + g.dz;
+      if (!inb(ox, oz) || !walkable(get(ox, oz)) && get(ox, oz) !== T.RIVER) continue;
+      const path = roadPath({ x: ox, z: oz }, null, (i) => roadNet[i] === 1 && cheb(i) > RR + 3, (j) => cheb(j) <= RR);
+      if (path.length && path.length < 40) { layRoad(path); for (const i of path) growNet(i); }
+    }
+  }
   const unlinked = [];
   for (const id of specials) {
     const b = buildings[id];

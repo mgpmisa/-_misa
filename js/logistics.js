@@ -184,6 +184,13 @@ function unboard(sim, p, c) {
 }
 const riders = (c) => [c.owner, ...c.guards, ...c.crew].filter((id) => id != null);
 
+// お金の出どころ：ふつうは持ち主の家計。町の市場組合が出す荷車（fund）は町の資金
+function acct(sim, hhId, fundSid) {
+  if (fundSid != null) { const t = sim.S.towns[fundSid]; return t ? { get money() { return t.fund || 0; }, set money(v) { t.fund = v; } } : null; }
+  return sim.S.households[hhId] || null;
+}
+const acctOf = (sim, c) => acct(sim, c.hh, c.fund);
+
 // 町の中心に近い、荷車が止まれる地面（広場・道を優先）
 function landSpot(w, s) {
   let best = null, bd = 1e9;
@@ -203,7 +210,7 @@ export function startTradeConvoy(sim, p, tr) {
   const S = sim.S, R = sim.rng;
   ensureLogistics(sim);
   if (!tr || !canTrade(sim, p)) { p._tradeCd = S.t + 240; return false; }
-  const from = sim.market(p.s), to = sim.market(tr.dest), hh = sim.hh(p);
+  const from = sim.market(p.s), to = sim.market(tr.dest), hh = acct(sim, p.hh, tr.fund);
   if (!hh || S.towns[tr.dest]?.occupied) return false;
   const here = sim.townOf(p), dest = sim.town(tr.dest);
   // 船で行くか（港どうしで、海路があり、陸路より近いか陸路がない）
@@ -223,6 +230,7 @@ export function startTradeConvoy(sim, p, tr) {
   from.stock[g] -= qty; hh.money -= cost;
   const risk = kind === 'cart' ? routeRisk(sim, path) : { risk: 0, danger: 0, bandit: false };
   const c = newConvoy(sim, { kind, goods: { [g]: qty }, cost, from: p.s, to: tr.dest, path, owner: p.id, hh: p.hh, risk: risk.risk, roundTrip: kind === 'ship' });
+  if (tr.fund != null) { c.fund = tr.fund; const ph = sim.hh(p); if (ph) ph.money += 5; }   // 市場組合に雇われた荷運び：手間賃5銅貨
   board(sim, p, c, 'trade');
   if (kind === 'ship') {
     // 船頭と水夫を雇う（往復）
@@ -231,7 +239,7 @@ export function startTradeConvoy(sim, p, tr) {
     sim.pushLog(`${who(p)}の船が${GOODS[g].name}${qty}を積んで${here.name}の港を出た（行き先は${dest.name}）。`, 'event', [p.id, ...c.crew], c.pos);
   } else {
     if (risk.risk >= 3.5) hireEscort(sim, p, c, risk);
-    sim.remember(p, `${dest.name}へ向けて、${GOODS[g].name}${qty}を荷車に積んで出発した${c.guards.length ? '（護衛つき）' : ''}`, { emo: 0.2, imp: 0.35, k: 'trade' });
+    sim.remember(p, `${GOODS[g].name}${qty}を荷車に積み、${c.guards.length ? '護衛を連れて' : ''}${dest.name}へ向けて出発した`, { emo: 0.2, imp: 0.35, k: 'trade' });
     if (R.chance(0.35) || c.guards.length) sim.pushLog(`${who(p)}の荷車が${GOODS[g].name}${qty}を積んで${here.name}を出た（${dest.name}行き${c.guards.length ? '・護衛' + c.guards.map((id) => S.people[id].given).join('と') : ''}）。`, 'event', [p.id, ...c.guards], c.pos);
   }
   return true;
@@ -247,7 +255,7 @@ export function makeEscortQuest(sim, o) {
   return q;
 }
 function hireEscort(sim, p, c, risk) {
-  const S = sim.S, hh = sim.hh(p);
+  const S = sim.S, hh = acctOf(sim, c);
   const want = risk.risk >= 7 ? 2 : 1;
   const reward = Math.round(8 + risk.risk * 3) * want;
   if (!hh || hh.money < reward + 10) return;
@@ -373,9 +381,9 @@ function checkConvoy(sim, c, fighting) {
   // 魔物：近くにいる敵意のある魔物に気づかれることがある（危険な区画ほど気づかれやすい）
   if (!sim._cgrid) return;
   const dz = dangerAt(sim, c.pos.x, c.pos.z);
-  for (const m of around(sim._cgrid, c.pos.x, c.pos.z, 6)) {
+  for (const m of around(sim._cgrid, c.pos.x, c.pos.z, 8)) {
     if (!m.hostile || m.dormant || m.hp <= 0 || m.fight || m.inDungeon || c.met[m.id]) continue;
-    if (Math.hypot(m.pos.x - c.pos.x, m.pos.z - c.pos.z) > 6) continue;
+    if (Math.hypot(m.pos.x - c.pos.x, m.pos.z - c.pos.z) > 8) continue;
     c.met[m.id] = 1;
     if (!R.chance(Math.min(0.8, 0.3 + dz * 0.06))) continue;
     monsterAttack(sim, c, m);
@@ -502,7 +510,7 @@ function sellGoods(sim, c, sid) {
   const m = sim.market(sid);
   let earn = 0;
   for (const [g, n] of Object.entries(c.goods)) { if (n <= 0) continue; earn += n * m.price[g] * 0.92; m.stock[g] += n; }
-  const hh = sim.S.households[c.hh];
+  const hh = acctOf(sim, c);
   if (hh) hh.money += earn;
   return earn;
 }
@@ -534,14 +542,14 @@ function arriveConvoy(sim, c) {
   }
   // 船乗りの手間賃（船主の家計から）
   if (c.kind === 'ship') {
-    const hh = S.households[c.hh];
+    const hh = acctOf(sim, c);
     for (const id of c.crew) { const q = S.people[id]; const qh = q && sim.hh(q); if (qh && hh && qh !== hh) { hh.money -= 8; qh.money += 8; } }
   }
   finish(sim, c);
 }
 function departReturn(sim, c) {
   const S = sim.S;
-  const hh = S.households[c.hh];
+  const hh = acctOf(sim, c);
   const { goods, cost } = pickCargo(sim, c.to, c.from, Math.max(0, Math.min(300, (hh?.money || 0) * 0.6)));
   if (hh) hh.money -= cost;
   c.goods = goods; c.cost = cost;
@@ -559,7 +567,7 @@ function payEscort(sim, c) {
   c.quest = null;
   if (!q || q.state !== 'taken') return;
   const guards = c.guards.map((id) => S.people[id]).filter((g) => g && g.deathYear == null);
-  const hh = S.households[c.hh];
+  const hh = acctOf(sim, c);
   q.state = 'done'; q.closed = sim.today;
   if (!guards.length) return;
   q.doneBy = guards.map((g) => g.given).join('・');
@@ -616,6 +624,8 @@ export function logisticsHourly(sim) {
       if (!tr) { S.logi.why = S.logi.why || {}; S.logi.why[s.id + ':noTrade'] = (S.logi.why[s.id + ':noTrade'] || 0) + 1; continue; }
       const drv = pickCarter(sim, s);
       if (!drv) { S.logi.why = S.logi.why || {}; S.logi.why[s.id + ':noDriver'] = (S.logi.why[s.id + ':noDriver'] || 0) + 1; continue; }
+      if (drv.job !== 'merchant' && drv.job !== 'changer' && drv.job !== 'smuggler') tr.fund = s.id;   // 商人がいなければ、町の市場組合が荷運びを雇って出す
+      if (tr.fund != null && (S.towns[s.id].fund || 0) < 80) continue;
       if (startTradeConvoy(sim, drv, tr)) S.logi.lastDep[s.id] = S.t;
     }
   }
@@ -638,13 +648,14 @@ function bestLandTrade(sim, s) {
 }
 // 荷車を出す人：町の商人 → 両替商・密輸人 → 仕事のない大人（荷運びの仕事を請け負う）
 const CARTERS = ['merchant', 'changer', 'smuggler', 'peddler'];
+const HIRED = new Set(['beggar', 'rancher', 'shepherd', 'miller', 'woodcutter', 'charcoal']);   // 手の空いた日に荷運びを請け負う人
 function pickCarter(sim, s) {
   const C = sim.S.convoys;
   const ok = (q) => q.s === s.id && q.jail == null && !q.fight && !q.bandit && sim.isAdult(q) && sim.ageOf(q) < 62 && q.hp > q.maxhp * 0.6
-    && !RIDE.has(q.action?.type) && q.action?.type !== 'sleep' && !C.some((c) => c.owner === q.id) && (sim.hh(q)?.money || 0) >= 25 && !((q._tradeCd || 0) > sim.S.t);
+    && !RIDE.has(q.action?.type) && q.action?.type !== 'sleep' && !C.some((c) => c.owner === q.id) && !((q._tradeCd || 0) > sim.S.t);
   const pool = sim.living().filter(ok);
-  for (const j of CARTERS) { const q = pool.find((x) => x.job === j); if (q) return q; }
-  const idle = pool.filter((q) => !q.job && !q.quest);
+  for (const j of CARTERS) { const q = pool.find((x) => x.job === j && (sim.hh(x)?.money || 0) >= 25); if (q) return q; }
+  const idle = pool.filter((q) => (!q.job || HIRED.has(q.job)) && !q.quest);
   return idle.length ? sim.rng.pick(idle) : null;
 }
 
