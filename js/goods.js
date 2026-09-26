@@ -61,7 +61,7 @@ export const CATALOG = {
   lime:      C('石灰', 'build', 4.5, 12, { src: 'craft', uses: '漆喰・なめし・畑の土づくり・硝子' }),
   glass:     C('硝子', 'craft', 10, 8, { src: 'craft', prod: [0.8, 0.6, 1.5], uses: '窓・薬瓶・魔灯・香水瓶' }),
   // ---- 燃料 ----
-  firewood:  C('薪', 'fuel', 1, 40, { src: 'forest', uses: '冬の暖と煮炊き・パン窯・燻製' }),
+  firewood:  C('薪', 'fuel', 1.5, 40, { src: 'forest', uses: '冬の暖と煮炊き・パン窯・燻製' }),
   charcoal:  C('木炭', 'fuel', 4.5, 20, { src: 'craft', uses: '鉄を溶かす・焼き物の窯・石灰焼き・硝子' }),
   resin:     C('樹脂（松やに）', 'craft', 3, 10, { src: 'forest', prod: [1, 1.4, 0.3], uses: '船の水漏れ止め・家具のニス・灯台のたいまつ' }),
   // ---- 金属 ----
@@ -227,8 +227,8 @@ export const GATHER = {
   gatherer:   { main: [['herbs', 0.6], ['dye', 0.35]], by: [['fruit', 0.1], ['resin', 0.03], ['rareherb', 0.012], ['honey', 0.03], ['wax', 0.01]], find: [['truffle', 0.006]] },
   diver:      { main: [['pearl', 0.03]], by: [['dye', 0.03], ['salt', 0.05], ['amber', 0.01]] },
   mason:      { main: [['rubble', 1.5]], by: [], find: [['fossil', 0.002]] },
-  charcoal:   { main: [['firewood', 1.0]], by: [['resin', 0.05]] },
-  woodcutter: { main: [['wood', 1.6], ['firewood', 1.4]], by: [['resin', 0.05], ['firewood', 0.3]], find: [['truffle', 0.002]] },
+  charcoal:   { main: [['firewood', 1.6]], by: [['resin', 0.05]] },
+  woodcutter: { main: [['wood', 1.6], ['firewood', 2.2]], by: [['resin', 0.05], ['firewood', 0.3]], find: [['truffle', 0.002]] },
   miner:      { main: [['ore', 0.9], ['rubble', 1.6]], by: [['rubble', 0.4], ['silver', 0.02], ['gold', 0.004]], find: [['gem', 0.03], ['coin', 0.001], ['fossil', 0.002], ['magicstone', 0.003]] },
   roadworker: { main: [], by: [['rubble', 0.8], ['clay', 0.3], ['sand', 0.15]], find: [['coin', 0.0015], ['fossil', 0.0015]] },
   pioneer:    { main: [], by: [['rubble', 0.6], ['clay', 0.3], ['sand', 0.1], ['firewood', 0.3]], find: [['coin', 0.001], ['fossil', 0.001], ['antique', 0.0004]] },
@@ -540,8 +540,8 @@ export function goodsHourly(sim) {
   if (hour >= 18 && hour <= 22) for (const s of S.world.settlements) {
     const m = S.towns[s.id]; if (!m || m.occupied) continue;
     const pop = popOf(sim, s.id);
-    tick(sim, s.id, 'wine', pop * 0.012, (n) => drinkers(sim, s.id, 'wine', n));
-    tick(sim, s.id, 'mead', pop * (s.kingdom === 1 ? 0.02 : 0.008), (n) => drinkers(sim, s.id, 'mead', n));
+    tick(sim, s.id, 'wine', pop * 0.006, (n) => drinkers(sim, s.id, 'wine', n));
+    tick(sim, s.id, 'mead', pop * (s.kingdom === 1 ? 0.012 : 0.005), (n) => drinkers(sim, s.id, 'mead', n));
   }
 }
 // 端数をためて、1個ぶんになったら実行する
@@ -778,7 +778,7 @@ function personNeeds(sim, p, si) {
   // 漁師・船乗り：舟の手入れ（樹脂と板）、古くなった舟の買い替え
   if (BOATERS.has(p.job)) {
     if (R.chance(0.08) && hh.money > 20) { takeGoods(sim, p.s, 'resin', 0.5, hh); takeGoods(sim, p.s, 'planks', 1, hh); }
-    if ((!p.boatDay || sim.today - p.boatDay > 400) && hh.money > m.price.boat + 60 && R.chance(0.05) && takeGoods(sim, p.s, 'boat', 1, hh)) {
+    if ((!p.boatDay || sim.today - p.boatDay > 400) && hh.money > m.price.boat + 20 && R.chance(0.05) && takeGoods(sim, p.s, 'boat', 1, hh)) {
       p.boatDay = sim.today;
       sim.remember(p, '新しい小舟を手に入れた', { emo: 0.7, imp: 0.6 });
     }
@@ -803,7 +803,7 @@ function townNeeds(sim, s, pop, si) {
   const w = { money: t.fund };
   const n = pop.length;
   if (t.fund > 30) {
-    takeGoods(sim, s.id, 'wax', 0.3, w);                 // 教会の蝋燭
+    if (R.chance(0.4)) takeGoods(sim, s.id, 'wax', 0.25, w);   // 教会の蝋燭
     if (R.chance(0.2)) takeGoods(sim, s.id, 'wine', 1, w); // 儀式の葡萄酒
   }
   if (sim.isFestival()) {
@@ -827,6 +827,10 @@ function townNeeds(sim, s, pop, si) {
     t.statues = (t.statues || 0) + 1;
     sim.pushLog(`${s.name}の広場に新しい彫像が据えられた。`, 'event', [], s);
     for (const q of pop) if (q.needs) q.needs.esteem = Math.min(100, q.needs.esteem + 5);
+  }
+  if (s.type === 'port' && w.money > 260 && (t.boats || 0) < 4 && R.chance(0.06) && takeGoods(sim, s.id, 'boat', 1, w)) {
+    t.boats = (t.boats || 0) + 1;
+    sim.pushLog(`${s.name}の蓄えで新しい漁の小舟が買われ、浜に下ろされた。`, 'event', [], s);
   }
   if (w.money > 450 && s.type === 'capital' && (t.lamps || 0) < 12 && R.chance(0.15) && takeGoods(sim, s.id, 'magiclamp', 1, w)) t.lamps = (t.lamps || 0) + 1;
   if (w.money > 300 && R.chance(0.03) && takeGoods(sim, s.id, 'painting', 1, w)) { t.churchArt = (t.churchArt || 0) + 1; sim.pushLog(`${s.name}の教会に新しい絵が掛けられた。`, 'event', [], s); }
@@ -910,7 +914,7 @@ function nobleLife(sim) {
     const tries = R.int(1, 2);
     for (let i = 0; i < tries; i++) {
       const hobbyPick = R.chance(0.65);
-      const pool = (hobbyPick ? HOBBIES[c.hobby].goods : want).filter((g) => m.stock[g] >= 1 && m.price[g] <= budget * 3);
+      const pool = (hobbyPick ? HOBBIES[c.hobby].goods : want).filter((g) => m.stock[g] >= 1 && m.price[g] <= budget * 4);
       if (!pool.length) { if (hobbyPick) unmet(S.goods, hh.s, R.pick(HOBBIES[c.hobby].goods), 0.3); continue; }
       const g = R.pick(pool);
       const price = m.price[g];
@@ -933,6 +937,15 @@ function nobleLife(sim) {
     }
     hh.money = purse.money;
     c.envy = Math.max(0, c.envy - 0.2);
+    // 霊薬：年老いた・弱った当主は、長生きの薬を求める
+    const age = sim.ageOf(lead);
+    if ((age >= 55 || lead.hp < lead.maxhp * 0.5 || lead.sick) && m.stock.elixir >= 1 && hh.money > m.price.elixir + 200 && R.chance(0.08)) {
+      if (takeGoods(sim, hh.s, 'elixir', 1, hh)) {
+        lead.hp = lead.maxhp; lead.needs.survival = 100;
+        lead.elixirs = (lead.elixirs || 0) + 1;
+        sim.remember(lead, '高価な霊薬を飲み、体に力が戻るのを感じた', { emo: 0.6, imp: 0.5 });
+      }
+    }
     // 贈り物：ときどき、ほかの貴族か王へ（仲が良くなる）
     if (R.chance(0.04) && hh.money > 260) gift(sim, hh, lead, highs);
   }

@@ -645,6 +645,9 @@ export function laborDaily(sim) {
   }
   for (const k of S.kingdoms) kingRestPolicy(sim, k);
   const people = sim.living();
+  const wd = { n: 0, h3: 0, h9: 0, sum: 0 };
+  for (const p of people) if (p.job && p.jail == null && sim.ageOf(p) >= 16 && sim.ageOf(p) < 68) { const w = p.workedToday || 0; wd.n++; wd.sum += w; if (w >= 180) wd.h3++; if (w >= 540) wd.h9++; }
+  LS.worked = { day: sim.today - 1, avgH: Math.round(wd.sum / Math.max(1, wd.n) / 6) / 10, over3h: wd.h3, over9h: wd.h9, n: wd.n };
   for (const p of people) {
     if (!p.needs) continue;
     const age = sim.ageOf(p);
