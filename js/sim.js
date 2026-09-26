@@ -8,6 +8,7 @@ import { findPathFar } from './pathfar.js';
 import { lodWalkMul, creatureArray } from './lod.js';
 import { ancestors, kinTerm, isCloseKin, siblings } from './kin.js';
 import { composeConversation, innerThought, speechStyle } from './speech.js';
+import { mindConversation, mindThought } from './talkmind.js';
 import { spawnInitialCreatures, stepCreatures, creatureDaily, settleCreature } from './creatures.js';
 import { stepCombat, startFight, humanStats, crimeHourly, justiceDaily, tryCrime, crimeArrive, markWanted } from './society.js';
 import { initPolitics, politicsDaily, politicsHourly, demonHourly, addSaying } from './politics.js';
@@ -1504,7 +1505,7 @@ export class Sim {
 
   startTalk(a, b) {
     const watched = this.isWatched(a) || this.isWatched(b);
-    const convo = composeConversation(this, a, b, !watched);
+    const convo = mindConversation(this, a, b);
     const talk = { a: a.id, b: b.id, lines: convo.lines, i: 0, next: this.S.t, effects: convo.effects, owner: a.id, quiet: !watched };
     a.talk = talk; b.talk = talk;
     for (const p of [a, b]) if (p.action && p.action.until) p.action.until += convo.lines.length * 1.6;
@@ -1659,7 +1660,7 @@ export class Sim {
       let mood = needAvg * 0.65 + 25 + moneyF + memF + (this.hh(p)?.comfort || 0) * 1.5 + (p.jail != null ? -15 : 0) + weatherMoodDelta(this, p);
       if (mood < 50) mood -= (p.pers.N - 0.5) * 20;
       p.mood = clamp(p.mood * 0.6 + mood * 0.4, 0, 100);
-      if (!p.talk && this.isWatched(p) && this.rng.chance(0.35)) p.thought = innerThought(this, p);
+      if (!p.talk && this.isWatched(p) && this.rng.chance(0.35)) p.thought = mindThought(this, p) || innerThought(this, p);
       // 危険の記憶は少しずつ薄れる
       if (p.danger) for (const k of Object.keys(p.danger)) { p.danger[k] *= 0.985; if (p.danger[k] < 0.2) delete p.danger[k]; }
     }

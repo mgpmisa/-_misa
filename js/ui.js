@@ -6,6 +6,7 @@ import * as SPR from './sprites.js';
 import { ITEMS, itemName, itemValue } from './items.js';
 import { InteriorView } from './interior.js';
 import { RESCUE_ACTION_LABEL, RESCUE_ACTION_GO, RESCUE_PREF_LABEL, rescueNote } from './rescue.js';
+import { mindThought } from './talkmind.js';
 import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
@@ -572,7 +573,7 @@ export class UI {
       const e = this.sim.entity(this.selected);
       if (!e) { body.innerHTML = '<div class="psub">この生き物はもういない。</div>'; return; }
       if (typeof e.id === 'number') {
-        if (e.deathYear == null && (!e.thought || force)) e.thought = innerThought(this.sim, e);
+        if (e.deathYear == null && (!e.thought || force)) e.thought = mindThought(this.sim, e) || innerThought(this.sim, e);
         const openK = new Set([...body.querySelectorAll('details[open]')].map((d) => d.dataset.k));
         body.innerHTML = this.personHtml(e);
         for (const d of body.querySelectorAll('details[data-k]')) if (openK.has(d.dataset.k)) d.open = true;

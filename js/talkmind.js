@@ -15,9 +15,12 @@
 //     met : { 相手id: { d: 最後に話した日, n: 回数, s: 相手が最後に話してくれたこと, sd: その日, k } }（40人まで）,
 //     kn  : 人から聞いた知識 [{ key, k:'px'|'nw'|'lore'|'danger', ... , from, d }]（12件）,
 //     px  : 覚えている値段 { 品: [値, 日] },
-//     wx  : 覚えている天気 { w, d }
+//     wx  : 覚えている天気 { w, d },
+//     kk  : 知っている知識の鍵（60件。同じことを教え返さないため）,
+//     th/tr: 今日・最近の心の声のハッシュ
 //   }
-import { Voice, pickTopic, react, firstPerson, innerThought } from './speech.js';
+// どの配列も上限つきなので、セーブが際限なく太ることはない（1人あたり数KB以内）。
+import { Voice, pickTopic, react, firstPerson, innerThought, composeConversation } from './speech.js';
 import { casualKin } from './kin.js';
 import { JOBS, GOODS, SPECIES } from './data.js';
 import { WX_NAME, ensureWx, regionIndex } from './weather.js';
@@ -899,7 +902,7 @@ function mindReact(api, B, A, topic, v) {
   }
   if (mt.t === 'hurt') {
     const x = B.memories.slice().reverse().find((y) => ['fight', 'quest', 'hunt', 'crime', 'robbed'].includes(y.k) && api.today - y.t < 6);
-    if (x) return { text: say1(v, `${whenOf(api, x)}、${ownTxt(v, x.txt).split('。')[0]}`) + say1(v, R.pick(['たいしたことない', 'しばらくは無理できない'])), da: 3, src: `返事の元：自分の記憶「${x.txt}」` };
+    if (x) return { text: say1(v, `${whenOf(api, x)}、${ownTxt(v, x.txt.split(A.given).join(v.fill('{you}'))).split('。')[0]}`) + say1(v, R.pick(['たいしたことない', 'しばらくは無理できない'])), da: 3, src: `返事の元：自分の記憶「${x.txt}」` };
     return { text: say1(v, R.pick(['ちょっと転んだだけ', 'たいしたことない。心配ありがとう'])), da: 2.5, src: '返事の元：けが' };
   }
   if (mt.t === 'ail') return { text: say1(v, `${ailName(B) || '具合が悪く'}で${isBedridden(B) ? '寝込んでた' : '、少しだるい'}`) + say1(v, R.pick(['心配かけてすまない', '早く治す'])), da: 3, src: `返事の元：自分の病（${ailName(B)}）` };
@@ -1083,6 +1086,14 @@ const LEAD_RE = /^(聞いて|ちょっと聞いて|まあ聞いて|聞け|あの
 
 // ---------- 会話全体 ----------
 export function mindConversation(api, A, B) {
+  try { return mindConversation0(api, A, B); } catch (e) {
+    // 万一の不具合でも世界を止めない（試験では tmDebug で例外を投げる）
+    if (api.tmDebug) throw e;
+    if (!api._tmErr) { api._tmErr = 1; console.warn('talkmind:', e); }
+    return composeConversation(api, A, B);
+  }
+}
+function mindConversation0(api, A, B) {
   glReset(api);
   const R = api.rng;
   const mA = mindOf(api, A), mB = mindOf(api, B);
@@ -1205,6 +1216,12 @@ export function mindConversation(api, A, B) {
 // ---------- 心の声 ----------
 // innerThought の文が、自分が最近思ったことか、町じゅうでありふれた文なら、自分の記憶・知識・計画から別の考えを作る
 export function mindThought(api, p) {
+  try { return mindThought0(api, p); } catch (e) {
+    if (api.tmDebug) throw e;
+    return innerThought(api, p);
+  }
+}
+function mindThought0(api, p) {
   if (!p.needs) return null;
   glReset(api);
   const m = mindOf(api, p);
