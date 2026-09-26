@@ -431,8 +431,8 @@ function planRoads(sim) {
     const P = kingPolicyOf(sim, k.id);
     const mine = D.roads.filter((r) => !r.ancient && (r.k === k.id || r.partner === k.id) && ['purge', 'build'].includes(r.stage));
     if (mine.length >= (P.type === 'merchant' && k.treasury > 1500 ? 2 : 1)) continue;
-    const reserve = { peace: 450, merchant: 350, ambitious: 500, timid: 800 }[P.type] + (S.demon?.active ? 250 : 0);
-    if (k.treasury < reserve + 150) { setNote(sim, k.id, `国庫が心もとないので、街道の普請は見送る（${r0(k.treasury)}銅貨）`); continue; }
+    const reserve = { peace: 300, merchant: 250, ambitious: 350, timid: 550 }[P.type] + (S.demon?.active ? 250 : 0);
+    if (k.treasury < reserve + 100) { setNote(sim, k.id, `国庫が心もとないので、街道の普請は見送る（${r0(k.treasury)}銅貨）`); continue; }
     const cands = roadTargets(sim, k.id);
     let started = false;
     for (const c of cands.slice(0, 2)) {
@@ -448,7 +448,7 @@ function planRoads(sim) {
       // 街道は何十年も使える。王が「何年で元が取れればよい」と考えるか（1年＝40日）
       const horizon = { merchant: 4, peace: 3, ambitious: 2.5, timid: 1.5 }[P.type];
       const benefit = c.gain * horizon;
-      if (benefit < cost || k.treasury - cost * 0.5 < reserve) { D.cool[`road:${k.id}:${c.to}`] = sim.today + 20; setNote(sim, k.id, `${sim.town(c.to).name}への街道は、費用（約${r0(cost)}銅貨）に見合わないと見送った`); continue; }
+      if (benefit < cost || k.treasury - Math.min(cost * 0.3, 300) < reserve) { D.cool[`road:${k.id}:${c.to}`] = sim.today + 20; setNote(sim, k.id, `${sim.town(c.to).name}への街道は、費用（約${r0(cost)}銅貨）に見合わないと見送った`); continue; }
       if (startRoad(sim, k.id, c, path, todo, cost)) { started = true; break; }
     }
     if (!started && !P.note) setNote(sim, k.id, '今は新しい街道を急ぐ理由がない');
