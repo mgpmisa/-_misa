@@ -286,7 +286,7 @@ export class Sim {
     for (const p of alive) {
       p.needs = { survival: 90, sleep: R.range(60, 95), hunger: R.range(55, 90), lust: R.range(50, 95), sloth: R.range(50, 90), pleasure: R.range(40, 90), esteem: R.range(40, 90) };
       p.mood = 60; p.memories = []; p.rel = {}; p.gk = {}; p.talkedToday = {}; p.recent = [];
-      p.tool = R.range(0.3, 1); p.workedToday = 0; p.pregnant = 0; p.cooldown = 0; p.q = {}; p.skill = {}; p.danger = {};
+      p.tool = R.range(0.3, 1); p.workedToday = 0; p.pregnant = p.sex === 'f' && p.spouseId != null && Y - p.birthYear >= 18 && Y - p.birthYear <= 40 && R.chance(0.12) ? R.int(1, 10) : 0; p.cooldown = 0; p.q = {}; p.skill = {}; p.danger = {};
       p.fame = p.deeds.length * 5 + (p.hero ? 40 : 0);
       p.style = speechStyle(p, this.ageOf(p));
       p.traits = traitLabels(p);
@@ -1017,6 +1017,39 @@ export class Sim {
       case 'story': this.tellStories(p, near(5)); break;
       case 'news': break;
     }
+    // 仕える・世話をする仕事の中身
+    switch (p.job) {
+      case 'gardener': case 'butler': case 'maid': {
+        // 仕える家（王家・貴族）の暮らしが整う
+        const lord = Object.values(S.households).find((h) => h.s === p.s && (h.royal || h.members.some((id) => S.people[id]?.rank === 'noble')) && h.id !== p.hh);
+        if (lord) { lord.comfort = Math.min(10, (lord.comfort || 0) + 0.05 * hr); lord.laundry = Math.max(0, (lord.laundry || 0) - 0.5 * hr); lord.water = Math.min(10, (lord.water ?? 5) + 0.5 * hr); }
+        if (p.job === 'gardener' && R.chance(0.02 * hr)) m.stock.herbs = (m.stock.herbs || 0) + 0.5;
+        break;
+      }
+      case 'gravedigger': {
+        // 墓の手入れと弔いの手伝い。町の蓄えから手間賃
+        const recent = S.graves.slice(-20).map((id) => S.people[id]).filter((d) => d && d.s === p.s && this.today - (d.deathDay || 0) <= 1).length;
+        if (recent && S.towns[p.s].fund > 5) { const fee = Math.min(4, S.towns[p.s].fund * 0.02) * hr; S.towns[p.s].fund -= fee; hh.money += fee; }
+        for (const q of near(4)) if (q.action?.type === 'funeral' || q.action?.type === 'grave') q.mood = Math.min(100, (q.mood || 50) + 2 * hr);
+        break;
+      }
+      case 'keeper': S.towns[p.s].lighthouse = S.t; break; // 灯台の火が船を守る（嵐の被害が減る）
+      case 'stablehand': {
+        for (const c of Object.values(S.creatures)) if (c.sp === 'horse' && c.owner === p.s && Math.abs(c.pos.x - p.pos.x) + Math.abs(c.pos.z - p.pos.z) < 6) { c.hunger = 100; c.hp = Math.min(c.maxhp, c.hp + 2 * hr); }
+        break;
+      }
+      case 'watchman': case 'guard': {
+        // 見回り：盗みや追いはぎの現場を見つけたら取り押さえる
+        const culprit = near(7).find((q) => ['steal', 'rob'].includes(q.action?.type) && q.action.phase === 'do');
+        if (culprit && R.chance(0.5)) { markWanted(this, culprit, culprit.action.type === 'steal' ? '盗み' : '追いはぎ', 10); this.pushLog(`${JOBS[p.job].name}の${p.given}が、${culprit.given}の悪事を見つけて笛を吹いた。`, 'event', [p.id, culprit.id], p.pos); }
+        break;
+      }
+      case 'royalguard': {
+        const king = k && S.people[k.kingId];
+        if (king && king.hp < king.maxhp) king.hp = Math.min(king.maxhp, king.hp + 1 * hr);
+        break;
+      }
+    }
     // 悪党の仕事
     if (p.job === 'pickpocket' && R.chance(0.03 * dt)) {
       const v = near(2).find((q) => (q.purse || 0) > 8 && q.hh !== p.hh);
@@ -1070,7 +1103,9 @@ export class Sim {
     if (!recipes.length) return;
     const [id, d] = R.pick(recipes);
     for (const [k, n] of Object.entries(d.mat)) { if (k === 'wood') m.stock.wood -= n; else if (k === 'cloth') m.stock.cloth -= n; else town.mats[k] -= n; }
-    const q = Math.max(0.5, Math.min(1.8, 0.55 + skill * 0.8 + R.gauss(0, 0.12) + (this.hasTech(p, 'steel') ? 0.1 : 0)));
+    // 名工でも普段は上等どまり。伝説級は、腕の立つ者にごくまれに訪れる会心の一打
+    let q = Math.max(0.5, Math.min(1.5, 0.55 + skill * 0.7 + R.gauss(0, 0.1) + (this.hasTech(p, 'steel') ? 0.08 : 0)));
+    if (d.type !== 'tool' && skill > 0.7 && R.chance(0.004 * skill)) q = R.range(1.56, 1.8);
     const it = makeItem(id, q, { maker: p.id });
     town.shop.push(it);
     p.skill.smith = Math.min(1, skill + 0.01);

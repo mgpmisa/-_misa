@@ -3154,6 +3154,8 @@ export function drawCreatureAnim(c, def, anim = 'idle') {
   while (_cache.size > CACHE_MAX) _cache.delete(_cache.keys().next().value);
   return res;
 }
+// 作り置きがあれば返す（無ければ null）。描画側で「1フレームに作る量」を抑えるときに使う
+export function peekCreatureAnim(c, anim) { return _cache.get(`${c.id}|${c.sp}|${c.lv || 1}|${c.role || ''}|${anim}`) || null; }
 // 個体が消えたとき・進化したときに呼ぶ（呼ばなくても古いものから自然に捨てられる）
 export function forgetCreatureAnim(id) { for (const k of [..._cache.keys()]) if (k.startsWith(id + '|')) _cache.delete(k); }
 export function setCreatureAnimCacheSize(n) { CACHE_MAX = Math.max(50, n | 0); }

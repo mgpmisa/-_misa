@@ -369,6 +369,13 @@ export function generateWorld(rng, seed) {
       const b = placeOnStreet(s, type, name, w, d, opt);
       if (b) { s.buildings.push(b.id); if (opt.yard) makeYard(b); }
       else if (opt.retry) failed.push([type, name, w, d, opt]);
+      else if (s.type !== 'capital' && !opt.noWiden) {
+        // 村や港で場所がなければ、町はずれまで広げて探す
+        s.extraR = (s.extraR || 0) + 3;
+        const b2 = placeOnStreet(s, type, name, w, d, opt);
+        s.extraR -= 3;
+        if (b2) { s.buildings.push(b2.id); return b2; }
+      }
       return b;
     };
     if (s.type === 'capital') {
@@ -557,27 +564,32 @@ export function generateWorld(rng, seed) {
   // 国境の砦：王都どうしを結ぶ街道が国境を越えるあたりに、それぞれの国が砦を置く
   const forts = [];
   const specials = [];
-  const dirName = (from, x, z) => { const a = Math.atan2(z - from.z, x - from.x); const k = Math.round(a / (Math.PI / 2)); return ['東', '南', '西', '北', '西'][(k + 4) % 4 === 3 ? 3 : (k + 4) % 4]; };
-  for (const { a, b, path } of capPaths) {
-    if (path.length < 10) continue;
-    let cross = path.findIndex((i) => kingdomOf[i] !== a.kingdom && kingdomOf[i] >= 0);
-    if (cross < 0) cross = Math.floor(path.length / 2);
-    for (const [s, from, to] of [[a, Math.max(0, cross - 9), cross - 2], [b, cross + 2, Math.min(path.length - 1, cross + 9)]]) {
-      const streets = [];
-      for (let k = from; k <= to; k++) {
-        const i = path[k]; const x = i % W, z = (i / W) | 0;
-        if (tiles[i] !== T.ROAD) continue;
-        if (settlements.some((q) => Math.max(Math.abs(q.x - x), Math.abs(q.z - z)) <= q.r + 5)) continue;
-        streets.push({ x, z });
+  // 国境を越える街道のそば（自国側）を探す
+  const nearOther = (x, z, other, r = 3) => { for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) if (inb(x + dx, z + dz) && kingdomOf[idx(x + dx, z + dz)] === other) return true; return false; };
+  for (let ka = 0; ka < KINGDOMS.length; ka++) for (let kb = 0; kb < KINGDOMS.length; kb++) {
+    if (ka === kb) continue;
+    const A = settlements[ka], B = settlements[kb];
+    const mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
+    const streets = [];
+    for (const rr of [3, 7, 11]) {
+      for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
+        const i = idx(x, z);
+        if (tiles[i] !== T.ROAD || kingdomOf[i] !== ka) continue;
+        if (settlements.some((q) => Math.max(Math.abs(q.x - x), Math.abs(q.z - z)) <= q.r + 3)) continue;
+        if (!nearOther(x, z, kb, rr)) continue;
+        streets.push({ x, z, d: Math.hypot(x - mx, z - mz) + Math.hypot(x - A.x, z - A.z) * 0.3 });
       }
-      if (!streets.length) continue;
-      const mid = streets[Math.floor(streets.length / 2)];
-      const proxy = { x: mid.x, z: mid.z, r: 8, id: undefined, kingdom: s.kingdom };
-      const other = KINGDOMS[s === a ? b.kingdom : a.kingdom].name.replace('王国', '');
-      const f = tryPlace(world0(), proxy, streets, 'fort', `${KINGDOMS[s.kingdom].name.replace('王国', '')}の${dirName(s, mid.x, mid.z)}の砦`, 3, 3, { extra: { special: true, fort: true, faces: other, capital: s.id } }, rng);
-      if (f) { forts.push(f.id); specials.push(f.id); }
+      if (streets.length >= 3) break;
     }
+    if (!streets.length) continue;
+    streets.sort((p, q) => p.d - q.d);
+    const mid = streets[0];
+    const proxy = { x: mid.x, z: mid.z, r: 40, id: undefined, kingdom: ka };
+    const other = KINGDOMS[kb].name.replace('王国', '');
+    const f = tryPlace(world0(), proxy, streets.slice(0, 20), 'fort', `${KINGDOMS[ka].name.replace('王国', '')}の${other}国境砦`, 3, 3, { land: [T.GRASS, T.SAVANNA, T.FOREST, T.DESERT, T.SNOW, T.BEACH, T.DENSE, T.JUNGLE, T.ROCK], extra: { special: true, fort: true, faces: other, capital: A.id } }, rng);
+    if (f) { forts.push(f.id); specials.push(f.id); }
   }
+
   // --- 特別な場所 ---
   const farFromTowns = (x, z, d) => settlements.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + d);
   function findSite(pred, n = 3000) {
@@ -594,6 +606,7 @@ export function generateWorld(rng, seed) {
     const door = { x: site.x + Math.floor(w / 2), z: site.z + d };
     if (!walkable(get(door.x, door.z)) || get(door.x, door.z) === T.BLD || !onMain(door.x, door.z)) return null;
     const b = addBuilding(type, name, site.x, site.z, w, d, door, { face: 'S', special: true, kingdom: kingdomOf[idx(site.x, site.z)], ...extra });
+    if (!isWater(get(door.x, door.z))) set(door.x, door.z, T.ROAD); // 扉の前はふさがせない
     specials.push(b.id);
     return b;
   };
@@ -611,14 +624,17 @@ export function generateWorld(rng, seed) {
       if (!okBox(x, z, 3, 2, [T.GRASS, T.FOREST, T.DENSE, T.SNOW, T.SAVANNA, T.ROCK])) return null;
       const rocky = [[0, -1], [1, -1], [2, -1], [-1, 0], [3, 0]].filter(([dx, dz]) => get(x + dx, z + dz) === T.ROCK || get(x + dx, z + dz) === T.PEAK).length;
       if (!farFromTowns(x, z, 10) || specials.some((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) < 25)) return null;
-      return rocky * 3 + elev[idx(x, z)] * 10;
+      // 竜の巣は人里から十分に離す（村のそばに居座って毎日警鐘が鳴らないように）
+      const townD = Math.min(...settlements.map((s) => Math.hypot(s.x - x, s.z - z) - s.r));
+      if (k === 1 && townD < 16) return null;
+      return rocky * 3 + elev[idx(x, z)] * 10 + (k === 1 ? Math.min(townD, 30) * 0.8 : 0);
     });
     addSpecial('cave', ['古の洞窟', '竜の巣穴', '嘆きの迷宮'][k], site, 3, 2);
   }
   // ピラミッド
   {
     const site = findSite((x, z) => {
-      if (!okBox(x, z, 7, 7, [T.DESERT, T.SAVANNA, T.GRASS])) return null;
+      if (!okBox(x - 1, z - 1, 9, 8, [T.DESERT, T.SAVANNA, T.GRASS, T.BEACH])) return null;
       if (!farFromTowns(x, z, 8)) return null;
       let desert = 0;
       for (let dz = 0; dz < 7; dz++) for (let dx = 0; dx < 7; dx++) if (get(x + dx, z + dz) === T.DESERT) desert++;
@@ -673,14 +689,15 @@ export function generateWorld(rng, seed) {
     const vills = settlements.filter((q) => q.kingdom === ki && q.type !== 'capital');
     if (!vills.length) return;
     const site = findSite((x, z) => {
-      if (kingdomOf[idx(x, z)] !== ki || !onMain(x, z)) return null;
-      if (!okBox(x - 1, z - 1, 7, 5, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE])) return null;
-      if (!farFromTowns(x, z, 9) || specials.some((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) < 12)) return null;
+      if ((kingdomOf[idx(x, z)] !== ki && kingdomOf[idx(x, z)] !== -1) || !onMain(x, z)) return null;
+      if (!okBox(x - 1, z - 1, 4, 3, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE, T.JUNGLE, T.SNOW])) return null;
+      if (!farFromTowns(x, z, 6) || specials.some((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) < 10)) return null;
+      const room = okBox(x + 2, z - 1, 5, 3, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE]) ? 4 : 0;
       const dv = Math.min(...vills.map((v) => Math.hypot(v.x - x, v.z - z)));
-      if (dv > 40) return null;
+      if (dv > 46) return null;
       let river = 0, road = 0;
       for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) { const t = get(x + dx, z + dz); if (t === T.RIVER) river++; if (t === T.ROAD) road++; }
-      return Math.min(river, 3) * 2 - Math.abs(dv - 22) * 0.2 - Math.min(road, 5) + rng.next();
+      return room + Math.min(river, 3) * 2 - Math.abs(dv - 22) * 0.2 - Math.min(road, 5) + rng.next();
     }, 3000);
     if (!site) return;
     const home = vills.slice().sort((a, b) => Math.hypot(a.x - site.x, a.z - site.z) - Math.hypot(b.x - site.x, b.z - site.z))[0];
@@ -726,6 +743,16 @@ export function generateWorld(rng, seed) {
       if (path.length && path.length < 40) { layRoad(path); for (const i of path) growNet(i); }
     }
   }
+  // 町の中：門と建物の扉が、すべて道の網につながっているか（城の裏の行き止まりなど）
+  for (const s of settlements) {
+    for (const g of s.gates || []) if (!roadNet[idx(g.x, g.z)]) connect(g.x, g.z);
+    for (const id of s.buildings) { const b = buildings[id]; if (!roadNet[idx(b.door.x, b.door.z)]) connect(b.door.x, b.door.z); }
+    if (s.type !== 'capital') {
+      const before = s.gates || [];
+      s.gates = findGates(s);
+      for (const g of s.gates) { const old = before.find((q) => q.x === g.x && q.z === g.z); if (old?.post != null) g.post = old.post; }
+    }
+  }
   const unlinked = [];
   for (const id of specials) {
     const b = buildings[id];
@@ -745,7 +772,7 @@ export function tryPlace(w, s, streets, type, name, bw, bd, opt, rng, minOut = n
   const { tiles, hgt, bldAt, buildings } = w;
   const inb = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
   const get = (x, z) => (inb(x, z) ? tiles[z * W + x] : T.DEEP);
-  const land = [T.GRASS, T.SAVANNA, T.FOREST, T.DESERT, T.SNOW, T.BEACH];
+  const land = opt.land || [T.GRASS, T.SAVANNA, T.FOREST, T.DESERT, T.SNOW, T.BEACH];
   const R = s.r + (s.extraR || 0);
   const dirs = [{ dx: 0, dz: -1, f: 'S' }, { dx: 0, dz: 1, f: 'N' }, { dx: -1, dz: 0, f: 'E' }, { dx: 1, dz: 0, f: 'W' }];
   for (const r of streets) {
@@ -764,6 +791,7 @@ export function tryPlace(w, s, streets, type, name, bw, bd, opt, rng, minOut = n
       let ok = true;
       for (let z = z0; z < z0 + fd && ok; z++) for (let x = x0; x < x0 + fw; x++) if (!land.includes(get(x, z))) { ok = false; break; }
       if (!ok) continue;
+      if (!keepsConnected(tiles, x0, z0, fw, fd, doorX, doorZ)) continue;
       const id = buildings.length;
       for (let z = z0; z < z0 + fd; z++) for (let x = x0; x < x0 + fw; x++) { tiles[z * W + x] = T.BLD; bldAt[z * W + x] = id; hgt[z * W + x] = hgt[doorZ * W + doorX]; }
       tiles[doorZ * W + doorX] = T.ROAD;
@@ -773,6 +801,30 @@ export function tryPlace(w, s, streets, type, name, bw, bd, opt, rng, minOut = n
     }
   }
   return null;
+}
+
+// 建物を置いても、まわりの歩ける場所どうしが（近くで）つながったままか。細い通り道をふさがないため
+const SOLID = new Set([T.DEEP, T.SEA, T.RIVER, T.PEAK, T.BLD, T.FENCE, T.LAVA, T.WALL]);
+function keepsConnected(tiles, x0, z0, fw, fd, doorX, doorZ) {
+  const M = 4, bx0 = x0 - M, bz0 = z0 - M, bw = fw + M * 2, bd = fd + M * 2;
+  const inFoot = (x, z) => x >= x0 && x < x0 + fw && z >= z0 && z < z0 + fd;
+  const okT = (x, z) => x >= 0 && z >= 0 && x < W && z < H && !inFoot(x, z) && !SOLID.has(tiles[z * W + x]);
+  const ring = [];
+  for (let x = x0 - 1; x <= x0 + fw; x++) for (const z of [z0 - 1, z0 + fd]) if (okT(x, z)) ring.push([x, z]);
+  for (let z = z0; z < z0 + fd; z++) for (const x of [x0 - 1, x0 + fw]) if (okT(x, z)) ring.push([x, z]);
+  if (ring.length <= 1) return true;
+  const seen = new Uint8Array(bw * bd);
+  const key = (x, z) => (z - bz0) * bw + (x - bx0);
+  const st = [[doorX, doorZ]]; seen[key(doorX, doorZ)] = 1;
+  while (st.length) {
+    const [x, z] = st.pop();
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz;
+      if (nx < bx0 || nz < bz0 || nx >= bx0 + bw || nz >= bz0 + bd || !okT(nx, nz)) continue;
+      const k = key(nx, nz); if (seen[k]) continue; seen[k] = 1; st.push([nx, nz]);
+    }
+  }
+  return ring.every(([x, z]) => seen[key(x, z)]);
 }
 
 // 町に家を追加で建てる（世帯数に合わせて）

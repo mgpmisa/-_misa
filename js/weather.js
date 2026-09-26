@@ -450,7 +450,9 @@ function disastersDaily(sim, R, g) {
     // 大嵐（海沿いの町）
     if (st.w === 'storm') {
       const hit = sids.filter((id) => g.coast[id]);
-      if (hit.length && R.chance(0.12) && ok('storm' + reg.i, 30)) gale(sim, R, reg, hit);
+      // 灯台守が火を守っている港は、船の被害が少ない
+      const tended = hit.every((id) => S.towns[id]?.lighthouse && S.t - S.towns[id].lighthouse < 1440 * 2);
+      if (hit.length && R.chance(tended ? 0.05 : 0.12) && ok('storm' + reg.i, 30)) gale(sim, R, reg, hit);
     }
   }
 }
