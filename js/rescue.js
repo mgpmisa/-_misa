@@ -15,7 +15,7 @@ import { startFight } from './society.js';
 import { around } from './creatures.js';
 import { gearGuardMul, gearWillDefend } from './gear.js';
 import { isBedridden } from './health.js';
-import { isRare } from './fauna.js';
+import { isRare, popTarget } from './fauna.js';
 
 const VOICE = 12;                 // 叫び声の届く距離（マス）
 const TICK = 1;                   // 何分ごとに見回すか
@@ -80,9 +80,21 @@ function isThreat(c) {
   if (!c || c.hp <= 0 || c.dormant || c.inDungeon || c.owner != null || c.keeper != null) return false;
   return c.hostile || BEASTS.has(c.sp);
 }
+// 数が少ない種か（1時間ごとに数え直す）
+function scarce(sim, sp) {
+  if (isRare(sim, sp)) return true;
+  const S = sim.S, hr = Math.floor(S.t / 60);
+  if (sim._rescueCntH !== hr) {
+    sim._rescueCntH = hr; const n = sim._rescueCnt = {};
+    for (const c of Object.values(S.creatures)) if (c.hp > 0 && BEASTS.has(c.sp)) n[c.sp] = (n[c.sp] || 0) + 1;
+  }
+  const t = popTarget(sim, sp) || 0;
+  return (sim._rescueCnt[sp] || 0) <= Math.max(3, t * 0.7);
+}
 // 殺すか、追い払うか：人を襲っている・飢えている・畑を荒らす・人を殺したことのある獣と魔物は討つ。
 // ただうろついているだけの獣は、人が大勢で近づけば逃げるので追い払う（どの種も絶滅させない）
 function mustKill(sim, c) {
+  if (!c.hostile && scarce(sim, c.sp)) return false;   // 数の少ない獣は、人を襲っていても追い払うだけ
   if (c.hostile || c.forage || (c.bounty || 0) > 0 || c.hunger < 15) return true;
   if (c.fight && typeof c.fight.target === 'number') return true;
   return false;
@@ -325,6 +337,7 @@ function stepIncident(sim, inc) {
       for (const p of around5) if (p.fight?.target === c.id) p.fight = null;
     }
   }
+  const threat = packPower(sim, c);
   // 駆けつける人：近づいたら戦う。獣が動いたら追い直す。深手を負った素人は退く
   for (const id of inc.rescuers) {
     const p = S.people[id];
@@ -339,6 +352,20 @@ function stepIncident(sim, inc) {
     p.mission.until = Math.max(p.mission.until, S.t + 30);
     if (p.fight) continue;
     const d = dist(p, c);
+    // ひとりずつ飛び込んで返り討ちにならないよう、力が揃うまで少し離れて待つ（襲われている人がいて、自分ひとりでも持ちこたえられるなら飛び込む）
+    if (d < 9 && inc.kill) {
+      const here = inc.rescuers.map((x) => S.people[x]).filter((q) => alive(sim, q) && dist(q, c) < 8).reduce((t, q) => t + humanPower(q), 0);
+      const urgent = inc.victims.some((x) => S.people[x]?.fight?.target === c.id);
+      const mine = humanPower(p);
+      if (!(here >= threat || (urgent || combatOf(p) >= 3) && mine >= threat * 0.8)) {
+        p.waitT = p.waitT || S.t;
+        if (d < 5 && !p.fight) { const k = 5.5 / Math.max(0.1, d); p.mission.x = Math.round(c.pos.x + (p.pos.x - c.pos.x) * k); p.mission.z = Math.round(c.pos.z + (p.pos.z - c.pos.z) * k); if (p.action?.type === 'rescue') p.action = null; }
+        if (S.t - p.waitT > 15 && !inc.runners.some((x) => alive(sim, S.people[x]) && S.people[x].mission?.type === 'alert')) { p.waitT = S.t; sendAlert(sim, p, c, inc); }
+        if (p.action?.type === 'rescue' && p.action.phase === 'do') p.action = null;
+        continue;
+      }
+      delete p.waitT;
+    }
     if (d < 7 && !(c.fleeUntil > S.t && d > 3)) {
       if (!inc.kill && SPECIES[c.sp]?.kind === 'wild') {
         // 追い払う：大声と武器で脅すと、獣は住みかへ逃げていく
@@ -427,7 +454,7 @@ function finish(sim, inc, how) {
   const S = sim.S, R = ensureRescue(sim), rng = sim.rng;
   delete R.inc[inc.c];
   const rescuers = inc.rescuers.map((id) => S.people[id]).filter((p) => alive(sim, p));
-  for (const p of rescuers) if (p.mission?.inc === inc.c) { p.mission = null; if (p.action?.type === 'rescue') p.action = null; }
+  for (const p of rescuers) { delete p.waitT; if (p.mission?.inc === inc.c) { p.mission = null; if (p.action?.type === 'rescue') p.action = null; } }
   for (const id of inc.runners) { const p = S.people[id]; if (alive(sim, p) && p.mission?.inc === inc.c) { p.mission = null; if (p.action?.type === 'alert') p.action = null; } }
   if (how !== 'killed' && how !== 'drivenOff') return;
   const heroes = inc.fought.map((id) => S.people[id]).filter((p) => alive(sim, p));
