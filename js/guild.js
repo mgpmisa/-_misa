@@ -1,5 +1,6 @@
 // 冒険者ギルド：依頼掲示板・クエスト・冒険者ランク・パーティー
 import { JOBS, SPECIES } from './data.js';
+import { bandBounty } from './monsters.js';
 import { ITEMS, DROPS, addItem, makeItem, countItem, takeItem, itemName } from './items.js';
 import { startFight, arrest } from './society.js';
 
@@ -56,7 +57,7 @@ export function guildDaily(sim) {
       const rank = Math.min(6, Math.floor(power / 9));
       const giver = R.pick(sim.living().filter((p) => p.s === near.id && sim.isAdult(p)));
       c.quested = true;
-      post(sim, { type: 'hunt', s: cap.id, from: near.id, target: c.id, rank, reward: Math.round(15 + power * 3 + (c.bounty || 0)), giver: giver?.id, title: `${sim.placeName(c.pos.x, c.pos.z)}の${c.name}を退治してほしい（${near.name}）` });
+      post(sim, { type: 'hunt', s: cap.id, from: near.id, target: c.id, rank, reward: Math.round(15 + power * 3 + (c.bounty || 0) + bandBounty(sim, c)), giver: giver?.id, title: `${sim.placeName(c.pos.x, c.pos.z)}の${c.name}を退治してほしい（${near.name}）` });
       if (open(cap.id) >= 9) break;
     }
     // 2) 素材の採集（医者・薬師・鍛冶屋・錬金術師から）

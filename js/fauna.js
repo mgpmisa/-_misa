@@ -1168,7 +1168,7 @@ function breed(sim, animals, si, dos) {
     if (def.kind !== 'wild' || mom.sex !== 'f' || mom.juv || mom.hp <= 0 || !mom.mate) continue;
     const season = sp === 'penguin' ? 3 : 0;
     const rareBoost = (count[sp] || 0) < (popTarget(sim, sp) || POP[sp] || 6) * 0.6;
-    if (si !== season && !(rareBoost && si !== 3)) continue;
+    if (si !== season && !(rareBoost && si !== 3)) continue; // 数が減った種は夏・秋にも産む
     const dad = cr(S, mom.mate);
     if (!dad || dad.hp <= 0 || d2(dad, mom) > 14) continue;
     if (juvKids(S, mom).length || mom.hunger < 40 || (mom._bredY === sim.year())) continue;
@@ -1630,6 +1630,8 @@ export function trophicLevel(sp) { return FOOD_WEB[sp]?.lv ?? (SPECIES[sp]?.mons
 export function canHunt(sim, predSp, preySp, desperate = false) {
   if (!preyFor(predSp).includes(preySp)) return false;
   if (!desperate && isRare(sim, preySp)) return false;
+  // 人は獲物を狩り尽くさない：目安の7割を下回った種は狩らない（猟師の掟）
+  if (predSp === 'human') { const t = popTarget(sim, preySp); if (t && speciesCount(sim, preySp) < t * 0.7) return false; }
   return true;
 }
 
@@ -1664,7 +1666,7 @@ export function popTarget(sim, sp) {
 export function isRare(sim, sp) {
   const t = popTarget(sim, sp);
   if (!t) return false;
-  return speciesCount(sim, sp) < Math.max(2, t * 0.4);
+  return speciesCount(sim, sp) <= Math.max(2, t * 0.45);
 }
 
 // ---------- 餌場（16マス四方の区画ごとの草・木の実・魚） ----------
@@ -1738,7 +1740,7 @@ function forageGain(sim, c, def, si, drought) {
   const base = web?.base || (def.diet === 'meat' ? ['carrion'] : ['plant']);
   const fa = foodAt(sim, c.pos.x, c.pos.z);
   const bioF = foodFactor(sim, c, def, si, drought);
-  const snow = si === 3 ? 0.6 : 1; // 雪の下の草は掘らないと食べられない
+  const snow = si === 3 ? 0.75 : 1; // 雪の下の草は掘らないと食べられない
   let best = 0, kind = null;
   for (const k of base) {
     let v = BASE_RATE[k] * (fa[k] ?? 0);

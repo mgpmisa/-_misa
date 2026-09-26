@@ -9,6 +9,7 @@ import { startFight } from './society.js';
 import { DROPS, addItem, makeItem } from './items.js';
 import { splitCoins, splitLoot } from './guild.js';
 import { faunaThink, faunaDied } from './fauna.js';
+import { monsterThink, onMonsterKilled } from './monsters.js';
 
 // 生息数の目安
 const POP = {
@@ -240,6 +241,7 @@ function think(sim, c, def, all, humans) {
   }
   // 動物の暮らし（家族・住処・飢え・序列・縄張り）
   if (faunaThink(sim, c, def, all, humans)) return;
+  if (monsterThink(sim, c, def, all, humans)) return;
   // 役割ごとのふるまい
   switch (c.role) {
     case 'herder': case 'plow': {
@@ -433,6 +435,7 @@ export function killCreature(sim, c, killer) {
   delete S.creatures[c.id];
   sim.events.push({ type: 'cdied', id: c.id });
   faunaDied(sim, c, killer);
+  onMonsterKilled(sim, c, killer);
   const mem = S.speciesMemory[c.sp] || (S.speciesMemory[c.sp] = { deaths: 0, kills: 0, evolved: 0, danger: {}, fear: 0 });
   mem.deaths++;
   const key = Math.floor(c.pos.x / 8) * 100 + Math.floor(c.pos.z / 8);

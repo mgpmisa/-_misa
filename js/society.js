@@ -1,6 +1,7 @@
 // 戦い・犯罪・裁き
 import { clamp } from './rng.js';
 import { growthStats, growthAttack } from './growth.js';
+import { monsterTactics } from './monsters.js';
 import { JOBS, SPECIES } from './data.js';
 import { killCreature } from './creatures.js';
 import { W } from './world.js';
@@ -68,6 +69,7 @@ export function stepCombat(sim, dt) {
     if (e.fight.cd > 0) continue;
     e.fight.cd = 1;
     const R = sim.rng;
+    if (!isHuman(e) && monsterTactics(sim, e, t)) continue;
     // 危なくなったら回復薬を飲む
     if (isHuman(e) && e.hp < e.maxhp * 0.35 && countItem(e, 'potion') > 0) { takeItem(e, 'potion', 1); e.hp = Math.min(e.maxhp, e.hp + 45); sim.events.push({ type: 'heal', id: e.id }); continue; }
     let dmg = Math.max(1, Math.round(e.atk * R.range(0.7, 1.3) - (t.def || 0) * 0.5));

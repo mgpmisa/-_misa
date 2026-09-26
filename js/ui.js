@@ -9,6 +9,7 @@ import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
+import { monsterHtml } from './monsters.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
 import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js';
 import { healthLabel } from './health.js';
@@ -680,7 +681,7 @@ export class UI {
     const mem = S.speciesMemory[c.sp] || {};
     const state = c.dormant ? '魔王城の奥で眠っている' : c.fight ? '戦っている' : c.raid != null ? `${this.sim.town(c.raid).name}を襲いに向かっている` : c.fleeUntil && S.t < c.fleeUntil ? '逃げている' : c.goal?.run ? '獲物を追っている' : 'あたりをうろついている';
     let h = `<canvas id="portrait" class="portrait" width="64" height="80"></canvas>`;
-    h += `<div class="pname">${esc(c.given ? `${SPECIES[c.sp].name}の${c.given}` : c.name)}</div><div class="psub">${KIND_NAME[d.kind]}・Lv${c.lv}${c.named ? '・名のある個体' : ''}<br>役割：<span class="rank">${esc(ROLES[c.role] || 'なし')}</span><br>${esc(this.sim.placeName(c.pos.x, c.pos.z))}</div>`;
+    h += `<div class="pname">${esc(c.given && !c.name.includes(c.given) ? `${c.name}の${c.given}` : c.name)}</div><div class="psub">${KIND_NAME[d.kind]}・Lv${c.lv}${c.named ? '・名のある個体' : ''}<br>役割：<span class="rank">${esc(ROLES[c.role] || 'なし')}</span><br>${esc(this.sim.placeName(c.pos.x, c.pos.z))}</div>`;
     h += `<div class="psub">いま：${esc(state)}</div>`;
     h += `<div class="row-btns"><button id="followBtn" class="${this.follow === c.id ? 'on' : ''}">${this.follow === c.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">見る</button></div>`;
     const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(Math.max(0, Math.min(100, v)))}%"></i></div>`;
@@ -690,6 +691,7 @@ export class UI {
     h += `<div class="section"><h4>種族としての学び</h4><dl class="kv"><dt>仲間の死</dt><dd>${mem.deaths || 0}体</dd><dt>進化</dt><dd>${mem.evolved || 0}回</dd><dt>人間への警戒</dt><dd>${(mem.fear || 0) > 5 ? '強い（手強い人間は避ける）' : (mem.fear || 0) > 2 ? 'ある' : 'ない'}</dd><dt>避ける場所</dt><dd>${Object.values(mem.danger || {}).filter((v) => v > 2).length}か所</dd></dl></div>`;
     h += growthCreatureHtml(c) || '';
     h += faunaHtml(this.sim, c) || '';
+    h += monsterHtml(this.sim, c) || '';
     return h;
   }
 

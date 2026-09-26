@@ -30,6 +30,7 @@ import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, 
 import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade } from './logistics.js';
 import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
+import { monstersDaily, monstersHourly } from './monsters.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -1623,6 +1624,7 @@ export class Sim {
     taxesHourly(this);
     expansionHourly(this);
     demonHourly(this);
+    monstersHourly(this);
     weatherHourly(this);
     choreHourly(this);
     growthHourly(this);
@@ -1735,6 +1737,7 @@ export class Sim {
     financeDaily(this);
     creatureDaily(this);
     faunaDaily(this);
+    monstersDaily(this);
     justiceDaily(this);
     underworldDaily(this);
     politicsDaily(this);
@@ -1830,7 +1833,7 @@ export class Sim {
     const S = this.S, age = this.ageOf(p);
     p.deathYear = this.year(); p.deathCause = cause; p.deathDay = this.today;
     p.lastWords = p.thought;
-    p.killedBy = killer ? (killer.given ? killer.id : killer.name) : null;
+    p.killedBy = killer ? (typeof killer.id === 'number' ? killer.id : killer.name) : null;
     p.diedWhile = p.action?.type || null;
     if (p.job && age > 20 && JOBS[p.job]?.goods) p.deeds.unshift(`腕のいい${JOBS[p.job].name}だった`);
     if (p.formerJob && JOBS[p.formerJob]?.goods) p.deeds.unshift(`腕のいい${JOBS[p.formerJob].name}だった`);
@@ -1843,7 +1846,7 @@ export class Sim {
     S.graves.push(p.id);
     const causeTxt = DEATH_CAUSES[cause] || cause;
     // 目撃者のいない殺人では、犯人の名前は世間に出ない
-    const killerName = killer && !(cause === 'murder' && killer.given && !S.wanted[killer.id]) ? (killer.given || killer.name) : null;
+    const killerName = killer && !(cause === 'murder' && typeof killer.id === 'number' && !S.wanted[killer.id]) ? (typeof killer.id === 'number' ? killer.given : (killer.given && !killer.name.includes(killer.given) ? `${killer.name}の${killer.given}` : killer.name)) : null;
     this.dirty();
     for (const q of this.living()) {
       if (!q.rel) continue;
