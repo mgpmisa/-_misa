@@ -36,6 +36,7 @@ import { bankDaily, priceLevel, hhDeposit } from './bank.js';
 import { laborDaily, laborRestDay, restDayFor, laborWork, laborWorkMul, laborCandidates, laborArrive, laborDo } from './labor.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
+import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -1259,7 +1260,7 @@ export class Sim {
       p.cooldown = Math.max(0, p.cooldown - dt);
       if (p.fight) continue; // 戦闘中は society.js が処理
       p._spot = (p._spot || 0) - dt;
-      if (p._spot <= 0 && this._cgrid) { p._spot = 1; if (spotThreats(this, p, this._cgrid, around)) continue; }
+      if (p._spot <= 0 && this._cgrid && p.mission?.type !== 'rescue') { p._spot = 1; if (spotThreats(this, p, this._cgrid, around)) continue; }
       if (p.talk) { this.stepTalk(p); continue; }
       if (!a) { this.decide(p); continue; }
       if (a.phase === 'walk') {
@@ -1273,6 +1274,7 @@ export class Sim {
     this._defend = (this._defend || 0) - dt;
     if (this._defend <= 0) { this._defend = 5; defendTowns(this); }
     stepCombat(this, dt);
+    rescueStep(this, dt);
     this.checkEncounters(people, dt);
     stepConvoys(this, dt);
   }
@@ -1428,7 +1430,7 @@ export class Sim {
 
   walk(p, dt) {
     const age = this.ageOf(p);
-    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p);
+    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' || p.action.type === 'rescue' || p.action.type === 'alert' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p);
     const w = this.S.world;
     while (speed > 0 && p.path.length) {
       const t = p.path[0];
@@ -1685,6 +1687,7 @@ export class Sim {
     gearHourly(this);
     healthHourly(this);
     faunaHourly(this);
+    rescueHourly(this);
     financeHourly(this);
   }
 
@@ -1795,6 +1798,7 @@ export class Sim {
     bankDaily(this, GOODS);
     creatureDaily(this);
     faunaDaily(this);
+    rescueDaily(this);
     monstersDaily(this);
     justiceDaily(this);
     underworldDaily(this);

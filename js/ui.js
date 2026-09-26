@@ -5,6 +5,7 @@ import { innerThought } from './speech.js';
 import * as SPR from './sprites.js';
 import { ITEMS, itemName, itemValue } from './items.js';
 import { InteriorView } from './interior.js';
+import { RESCUE_ACTION_LABEL, RESCUE_ACTION_GO, RESCUE_PREF_LABEL, rescueNote } from './rescue.js';
 import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
@@ -49,6 +50,7 @@ const PREF_LABEL = {
   festival: '祭り', visit: '人を訪ねること', train: '鍛錬', work: '仕事', guild: 'ギルド通い', quest: '冒険', school: '勉強', storytell: '昔話', perform: '歌', court: '恋', trade: '商い', beg: '物乞い', steal: '盗み', buygear: '装備選び',
 };
 Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来ている' }); Object.assign(ACTION_GO, { collect: '借金を取り立てに向かっている' }); Object.assign(PREF_LABEL, { collect: '取り立て' });
+Object.assign(ACTION_LABEL, RESCUE_ACTION_LABEL); Object.assign(ACTION_GO, RESCUE_ACTION_GO); Object.assign(PREF_LABEL, RESCUE_PREF_LABEL);
 Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
 Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
 Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
@@ -657,6 +659,7 @@ export class UI {
       if (lc.length) h += `<div class="section"><h4>働きぶりとお金の使い方</h4><dl class="kv">${lc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       const ec = elderCard(this.sim, p);
       if (ec.length) h += `<div class="section"><h4>老後の備え</h4><dl class="kv">${ec.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
+      { const rn = rescueNote(this.sim, p); if (rn) h += `<div class="psub">${esc(rn)}</div>`; }
       if (cc.length) h += `<div class="section"><h4>人生の目標と修業</h4><dl class="kv">${cc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       h += `<div class="section"><h4>経験から学んだこと</h4><dl class="kv">
         <dt>好きな過ごし方</dt><dd>${likes.filter(([, v]) => v > 0.05).slice(0, 3).map(([k]) => esc(PREF_LABEL[k] || k)).join('、') || 'まだ手探り'}</dd>

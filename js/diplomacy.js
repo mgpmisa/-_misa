@@ -260,9 +260,14 @@ function search(sources, goal, cost, hx, hz, hw = 0.3, cap = W * H) {
   return path.reverse();
 }
 function dangerIdx(x, z) { const cw = Math.ceil(W / 8), ch = Math.ceil(H / 8); return Math.min(ch - 1, (z / 8) | 0) * cw + Math.min(cw - 1, (x / 8) | 0); }
-function inOtherTown(sim, x, z, keep) {
-  for (const s of sim.S.world.settlements) { if (s.abandoned || keep.has(s.id)) continue; if (cheb(s.x, s.z, x, z) <= (s.r || 6) + 1) return true; }
-  return false;
+function townMask(sim, keep) {
+  const m = new Uint8Array(W * H);
+  for (const s of sim.S.world.settlements) {
+    if (s.abandoned || keep.has(s.id)) continue;
+    const r = (s.r || 6) + 1;
+    for (let z = Math.max(0, s.z - r); z <= Math.min(H - 1, s.z + r); z++) for (let x = Math.max(0, s.x - r); x <= Math.min(W - 1, s.x + r); x++) m[z * W + x] = 1;
+  }
+  return m;
 }
 // 新しい街道の道すじ：自国の道の網（なければ町の門）から、相手の町の道の網（または町）まで
 function planPath(sim, k, fromSid, toSid, avoid = null) {
@@ -272,6 +277,7 @@ function planPath(sim, k, fromSid, toSid, avoid = null) {
   const to = sim.town(toSid), from = sim.town(fromSid);
   const tk = to.kingdom;
   const keep = new Set([fromSid, toSid]);
+  const mask = townMask(sim, keep);
   const sources = [];
   for (let i = 0; i < W * H; i++) { const L = net.lab[i]; if (L >= 0 && net.labGroup[L] === gF && (ko[i] === k || cheb(i % W, (i / W) | 0, from.x, from.z) <= from.r + 2)) sources.push(i); }
   if (!sources.length) for (const g of from.gates || []) if (inb(g.x, g.z)) sources.push(g.z * W + g.x);
@@ -282,8 +288,8 @@ function planPath(sim, k, fromSid, toSid, avoid = null) {
     const t = tiles[j];
     if (ROADLIKE(t)) return 0.3;
     if (NOBUILD.has(t)) return null;
+    if (mask[j]) return null;
     const x = j % W, z = (j / W) | 0;
-    if (inOtherTown(sim, x, z, keep)) return null;
     let c = t === T.RIVER ? 9 : (MOVE_COST[t] || 2) + Math.abs((hgt[j] || 0) - (hgt[i] || 0)) * 2;
     if (t === T.WASTE) c += 6;
     c += (dm[dangerIdx(x, z)] || 0) * 0.5;
@@ -298,7 +304,7 @@ function planPath(sim, k, fromSid, toSid, avoid = null) {
 function tracePath(sim, a, b) {
   const w = sim.S.world, tiles = w.tiles, A = sim.town(a), B = sim.town(b);
   const src = [];
-  for (let z = A.z - A.r; z <= A.z + A.r; z++) for (let x = A.x - A.r; x <= A.x + A.r; x++) if (inb(x, z) && ROADLIKE(tiles[z * W + x]) && cheb(x, z, A.x, A.z) === A.r) src.push(z * W + x);
+  for (let z = A.z - A.r - 1; z <= A.z + A.r + 1; z++) for (let x = A.x - A.r - 1; x <= A.x + A.r + 1; x++) if (inb(x, z) && ROADLIKE(tiles[z * W + x])) src.push(z * W + x);
   if (!src.length) src.push(A.z * W + A.x);
   return search(src, (i) => cheb(i % W, (i / W) | 0, B.x, B.z) <= B.r, (j) => (ROADLIKE(tiles[j]) ? 1 : null), B.x, B.z, 1);
 }
@@ -439,7 +445,8 @@ function planRoads(sim) {
       const bridges = todo.filter((i) => S.world.tiles[i] === T.RIVER).length;
       const work = todo.reduce((s, i) => s + (TILE_WORK[S.world.tiles[i]] || 1), 0);
       const cost = work / WORK_DAY * WAGE_DAY + bridges * BRIDGE_WOOD * 2;
-      const horizon = { merchant: 1.7, peace: 1.1, ambitious: 1.0, timid: 0.7 }[P.type];
+      // 街道は何十年も使える。王が「何年で元が取れればよい」と考えるか（1年＝40日）
+      const horizon = { merchant: 4, peace: 3, ambitious: 2.5, timid: 1.5 }[P.type];
       const benefit = c.gain * horizon;
       if (benefit < cost || k.treasury - cost * 0.5 < reserve) { D.cool[`road:${k.id}:${c.to}`] = sim.today + 20; setNote(sim, k.id, `${sim.town(c.to).name}への街道は、費用（約${r0(cost)}銅貨）に見合わないと見送った`); continue; }
       if (startRoad(sim, k.id, c, path, todo, cost)) { started = true; break; }
@@ -482,7 +489,7 @@ function startRoad(sim, k, c, path, todo, cost) {
     const crosses = todo.some((i) => S.world.kingdomOf[i] === tk);
     const PT = kingPolicyOf(sim, tk);
     const their = tradeGain(sim, tk, c.to, c.from) + popOf(sim, (p) => sim.town(p.s)?.kingdom === k) * 1.2;
-    const theyLike = rel(sim, tk, k) > 10 && PT.type !== 'timid' && K(sim, tk).treasury > 500 && their * ({ merchant: 1.7, peace: 1.1, ambitious: 1, timid: 0.7 }[PT.type]) > cost * 0.5;
+    const theyLike = rel(sim, tk, k) > 10 && PT.type !== 'timid' && K(sim, tk).treasury > 500 && their * ({ merchant: 4, peace: 3, ambitious: 2.5, timid: 1.5 }[PT.type]) > cost * 0.5;
     if (theyLike && kingOf(sim, tk)) partner = tk;
     else if (crosses && (rel(sim, tk, k) < -20 || (PT.type === 'ambitious' && rel(sim, tk, k) < 10))) {
       D.stats.refused++; D.cool[`road:${k}:${c.to}`] = sim.today + 30;
@@ -607,10 +614,10 @@ function layTile(sim, road, kid, i, t, changed) {
   const m = near ? S.towns[near.id] : null;
   if (t === T.RIVER) {
     // 橋：材木を市場から買う（国庫 → 市場の金庫）。在庫がなければ細い橋で済ませる
-    if (m && m.stock.wood >= BRIDGE_WOOD) {
+    if (m && m.cash != null && m.stock.wood >= BRIDGE_WOOD) {
       const KK = K(sim, kid);
       const cost = BRIDGE_WOOD * m.price.wood;
-      if (KK.treasury > cost) { sim.mcash?.(near.id); KK.treasury -= cost; m.cash = (m.cash || 0) + cost; m.stock.wood -= BRIDGE_WOOD; road.spent[kid] = (road.spent[kid] || 0) + cost; }
+      if (KK.treasury > cost) { KK.treasury -= cost; m.cash += cost; m.stock.wood -= BRIDGE_WOOD; road.spent[kid] = (road.spent[kid] || 0) + cost; }
     }
     w.tiles[i] = T.BRIDGE; road.bridged.push(i); D.stats.bridges++;
   } else {
@@ -630,7 +637,7 @@ function hireCrew(sim, k, x, z, n, road) {
   const S = sim.S;
   const near = towns(sim, k).filter((s) => Math.hypot(s.x - x, s.z - z) <= CREW_REACH + (s.r || 0));
   const pool = (near.length ? near : [nearestTown(sim, k, x, z)].filter(Boolean)).map((s) => s.id);
-  const ok = (p) => pool.includes(p.s) && p.jail == null && !p.fight && !p.mission && !p.quest && p.expedition == null && p.expProj == null && !p.bandit
+  const ok = (p) => pool.includes(p.s) && p.jail == null && !p.fight && (!p.mission || p.mission.type === 'roadbuild') && !p.quest && p.expedition == null && p.expProj == null && !p.bandit
     && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 58 && (p.hp || 1) > (p.maxhp || 1) * 0.6 && !['king', 'royal', 'noble', 'knight'].includes(p.rank) && !ARMY.has(p.job) && !p.action?.convoy;
   const cands = sim.living().filter(ok);
   const score = (p) => (p.job === 'roadworker' ? 10 : p.job === 'pioneer' ? 7 : LABOR.has(p.job) ? 3 : !p.job ? 4 : 0) + ((sim.hh(p)?.money || 0) < 60 ? 3 : 0) + ((road.crew || []).includes(p.id) || (road.pcrew || []).includes(p.id) ? 2 : 0);
@@ -786,7 +793,8 @@ function tollConvoy(sim, g, c) {
   let due = f.fixed + f.customs;
   const capLeft = value > 0 ? Math.max(0, value * TOLL.capFrac - c.tolls.paid) : due;
   due = Math.min(due, Math.max(f.fixed * (value > 0 ? 0 : 1), capLeft));
-  if (due <= 0.01) { c.tolls.k[g.k] = sim.today; if (f.customs === 0 && !f.local && g.kind === 'border') c.gateCustoms = true; return; }
+  const mark = () => { if (!f.local && g.kind === 'border') { c.gateK = c.gateK || {}; c.gateK[g.k] = 1; } };
+  if (due <= 0.01) { c.tolls.k[g.k] = sim.today; mark(); return; }
   const acct = convoyAcct(sim, c);
   if (!acct) return;
   const own = S.people[c.owner];
@@ -812,7 +820,7 @@ function tollConvoy(sim, g, c) {
       const b = take(acct, due * TOLL.bribeFrac);
       guard.purse = (guard.purse || 0) + b;
       g.bribes++; D.stats.bribes++; D.stats.bribeAmt += b;
-      c.tolls.k[g.k] = sim.today;
+      c.tolls.k[g.k] = sim.today; mark();
       sim.remember(own, `${g.name}の番兵に${r0(b)}銅貨を握らせて通してもらった`, { emo: 0.2, imp: 0.4, k: 'tax' });
       if (R.chance(TOLL.bribeCaught)) { sim.remember(guard, `${g.name}でわいろを受け取ったのが上役にばれて、きつく叱られた`, { emo: -0.7, imp: 0.6, k: 'duty' }); guard.needs && (guard.needs.esteem = Math.max(0, guard.needs.esteem - 20)); }
       else sim.remember(guard, `${g.name}で商人から袖の下を受け取った`, { emo: 0.2, imp: 0.3, k: 'duty' });
@@ -822,7 +830,8 @@ function tollConvoy(sim, g, c) {
   const paid = take(acct, due);
   collect(sim, g, paid);
   c.tolls.paid += paid; c.tolls.k[g.k] = sim.today;
-  if (f.customs > 0) { D.stats.customs += Math.min(paid, f.customs); c.gateCustoms = true; } else if (!f.local && g.kind === 'border') c.gateCustoms = true;
+  if (f.customs > 0) D.stats.customs += Math.min(paid, f.customs);
+  mark();
   D.stats.fixed += Math.max(0, paid - f.customs);
   if (c.diplo) { const dl = D.deals.find((d) => d.id === c.diplo); if (dl) dl.toll = (dl.toll || 0) + paid; }
   g.last = { d: sim.today, amt: paid, who: own ? sim.fullName(own) : '国の隊商' };
@@ -897,12 +906,14 @@ function caravanArrivals(sim) {
     deliver(sim, D.deals.find((d) => d.id === c.diplo), c);
   }
   // 隊商が道中で消えた（襲われて荷を失った・道に迷って引き返した）
+  if (sim.S.t < (D._scan || 0)) return;
   for (const dl of D.deals) if (dl.state === 'shipping' && !live.has(dl.id)) { dl.state = 'lost'; D.stats.lost++; note(sim, `${partyName(sim, dl.seller)}から${partyName(sim, dl.buyer)}へ向かった国の隊商（${gname(dl.good)}${dl.qty}）は、道中で荷を失った`, [dl.seller, dl.buyer].filter((x) => typeof x === 'number'), { pos: sim.town(dl.to) }); }
 }
 function acctOfParty(sim, party) {
   if (typeof party === 'number') { const k = K(sim, party); return k ? { get money() { return k.treasury; }, set money(v) { const d = v - k.treasury; k.treasury = v; if (d > 0 && k.fisc) k.fisc.dayIn += d; } } : null; }
-  const sid = +String(party).slice(1); sim.mcash?.(sid); const m = sim.S.towns[sid];
-  return m ? { get money() { return m.cash || 0; }, set money(v) { m.cash = v; } } : null;
+  // 市場の金庫がまだ開かれていない村（m.cash がない）とは取引しない（sim.mcash は最初に800を置くので、ここでは呼ばない）
+  const sid = +String(party).slice(1); const m = sim.S.towns[sid];
+  return m && m.cash != null ? { get money() { return m.cash || 0; }, set money(v) { m.cash = v; } } : null;
 }
 function deliver(sim, dl, c) {
   const S = sim.S, D = S.diplo;
@@ -917,8 +928,7 @@ function deliver(sim, dl, c) {
   if (seller) seller.money += x;
   dl.paid += x;
   // 買い手の国は、届いた品を自国の市場に卸す（市場の金庫 → 国庫）
-  if (typeof dl.buyer === 'number' && m) {
-    sim.mcash?.(dl.to);
+  if (typeof dl.buyer === 'number' && m && m.cash != null) {
     const sale = Math.min((m.cash || 0) * 0.5, got * m.price[dl.good] * 0.9);
     m.cash -= sale; toTreasury(K(sim, dl.buyer), sale); dl.resold = sale;
   }
@@ -1024,8 +1034,7 @@ function startDeal(sim, o) {
   const buyCost = o.pS * o.qty;
   if (typeof o.seller === 'number') {
     const Ks = K(sim, o.seller);
-    if (Ks.treasury < buyCost + 150) return false;
-    sim.mcash?.(o.from);
+    if (Ks.treasury < buyCost + 150 || ms.cash == null) return false;
     Ks.treasury -= buyCost; ms.cash = (ms.cash || 0) + buyCost;
   }
   ms.stock[o.good] -= o.qty;
@@ -1156,9 +1165,9 @@ function maybeWar(sim, x, y) {
 function watchWars(sim) {
   const S = sim.S, D = S.diplo;
   for (const k of S.kingdoms) {
-    const key = k.war ? `${k.war.name}@${k.war.since}` : null;
-    if (key && D.warSeen[k.id] !== key) { const other = S.kingdoms[k.war.with]; const okey = other?.war ? `${other.war.name}@${other.war.since}` : null; if (D.warSeen[other?.id] !== okey) D.stats.warsAll++; }
-    D.warSeen[k.id] = key;
+    if (!k.war) continue;
+    const key = `${Math.min(k.id, k.war.with)}-${Math.max(k.id, k.war.with)}@${k.war.since}`;
+    if (!D.warSeen[key]) { D.warSeen[key] = sim.today; D.stats.warsAll++; }
   }
   // 戦になった国どうしの協定は破られる
   for (const p of D.pacts) if ((p.type === 'trade' || p.type === 'jointroad' || p.type === 'alliance') && p.until > sim.today && atWar(sim, p.a, p.b)) { p.until = sim.today; p.broken = true; note(sim, `${kname(sim, p.a)}と${kname(sim, p.b)}の${PACT_NAME[p.type]}は、戦で破れた`, [p.a, p.b], { log: true }); }
@@ -1192,8 +1201,8 @@ function gatesDaily(sim) {
     for (const p of guards) { const x = Math.min(TOLL.guardDay, g.box); if (x <= 0) break; g.box -= x; const hh = sim.hh(p); if (hh) hh.money += x; else p.purse = (p.purse || 0) + x; }
     if (g.box > TOLL.boxCap) { toTreasury(K(sim, g.k), g.box - TOLL.boxCap); g.box = TOLL.boxCap; }
     if (g.today.n > 0 && sim.rng.chance(0.6)) note(sim, `${g.name}：今日は${g.today.n}件から通行料${Math.round(g.today.amt * 10) / 10}銅貨を取った`, [g.k], { pos: g });
+    for (const id of g.roads) { const r = D.roads.find((q) => q.id === id); if (r && !r.ancient) r.wear = (r.wear || 0) + g.today.n * 0.3 + 0.1; }
     g.today = { n: 0, amt: 0 };
-    for (const id of g.roads) { const r = D.roads.find((q) => q.id === id); if (r) r.wear = (r.wear || 0) + g.passes * 0.01 + 0.2; }
   }
   for (const k of S.kingdoms) if ((D.fund[k.id] || 0) > TOLL.fundCap) { toTreasury(k, D.fund[k.id] - TOLL.fundCap); D.fund[k.id] = TOLL.fundCap; }
   // 古い印の掃除
@@ -1301,7 +1310,8 @@ export function drawGates(sim, g, sc = 1) {
   for (const v of gateViews(sim)) { g.fillStyle = v.color || '#fff'; g.fillRect(v.x * sc - 2, v.z * sc - 2, 4, 4); g.strokeStyle = '#000'; g.strokeRect(v.x * sc - 2, v.z * sc - 2, 4, 4); }
 }
 // 関所を通った荷車は、行き先の町の関税（taxes.js の tariffConvoy）を取らない（二重取りを防ぐ）
-export const paidAtGate = (c) => !!(c && c.gateCustoms);
+// （行き先の国の国境の関所を通って、関税を払った・条約で免除された荷だけ）
+export function paidAtGate(sim, c) { const k = c ? kOfSid(sim, c.to) : null; return !!(c && k != null && c.gateK?.[k]); }
 // お金の置き場所（監査用）：街道の蓄えと、関所の番兵の箱
 export function diplomacyMoneyPools(sim) {
   const D = sim.S.diplo; if (!D) return { fund: 0, box: 0, total: 0 };
