@@ -519,8 +519,6 @@ export class Sim {
     // 囚人
     if (p.jail != null) {
       const b = this.building(p.jail);
-      // 牢では一日二度、粗末な食事が配られる
-      if (n.hunger < 45 && (h >= 7 && h < 8 || h >= 17 && h < 18)) n.hunger = Math.min(100, n.hunger + 50);
       this.startAction(p, { type: h >= 21 || h < 6 ? 'sleep' : 'jail', place: { x: b.door.x, z: b.door.z, bld: b.id }, dur: 120 });
       return;
     }
@@ -1588,6 +1586,8 @@ export class Sim {
     computeDanger(this);
     crimeHourly(this);
     underworldHourly(this);
+    // 牢の食事：朝と夕に囚人全員へ配る
+    { const hh = Math.floor(this.hour()); if (hh === 7 || hh === 17) for (const q of this.living()) if (q.jail != null && q.needs.hunger < 70) q.needs.hunger = Math.min(100, q.needs.hunger + 50); }
     politicsHourly(this);
     demonHourly(this);
     weatherHourly(this);

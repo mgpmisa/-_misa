@@ -73,7 +73,7 @@ export function lodTier(sim, x, z) {
 }
 
 // 生き物をこの歩で動かすか。0 なら今回は動かさない。k なら dt×k の時間でまとめて動かす。
-// 戦い・襲撃・人の近くにいる生き物は、いつも毎歩（1）。
+// 戦い・襲撃・飼われている生き物・人の近くにいる生き物は、いつも毎歩（1）。
 export function lodMul(sim, c) {
   const L = sim._lod;
   if (!L || !L.on) return 1;
@@ -82,6 +82,34 @@ export function lodMul(sim, c) {
   if (tier === 0) return 1;
   const per = LOD_PERIOD[tier];
   return (L.n + idHash(L, c.id)) % per === 0 ? per : 0;
+}
+
+// この歩で動かす生き物の一覧を [生き物, 倍率, 生き物, 倍率, ...] の形で返す（LOD が切れていれば null）。
+// 注意の地図を作り直すとき（10分ごと）に、段階ごと・順番ごとの組に分けておき、毎歩はその組だけを回す。
+// 全員を毎歩なめる手間が、近い生き物＋遠い生き物の 1/3・1/10 ですむ。
+// 組分けのあとに生まれた生き物は、次の組分け（10分以内）から動き出す。
+export function lodDue(sim, all) {
+  const L = sim._lod;
+  if (!L || !L.on) return null;
+  if (L.bucketAt !== L.next) {
+    L.bucketAt = L.next;
+    L.b0 = []; L.b1 = [[], [], []].slice(0, LOD_PERIOD[1]); L.b2 = Array.from({ length: LOD_PERIOD[2] }, () => []);
+    while (L.b1.length < LOD_PERIOD[1]) L.b1.push([]);
+    for (const c of all) {
+      if (c.dormant || c.hp <= 0) continue;
+      const always = c.fight || c.raid != null || c.occupier != null || c.owner != null;
+      const tier = always ? 0 : lodTier(sim, c.pos.x, c.pos.z);
+      if (tier === 0) L.b0.push(c);
+      else (tier === 1 ? L.b1 : L.b2)[idHash(L, c.id) % LOD_PERIOD[tier]].push(c);
+    }
+  }
+  const out = L.due || (L.due = []);
+  out.length = 0;
+  for (const c of L.b0) out.push(c, 1);
+  const p1 = LOD_PERIOD[1], p2 = LOD_PERIOD[2];
+  for (const c of L.b1[L.n % p1]) out.push(c, c.fight || c.raid != null ? 1 : p1);
+  for (const c of L.b2[L.n % p2]) out.push(c, c.fight || c.raid != null ? 1 : p2);
+  return out;
 }
 
 // 人の歩き（遠い荒野をひとりで旅している人だけ間引く）。人の注意の地図とは別に、カメラと町だけを見る。
