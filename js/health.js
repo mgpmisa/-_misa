@@ -15,11 +15,11 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 // s0:かかった時の重さ rise:悪くなる日数 up/down:一日の増減 spread:同じ家の人にうつる確率/日 lethal:0なら死なない
 export const AILS = {
   cold:  { name: '風邪',       s0: [8, 20],  rise: [1, 2], up: [3, 8],  down: [6, 11], spread: 0.04, lethal: 1, cause: 'illness', imm: 12 },
-  flu:   { name: '流行り病',   s0: [18, 32], rise: [3, 5], up: [6, 12], down: [5, 10], spread: 0.1, lethal: 1, cause: 'sick', imm: 200 },
-  fever: { name: '熱病',       s0: [20, 34], rise: [2, 4], up: [5, 11], down: [5, 9],  spread: 0,    lethal: 1, cause: 'fever', imm: 30 },
+  flu:   { name: '流行り病',   s0: [20, 34], rise: [3, 5], up: [8, 14], down: [5, 10], spread: 0.1, lethal: 1, cause: 'sick', imm: 200 },
+  fever: { name: '熱病',       s0: [20, 34], rise: [2, 4], up: [6, 12], down: [5, 9],  spread: 0,    lethal: 1, cause: 'fever', imm: 30 },
   belly: { name: '腹下し',     s0: [12, 24], rise: [1, 2], up: [4, 9],  down: [8, 14], spread: 0.03, lethal: 1, cause: 'illness', imm: 6 },
   ache:  { name: '古傷の痛み', s0: [10, 22], rise: [1, 2], up: [2, 6],  down: [4, 8],  spread: 0,    lethal: 0, cause: null, imm: 3 },
-  wound: { name: '傷の膿み',   s0: [24, 38], rise: [1, 3], up: [5, 11], down: [5, 10], spread: 0,    lethal: 1, cause: 'wound', imm: 0 },
+  wound: { name: '傷の膿み',   s0: [24, 38], rise: [1, 3], up: [6, 12], down: [5, 10], spread: 0,    lethal: 1, cause: 'wound', imm: 0 },
 };
 
 // 戦いの後遺症
@@ -107,7 +107,10 @@ function progressDaily(sim, p, age, si) {
   else a.sev -= rr(R, d.down) - risk * 0.8;
   a.sev = clamp(a.sev + R.gauss(0, 3), 0, d.lethal ? 100 : 70);
   a.care = 0; a.rest = 0; a.work = 0;
-  if (a.sev >= 100) {
+  // 峠：重いまま持ちこたえられるかどうか（年寄りと幼子は弱い）
+  const frail = age >= 70 || age < 3 ? 1.6 : age >= 60 || age < 6 ? 1.2 : 0.7;
+  const crisis = d.lethal && a.sev >= 65 && R.chance(Math.pow((a.sev - 60) / 40, 2) * 0.5 * frail);
+  if (a.sev >= 100 || crisis) {
     h.stats.died++;
     const cause = d.cause || 'illness';
     const town = sim.townOf(p);

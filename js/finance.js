@@ -126,12 +126,12 @@ function seekLoans(sim) {
     if (mine.length >= 2) continue;
     const has = (w) => mine.some((l) => l.why === w);
     const mems = hh.members.map((id) => alive(sim, id)).filter(Boolean);
-    const recent = (k, d) => mems.some((q) => q.memories?.some((m) => m.k === k && m.src === 'self' && sim.today - m.t <= d));
+    const recent = (k, d, own) => mems.some((q) => q.memories?.some((m) => m.k === k && m.src === 'self' && sim.today - m.t <= d && (!own || S.people[m.about?.[0]]?.hh === hh.id)));
     let need = 0, why = null;
     // 食べ物代：家計が底をつきかけ、食べ物も少ない
     if (hh.money < 25 && hh.food < mems.length * 2 && (head.purse || 0) < 10 && !has('food') && R.chance(0.3)) { need = 10 + mems.length * 5; why = 'food'; }
     // 弔いの費用：身内を亡くしたばかり
-    else if (recent('death', 1) && hh.money < 70 && !has('funeral') && R.chance(0.35)) { need = R.int(20, 40); why = 'funeral'; }
+    else if (recent('death', 1, true) && hh.money < 70 && !has('funeral') && R.chance(0.35)) { need = R.int(20, 40); why = 'funeral'; }
     // 婚礼の費用：婚約したばかり
     else if (recent('engage', 3) && hh.money < 90 && !has('wedding') && R.chance(0.4)) { need = R.int(30, 60); why = 'wedding'; }
     // 家を借りる元手：宿なし・宿住まい
@@ -192,7 +192,7 @@ function dueCheck(sim) {
     if (!p || !q) continue;
     // 余裕があれば早めに返す
     if (sim.today < l.due) {
-      if (cashOf(sim, p) > l.owed + 50 && R.chance(0.25 + p.pers.C * 0.3)) repay(sim, l, l.owed, true);
+      if (sim.today - l.day >= 5 && l.why !== 'land' && cashOf(sim, p) > l.owed + 50 && R.chance(0.25 + p.pers.C * 0.3)) repay(sim, l, l.owed, true);
       continue;
     }
     const cash = cashOf(sim, p);
@@ -239,7 +239,7 @@ function seize(sim, l, p, q) {
   for (const it of goods) {
     if (need <= 0) break;
     const v = itemValue(it) * 0.6;
-    if (v < 2) continue;
+    if (itemValue(it) < 10) continue;
     p.inv.splice(p.inv.indexOf(it), 1);
     for (const k of Object.keys(p.eq || {})) if (p.eq[k] === it) p.eq[k] = null;
     addItem(q, it);
@@ -366,7 +366,7 @@ export function financeCandidates(sim, p, add) {
   if (!b || !hh || hh.house == null || b.s !== p.s) return;
   const home = sim.building(hh.house);
   if (!home) return;
-  add(3.5 + (1 - p.pers.A) * 2 + l.late * 0.8 + (l.kind === 'pro' ? 1 : 0), 'collect', { x: home.door.x, z: home.door.z, bld: home.id }, 20, { friend: b.id });
+  add(5 + (1 - p.pers.A) * 2 + l.late * 0.8 + (l.kind === 'pro' ? 1 : 0), 'collect', { x: home.door.x, z: home.door.z, bld: home.id }, 20, { friend: b.id });
 }
 
 // arrive の中で呼ぶ：着いたら取り立てる

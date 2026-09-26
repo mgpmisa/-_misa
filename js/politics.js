@@ -78,7 +78,11 @@ export function politicsHourly(sim) {
       if (p.s !== +sid || p.jail != null || p.fight) continue;
       if (FIGHTERS.has(p.job) || p.job === 'guard' || p.job === 'hunter') {
         const c = raiders.reduce((best, r) => (Math.hypot(r.pos.x - p.pos.x, r.pos.z - p.pos.z) < Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z) ? r : best), raiders[0]);
+        const pw = (x) => (x.atk || 5) * Math.sqrt(x.maxhp || 20);
+        const outmatched = pw(c) > pw(p) * 4;
         if (Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 2) startFight(sim, p, c);
+        // 格の違う相手には打って出ず、町の中を固める
+        else if (outmatched) p.mission = { type: 'defend', x: s.x, z: s.z, until: S.t + 60 };
         else p.mission = { type: 'defend', x: Math.round(c.pos.x), z: Math.round(c.pos.z), until: S.t + 60 };
         if (p.action && p.action.type !== 'defend') p.action = null;
       }
@@ -111,6 +115,14 @@ export function politicsHourly(sim) {
     if (party.done) continue;
     const members = party.members.map((id) => S.people[id]).filter((p) => p && p.deathYear == null);
     if (!members.length) { failParty(sim, party); continue; }
+    // 30日たっても決着がつかなければ、いったん帰還する
+    if (sim.today - (party.since || 0) > 30 && !party.battle) {
+      party.done = true; party.returned = true;
+      const k = S.kingdoms[party.kingdom]; if (k) k.heroCall = null;
+      for (const p of members) { if (p.mission?.type === 'crusade') p.mission = null; p.crusade = null; p.action = null; sim.remember(p, `${S.demon.name}の城にたどり着けず、討伐の旅からいったん引き返した`, { emo: -0.5, imp: 0.8, k: 'hero' }); }
+      sim.news(`${S.demon.name}討伐に向かった勇者の一行が、いったん都へ引き返した`, 2);
+      continue;
+    }
     const lord = S.creatures[S.demon.lordId];
     if (!lord || lord.hp <= 0) { party.done = true; continue; }
     for (const p of members) {
@@ -461,7 +473,7 @@ function callHeroes(sim, k) {
   const castle = sim.building(S.demon.castle);
   for (const p of members) {
     p.mission = { type: 'crusade', x: castle.door.x, z: castle.door.z + 2, until: S.t + 1440 * 30 };
-    p.action = null; p.party = party.id;
+    p.action = null; p.crusade = party.id;
     sim.hh(p).money += bounty / members.length;
     if (k.techs.includes('holy') && p === hero && !p.holy) { p.holy = true; addItem(p, makeItem('holysword', 1.2)); autoEquip(p); }
     for (let i = 0; i < 3; i++) addItem(p, makeItem('potion'));

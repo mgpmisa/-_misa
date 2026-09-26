@@ -2,6 +2,7 @@
 // 性格・身分・記憶・人間関係・世界の情勢から、その人らしい言葉を組み立てる。
 // 同じ人が同じ台詞をくり返さないよう、最近の発言を覚えておく。
 import { casualKin } from './kin.js';
+import { calendarTopicWeight, calendarTopic, calendarReact, calendarThought } from './calendar.js';
 import { JOBS, GOODS, TECHS, RANKS } from './data.js';
 
 // ---- 話し方 ----
@@ -68,7 +69,10 @@ export class Voice {
   }
   r(variants) {
     const v = variants[this.key] ?? variants[this.style] ?? (this.style === 'noble' || this.style === 'royal' || this.style === 'knight' || this.style === 'sage' ? variants.polite : null) ?? variants.plain ?? variants.default ?? variants.polite ?? Object.values(variants)[0];
-    return this.fill(Array.isArray(v) ? this.rng.pick(v) : v);
+    const out = this.fill(Array.isArray(v) ? this.rng.pick(v) : v);
+    // 荒っぽい女性の話し方：男言葉をやわらげる
+    if (this.style === 'rough' && this.p.sex === 'f' && variants.rough_f == null) return out.replace(/じゃねえか/g, 'じゃないか').replace(/言うだろ/g, '言うでしょ').replace(/だろ([？。！])/g, 'でしょ$1').replace(/だぜ/g, 'だよ').replace(/めでてえ/g, 'めでたい').replace(/疲れてんじゃ/g, '疲れてるんじゃ');
+    return out;
   }
   fill(txt) {
     return txt.replace(/\{me\}/g, this.me).replace(/\{you\}/g, this.listener ? address(this.api, this.p, this.listener, this.style) : 'きみ');
@@ -129,6 +133,7 @@ function topics(api, A, B) {
   const low = Object.entries(n).sort((x, y) => x[1] - y[1])[0];
   add(low[1] < 35 ? 2.4 : 0, topicNeed);
   add(0.5, topicWeather);
+  add(calendarTopicWeight(api, A), calendarTopic);
   add(A.job && age >= 14 ? 1.2 : 0, topicWork);
   add(age >= 14 ? 0.4 + Math.abs(api.priceRatio('bread', A.s) - 1) * 3 + (api.householdMoney(A) < 20 ? 1.2 : 0) : 0, topicEconomy);
   add(age >= 16 ? A.values.family * 1.2 : 0.3, topicFamily);
@@ -343,7 +348,8 @@ function topicFamily(api, A, B, v) {
   const opts = [];
   for (const c of kids) {
     const a = api.ageOf(c);
-    if (a < 14) opts.push([`うちの${c.given}ももう${a}歳。あっという間`, 'n']);
+    if (a < 1) opts.push([`${c.given}が生まれてから、毎日があっという間`, 'n']);
+    else if (a < 14) opts.push([`うちの${c.given}ももう${a}歳。あっという間`, 'n']);
     if (a < 8) opts.push([`${c.given}が夜泣きして、ゆうべはほとんど寝てない`, 'v']);
     if (a >= 14 && c.job) opts.push([`${c.given}が${JOBS[c.job].name}として一人前になってきた`, 'v']);
     if (c.jail != null) opts.push([`${c.given}が牢に入れられて、夜も眠れない`, 'v']);
@@ -412,7 +418,11 @@ function topicGossip(api, A, B, v, gos) {
   const kin = api.kinTerm(A, subj);
   const who = kin ? `うちの${kin}の${subj.given}` : subj.given;
   const tail = { polite: 'そうですよ。', elder: 'そうじゃ。', rough: 'ってよ。', royal: 'そうじゃ。', noble: A.sex === 'f' ? 'そうですわ。' : 'そうだ。', knight: 'とのことであります。', sage: 'そうだ。' }[v.style] || 'んだって。';
-  return { kind: 'gossip', text: `${op}${who}が${m.g.pred}${tail}`, sentiment: m.g.emo, gossip: m, about: [subj.id] };
+  // 述語がもともと「らしい」で終わっていれば、伝聞の語尾を重ねない
+  const pred = m.g.pred.replace(/らしい$/, '');
+  const hedged = pred !== m.g.pred;
+  const tail2 = hedged ? ({ polite: 'らしいですよ。', elder: 'らしいのう。', rough: 'らしいぜ。', royal: 'らしい。', noble: A.sex === 'f' ? 'らしいですわ。' : 'らしい。', knight: 'らしいとのことであります。', sage: 'らしい。' }[v.style] || 'らしいよ。') : tail;
+  return { kind: 'gossip', text: `${op}${who}が${pred}${tail2}`, sentiment: m.g.emo, gossip: m, about: [subj.id] };
 }
 
 function topicAboutYou(api, A, B, v, m) {
@@ -494,8 +504,8 @@ function topicDemon(api, A, B, v) {
   const D = api.S.demon, R = api.rng;
   if (!D.active) return { kind: 'demon', text: v.s('魔界のほうの空が赤いって噂、聞いた', 'qv'), sentiment: -0.5 };
   const party = api.S.parties.find((p) => !p.done);
-  const hero = party && api.person(party.members[0]);
-  if (hero && R.chance(0.5)) return { kind: 'demon', text: v.s(`勇者${hero.given}さまたちが魔王城へ向かったらしい。どうかご無事で`, 'raw') + '。', sentiment: 0.3 };
+  const hero = party && party.members.map((id) => api.person(id)).find((h) => h && h.deathYear == null);
+  if (hero && !A._heroTold && R.chance(0.2)) return { kind: 'demon', text: (A._heroTold = true, v.s(`勇者${hero.given}さまたちが魔王城へ向かったらしい。どうかご無事で`, 'raw') + '。'), sentiment: 0.3 };
   if (A.values.courage > 0.7 && api.ageOf(A) >= 16) return { kind: 'demon', text: v.s(`{me}も剣が使えたら、${D.name}の軍勢と戦いたい`, 'v'), sentiment: 0.1 };
   const occ = api.S.world.settlements.find((s) => api.S.towns[s.id].occupied);
   if (occ && R.chance(0.5)) return { kind: 'demon', text: v.s(`${occ.name}が魔王軍に奪われたなんて、信じられない`, 'raw') + '……', sentiment: -0.8 };
@@ -614,6 +624,7 @@ function topicPleasure(api, A, B, v) { return { kind: 'complain', text: v.s(api.
 // ---- 返事 ----
 export function react(api, B, A, topic, v) {
   const R = api.rng;
+  const cr = calendarReact(api, B, A, topic, v); if (cr) return cr;
   const rel = api.rel(B, A);
   const kind = topic.kind;
   if (kind === 'gossip') {
@@ -741,6 +752,7 @@ export function innerThought(api, p) {
   const low = Object.entries(p.needs).sort((x, y) => x[1] - y[1])[0];
   const sp = p.spouseId != null ? api.person(p.spouseId) : null;
   const opts = [];
+  const ct = calendarThought(api, p); if (ct) opts.push(ct);
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
   if (low[1] < 30) opts.push(needTxt[low[0]]);
   if (act === 'work') opts.push(`さて、もうひと頑張り。${JOBS[p.job]?.name ?? ''}の仕事は待ってくれない。`);

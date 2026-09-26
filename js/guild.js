@@ -32,6 +32,17 @@ export function guildDaily(sim) {
   const S = sim.S, R = sim.rng;
   S.quests = (S.quests || []).filter((q) => q.state !== 'done' && q.state !== 'failed' || sim.today - (q.closed || 0) < 5);
   for (const q of S.quests) if (q.state === 'open' && sim.today > q.deadline) { q.state = 'failed'; q.closed = sim.today; }
+  // 引き受けた依頼：担い手が全員死ぬか捕まれば掲示板に戻す。引き受けから12日で打ち切り
+  for (const q of S.quests) {
+    if (q.state !== 'taken') continue;
+    const alive = q.takenBy.map((id) => S.people[id]).filter((m) => m && m.deathYear == null && m.jail == null && m.quest === q.id);
+    if (!alive.length || sim.today - (q.taken || q.posted) > 12) {
+      for (const m of alive) { m.quest = null; m.action = null; sim.remember(m, `「${q.title}」をやり遂げられず、ギルドに断りを入れた`, { emo: -0.5, imp: 0.5, k: 'quest' }); }
+      q.takenBy = []; q.party = null;
+      if (sim.today <= q.deadline + 7 && alive.length === 0) { q.state = 'open'; q.deadline = Math.max(q.deadline, sim.today + 7); }
+      else { q.state = 'failed'; q.closed = sim.today; const c = S.creatures[q.target]; if (c) c.quested = false; }
+    }
+  }
   const open = (sid) => S.quests.filter((q) => q.s === sid && q.state === 'open').length;
   for (const cap of S.world.settlements.filter((s) => s.type === 'capital')) {
     if (S.towns[cap.id].occupied || open(cap.id) >= 9) continue;
@@ -50,8 +61,10 @@ export function guildDaily(sim) {
     }
     // 2) 素材の採集（医者・薬師・鍛冶屋・錬金術師から）
     const crafters = sim.living().filter((p) => towns.some((s) => s.id === p.s) && ['doctor', 'herbalist', 'smith', 'alchemist', 'jeweler', 'tailor'].includes(p.job));
-    if (crafters.length && R.chance(0.5)) {
-      const giver = R.pick(crafters);
+    const busy = new Set(S.quests.filter((q) => q.state === 'open' || q.state === 'taken').map((q) => q.giver));
+    const idle = crafters.filter((p) => !busy.has(p.id));
+    if (idle.length && R.chance(0.5)) {
+      const giver = R.pick(idle);
       const want = { doctor: ['herb', 5], herbalist: ['herb', 6], smith: [R.pick(['fang', 'scale', 'iron']), 3], alchemist: [R.pick(['jelly', 'magicstone', 'silk']), 2], jeweler: ['magicstone', 1], tailor: ['silk', 2] }[giver.job];
       const [item, qty] = want;
       const rank = Math.min(5, Math.floor(ITEMS[item].value * qty / 25));

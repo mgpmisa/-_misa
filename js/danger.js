@@ -68,7 +68,20 @@ export function defendTowns(sim) {
     if (!near.length) continue;
     const guards = sim.living().filter((p) => p.s === s.id && DEFENDERS.has(p.job) && !p.fight && p.jail == null && p.hp > p.maxhp * 0.4 && !(p.action?.type === 'sleep' && p.job !== 'gatekeeper' && p.job !== 'watchman'));
     for (const c of near) {
-      const g = guards.filter((p) => !p.fight).sort((a, b) => Math.hypot(a.pos.x - c.pos.x, a.pos.z - c.pos.z) - Math.hypot(b.pos.x - c.pos.x, b.pos.z - c.pos.z)).slice(0, c.atk > 12 ? 3 : 2);
+      // 力の差を見る：勝ち目のない相手（竜など）には立ち向かわず、鐘を鳴らして籠城し、討伐を頼む
+      const power = (x) => (x.atk || 5) * Math.sqrt(x.maxhp || x.hp || 20);
+      const avail = guards.filter((p) => !p.fight);
+      const ours = avail.slice(0, 4).reduce((t, p) => t + power(p), 0);
+      if (ours < power(c) * 1.1) {
+        if (!c.alarmed || S.t - c.alarmed > 180) {
+          c.alarmed = S.t;
+          sim.pushLog(`${s.name}に${c.name}が迫り、警鐘が鳴らされた。人々は家に籠もり、衛兵は門を固めた。`, 'event', [], s);
+          for (const q of sim.living()) if (q.s === s.id && q.inside == null && !q.fight && !q.quest && q.mission?.type !== 'crusade') { q.action = null; q.mission = null; sim.startAction(q, { type: 'flee', place: sim.placeFor(q, 'home'), dur: 90 }); }
+          if (!S.quests?.some((x) => x.target === c.id && x.state !== 'done' && x.state !== 'failed')) c.quested = false;
+        }
+        continue;
+      }
+      const g = avail.sort((a, b) => Math.hypot(a.pos.x - c.pos.x, a.pos.z - c.pos.z) - Math.hypot(b.pos.x - c.pos.x, b.pos.z - c.pos.z)).slice(0, c.atk > 12 ? 4 : 2);
       for (const p of g) {
         if (p.inside != null) { const b = sim.building(p.inside); p.pos = { ...b.door }; p.inside = null; }
         const d = Math.hypot(p.pos.x - c.pos.x, p.pos.z - c.pos.z);

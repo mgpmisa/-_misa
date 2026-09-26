@@ -2,7 +2,7 @@
 import { makeRng, clamp } from './rng.js';
 import { JOBS, GOODS, DAYS_PER_YEAR, DAYS_PER_SEASON, SEASONS, DEATH_CAUSES, ERA, WORLD_NAME, KINGDOMS, RANKS, SPECIES, traitLabels } from './data.js';
 import { generateHistory, createPersonFactory } from './history.js';
-import { generateWorld, makeHousePlacer, T, W, H, walkable, tileAt, heightAt, TILE_NAME } from './world.js';
+import { generateWorld, openGates, makeHousePlacer, T, W, H, walkable, tileAt, heightAt, TILE_NAME } from './world.js';
 import { findPath } from './path.js';
 import { ancestors, kinTerm, isCloseKin, siblings } from './kin.js';
 import { composeConversation, innerThought, speechStyle } from './speech.js';
@@ -15,6 +15,8 @@ import { around } from './creatures.js';
 import { ITEMS, makeItem, addItem, autoEquip, starterKit, countItem, takeItem, itemName, itemValue, TREASURE_ITEMS } from './items.js';
 import { initProperty, propertyDaily, inherit, transferEstate, spendable, pay, earn, fieldShare, houseValue, weeklyRent } from './property.js';
 import { partiesDaily } from './guild.js';
+import { rumorBirth, rumorRelay, rumorHeardText, rumorCorrect } from './rumor.js';
+import { calendarDaily, calendarHalfDay } from './calendar.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -46,7 +48,7 @@ export class Sim {
       creatures: {}, nextCid: 1, world, chronicle: hist.chronicle, households: {}, nextHh: 1,
       towns: {}, weather: 'sunny', harvest: 1, gatherings: [], log: [], news: [], graves: [], gossipSeq: 1,
       pendingWeddings: [], stats: { births: 0, deaths: 0, weddings: 0 }, culture: {}, parties: [], wanted: {},
-      speciesMemory: {},
+      speciesMemory: {}, gatesOpened: true,
     };
     this.placeHouse = makeHousePlacer(world, rng);
     progress('人々の暮らしを整えています……');
@@ -74,6 +76,7 @@ export class Sim {
     for (const p of this.living()) { p.talk = null; p.fight = null; p.path = p.path || []; }
     for (const c of Object.values(data.creatures)) c.fight = null;
     if (!data.property) initProperty(this);
+    if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     computeDanger(this);
     return true;
   }
@@ -370,6 +373,7 @@ export class Sim {
   gossip(subj, pred, emo, witnesses, opt = {}) {
     const key = 'g' + this.S.gossipSeq++;
     const g = { key, subj: subj.id, pred, emo, congrat: opt.congrat || null };
+    rumorBirth(this, g, subj, witnesses);
     if (subj.gk) subj.gk[key] = 1;
     for (const w of witnesses) {
       if (w.id === subj.id || w.deathYear != null || !w.gk) continue;
@@ -495,7 +499,7 @@ export class Sim {
   // ---------- 意思決定 ----------
   decide(p) {
     const R = this.rng, h = this.hour(), age = this.ageOf(p), hh = this.hh(p), n = p.needs;
-    const rest = this.isRestDay();
+    const rest = this.isRestDay() || calendarHalfDay(this, p.s);
     const cands = [];
     const add = (score, type, place, dur, extra = {}) => { if (score > -50) cands.push({ score: score + R.range(0, 1.2) + (p.q[type] || 0) * 1.5, type, place, dur, ...extra }); };
     const s = this.townOf(p);
@@ -504,6 +508,8 @@ export class Sim {
     // 囚人
     if (p.jail != null) {
       const b = this.building(p.jail);
+      // 牢では一日二度、粗末な食事が配られる
+      if (n.hunger < 45 && (h >= 7 && h < 8 || h >= 17 && h < 18)) n.hunger = Math.min(100, n.hunger + 50);
       this.startAction(p, { type: h >= 21 || h < 6 ? 'sleep' : 'jail', place: { x: b.door.x, z: b.door.z, bld: b.id }, dur: 120 });
       return;
     }
@@ -531,10 +537,14 @@ export class Sim {
     else if (n.sleep < 15) add(4.5, 'sleep', this.placeFor(p, 'home'), 120);
 
     const mealTime = (h >= 6 && h < 8.5) || (h >= 11.5 && h < 13.5) || (h >= 18 && h < 20);
-    if (n.hunger < 60 && !bedtime) {
+    // 小さな子は自分で食べ物を探さない。家の蓄えから食べさせてもらう
+    if (age < 6 && n.hunger < 55 && hh.food >= 0.5) { hh.food -= 0.5; n.hunger = Math.min(100, n.hunger + 50); }
+    if (n.hunger < 60 && !bedtime && age >= 6) {
       const sc = (100 - n.hunger) / 14 + (mealTime ? 2.5 : 0);
+      const innMeal = this.price('bread', p.s) * 2 + 1;
       if (hh.food >= 1 && hh.house != null) add(sc, 'eat', this.placeFor(p, 'home'), 30);
       else if (hh.money >= this.price('bread', p.s) && h >= 6 && h < 21) add(sc + 0.5, 'shop', this.placeFor(p, 'market'), 20, { food: true });
+      else if (spendable(this, p) >= innMeal && this.townBuilding(this.town(p.s), 'tavern')) add(sc + 0.3, 'eat', this.placeFor(p, 'tavern'), 30, { food: 'inn' });
       else if (n.hunger < 35) add(sc + (job === 'beggar' ? 2 : 0), 'beg', this.placeFor(p, 'plaza'), 60);
     }
     const workAge = age >= 14 && age <= 67 && job;
@@ -572,7 +582,7 @@ export class Sim {
     const crime = tryCrime(this, p);
     if (crime) add(crime.score, crime.type, crime.place, crime.dur, crime);
     // 生活
-    if (age >= 14 && h >= 8 && h < 19 && ((hh.food < hh.members.length * 2 && hh.money > this.price('bread', p.s) * 2 && hh.house != null) )) add(3, 'shop', this.placeFor(p, 'market'), 25);
+    if (age >= 14 && h >= 7 && h < 20 && ((hh.food < hh.members.length * 4 && hh.money > this.price('bread', p.s) * 2 && hh.house != null) )) add(3 + (hh.food < hh.members.length ? 2 : 0), 'shop', this.placeFor(p, 'market'), 25);
     if (age >= 16 && h >= 17 && h < 23 && hh.money > 25) add(-(hh.money < 70 ? 1.5 : 0) + (100 - n.pleasure) / 22 + p.pers.E * 1.4 + (rest ? 0.5 : 0), 'tavern', this.placeFor(p, 'tavern'), R.int(50, 120));
     if (h >= 8 && h < 20) add((100 - n.pleasure) / 40 + (100 - n.esteem) / 45 + p.pers.E * 1.2 + (rest ? 1.2 : 0), 'plaza', this.placeFor(p, 'plaza'), R.int(30, 80));
     if (h >= 9 && h < 20) {
@@ -619,7 +629,7 @@ export class Sim {
     let best = null, bs = 30;
     for (const [id, r] of Object.entries(p.rel)) {
       const q = this.S.people[id];
-      if (!q || q.deathYear != null || q.sex === p.sex || q.spouseId != null || q.jail != null) continue;
+      if (!q || q.deathYear != null || q.sex === p.sex || q.spouseId != null || q.jail != null || this.S.wanted[q.id]) continue;
       const qa = this.ageOf(q);
       if (qa < 17 || Math.abs(qa - this.ageOf(p)) > 14 || q.s !== p.s) continue;
       const sc = r.a + (r.f / 5);
@@ -702,7 +712,12 @@ export class Sim {
     const a = p.action;
     const sx = Math.round(p.pos.x), sz = Math.round(p.pos.z);
     const brave = (JOBS[p.job]?.combat || 0) >= 2 || ['quest', 'crusade', 'march', 'defend'].includes(a.type);
-    const path = findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, brave ? null : this.S.dangerMap);
+    // たどり着けないと分かった目的地は、しばらく探し直さない（探索の空回りを防ぐ）
+    this._noPath = this._noPath || new Map();
+    const key = a.tx * 1000 + a.tz;
+    const bad = this._noPath.get(key);
+    const path = bad && bad > this.S.t ? null : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, brave ? null : this.S.dangerMap);
+    if (!path && !(bad > this.S.t)) { this._noPath.set(key, this.S.t + 120); if (this._noPath.size > 500) this._noPath.clear(); }
     if (!path) {
       // たどり着けない：近くの歩ける場所へ
       const alt = this.randomNear(a.tx, a.tz, 2);
@@ -725,7 +740,8 @@ export class Sim {
     switch (a.type) {
       case 'shop': this.doShop(p); break;
       case 'eat':
-        if (hh.food >= 1) { hh.food -= 1; p.needs.hunger = Math.min(100, p.needs.hunger + 60); }
+        if (a.food === 'inn') { const cost = this.price('bread', p.s) * 2 + 1; if (spendable(this, p) >= cost) { pay(this, p, cost); p.needs.hunger = Math.min(100, p.needs.hunger + 65); const keeper = this.living().find((q) => q.job === 'innkeeper' && q.s === p.s); if (keeper && this.hh(keeper)) this.hh(keeper).money += cost * 0.8; } }
+        else if (hh.food >= 1) { hh.food -= 1; p.needs.hunger = Math.min(100, p.needs.hunger + 60); }
         break;
       case 'askfood': {
         const helper = this.S.people[a.helper];
@@ -779,8 +795,9 @@ export class Sim {
         for (const q of this.rng.shuffle(locals).slice(0, 6)) for (const m of news) {
           if (q.gk[m.g.key]) continue;
           q.gk[m.g.key] = 1;
-          const subj = this.S.people[m.g.subj];
-          if (subj) this.remember(q, `伝令の${p.given}から、${subj.given}が${m.g.pred}と聞いた`, { emo: m.g.emo * 0.6, imp: 0.45, about: [subj.id], k: 'news', src: 'heard', g: m.g });
+          const g2 = rumorRelay(this, p, q, m.g);
+          const s2 = this.S.people[g2.subj];
+          if (s2) this.remember(q, `伝令の${p.given}から、${s2.given}が${g2.pred}と聞いた`, { emo: g2.emo * 0.6, imp: 0.45, about: [s2.id], k: 'news', src: 'heard', g: g2 });
         }
         p.mission = null;
         break;
@@ -1411,10 +1428,12 @@ export class Sim {
       const from = this.S.people[s.from], to = this.S.people[s.to];
       if (!to || !from || to.gk[s.mem.g.key]) continue;
       to.gk[s.mem.g.key] = 1;
-      const subj = this.S.people[s.mem.g.subj];
-      if (!subj) continue;
-      this.remember(to, `${from.given}から、${subj.given}が${s.mem.g.pred}と聞いた`, { emo: s.mem.g.emo * 0.7, imp: (s.mem.imp || 0.5) * 0.8, about: [subj.id, from.id], k: 'news', src: 'heard', g: s.mem.g });
+      const g2 = rumorRelay(this, from, to, s.mem.g);
+      const subj2 = this.S.people[g2.subj]; if (!subj2) continue;
+      this.remember(to, rumorHeardText(this, from, g2), { emo: g2.emo * 0.7, imp: (s.mem.imp || 0.5) * 0.8, about: [subj2.id, from.id], k: 'news', src: 'heard', g: g2 });
     }
+    const fixed = rumorCorrect(this, a, b);
+    if (fixed.length && !talk.quiet) { const f = fixed[0]; this.pushLog(`${this.S.people[f.who].given}は${this.S.people[f.by].given}と話して、噂が大げさだったと知った`, 'talk', [f.who, f.by]); }
     // 危険な場所の知識が伝わる
     for (const w of e.warnings || []) {
       const to = this.S.people[w.to];
@@ -1446,7 +1465,7 @@ export class Sim {
 
   maybeEngage(a, b) {
     const ra = this.rel(a, b), rb = this.rel(b, a);
-    if (ra.a < 72 || rb.a < 68 || a.spouseId != null || b.spouseId != null) return;
+    if (ra.a < 72 || rb.a < 68 || a.spouseId != null || b.spouseId != null || this.S.wanted[a.id] || this.S.wanted[b.id]) return;
     if (this.S.pendingWeddings.some((w) => [w.a, w.b].includes(a.id) || [w.a, w.b].includes(b.id))) return;
     // 身分違い
     const gap = Math.abs(this.rankLv(a) - this.rankLv(b));
@@ -1531,18 +1550,38 @@ export class Sim {
     for (const hh of Object.values(S.households)) {
       hh.food = Math.max(0, hh.food);
       const town = S.towns[hh.s];
-      if (hh.money > 200) { const tax = (hh.money - 200) * 0.05; hh.money -= tax; town.fund += tax; }
+      if (hh.money > 250 && this.dayIndex % 7 === 0) { const tax = (hh.money - 250) * 0.05; hh.money -= tax; town.fund += tax; }
       if (hh.money < 12 && town.fund > 20 && !hh.bandits) {
         const gift = Math.min(20, town.fund * 0.2);
         hh.money += gift; town.fund -= gift;
         for (const id of hh.members) { const q = S.people[id]; if (q && this.ageOf(q) >= 14 && R.chance(0.4)) this.remember(q, '町の蓄えから施しを受けた', { emo: -0.1, imp: 0.4, k: 'relief' }); }
       }
     }
+    // 町の蓄えが貯まりすぎたら、道や井戸の普請に町の人を雇って給金を払う（お金を町に戻す）
+    for (const s of S.world.settlements) {
+      const town = S.towns[s.id];
+      if (town.occupied || town.fund < 400) continue;
+      const pool = (town.fund - 300) * 0.25;
+      const workers = this.living().filter((q) => q.s === s.id && this.isAdult(q) && q.jail == null && !['king', 'royal', 'noble'].includes(q.rank));
+      if (!workers.length) continue;
+      const poor = workers.sort((a, b) => (this.hh(a)?.money || 0) - (this.hh(b)?.money || 0)).slice(0, Math.max(3, Math.floor(workers.length / 3)));
+      const each = pool / poor.length;
+      for (const q of poor) earn(this, q, each, 0.4);
+      town.fund -= pool;
+      if (R.chance(0.15)) this.pushLog(`${s.name}で町の普請（道の補修や井戸さらい）があり、${poor.length}人が給金を受け取った。`, 'event', [], s);
+    }
+    // 豊かな町から、同じ国の貧しい村へ援助
+    for (const k of S.kingdoms) {
+      const ts = S.world.settlements.filter((s) => s.kingdom === k.id && !S.towns[s.id].occupied);
+      const rich = ts.slice().sort((a, b) => S.towns[b.id].fund - S.towns[a.id].fund)[0], poor = ts.slice().sort((a, b) => S.towns[a.id].fund - S.towns[b.id].fund)[0];
+      if (rich && poor && rich !== poor && S.towns[rich.id].fund > 600 && S.towns[poor.id].fund < 80) { const x = 120; S.towns[rich.id].fund -= x; S.towns[poor.id].fund += x; }
+    }
     if (this.isFestival()) {
       const from = this.dayIndex * 1440 + 16 * 60;
       for (const s of S.world.settlements) if (!S.towns[s.id].occupied) S.gatherings.push({ type: 'festival', place: 'plaza', from, to: from + 7 * 60, s: s.id, label: '収穫祭' });
       this.news('今日は収穫祭。夕方から各地の広場でかがり火が焚かれる', 1);
     }
+    calendarDaily(this);
     // 誕生日・仕事・引退
     for (const p of this.living()) {
       if (p.birthDay !== doy) continue;
@@ -1701,7 +1740,8 @@ export class Sim {
     S.stats.deaths++;
     S.graves.push(p.id);
     const causeTxt = DEATH_CAUSES[cause] || cause;
-    const killerName = killer ? (killer.given || killer.name) : null;
+    // 目撃者のいない殺人では、犯人の名前は世間に出ない
+    const killerName = killer && !(cause === 'murder' && killer.given && !S.wanted[killer.id]) ? (killer.given || killer.name) : null;
     this.dirty();
     for (const q of this.living()) {
       if (!q.rel) continue;

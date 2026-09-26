@@ -79,11 +79,14 @@ function countJobs(sim) {
   return cnt;
 }
 // その仕事を抜けても町が困らないか
+const FOOD = ['farmer', 'fisher'];
 function canLeave(sim, cnt, sid, job) {
   if (!job) return true;
   const q = quotaOf(sim, sid, job);
-  return (cnt[sid]?.[job] || 0) - 1 >= q;
+  return (cnt[sid]?.[job] || 0) - 1 >= q + (FOOD.includes(job) && q > 0 ? 1 : 0);
 }
+// 女性だけの仕事
+const WOMEN = ['laundress', 'maid', 'nanny', 'midwife', 'nun', 'dancer'];
 // その仕事を新しく始めても、町で余らないか（需要）
 function canJoin(sim, cnt, sid, job, extra = 1) {
   const q = quotaOf(sim, sid, job);
@@ -138,11 +141,11 @@ function candidates(sim, p, cnt) {
   if (town.type === 'capital' && ['soldier', 'guard', 'gatekeeper', 'watchman', 'royalguard'].includes(p.job) && age >= 19 && age <= 40 && p.values.courage > 0.35) push('knight', 1 + p.values.courage * 2 + amb, '騎士に取り立てられる', 150);
   if (town.type === 'capital' && (['scribe', 'teacher', 'alchemist', 'herbalist', 'doctor', 'butler'].includes(p.job) || O > 0.75) && !['scholar', 'wizard', 'courtmage', 'sage'].includes(p.job) && age >= 18 && age <= 45 && O > 0.5) push('scholar', 0.6 + O * 2, '学者になる', 120);
   if (town.type === 'port' && ['fisher', 'sailor'].includes(p.job) && age >= 20 && age <= 50) push('ship', 1 + amb * 2, '自分の船を持つ', 280);
-  if (p.job === 'farmer' && hh && (hh.land || 0) < 10 && age >= 20 && age <= 60) push('land', 1.5 + C, (hh.land || 0) > 0 ? '畑を広げる' : '自分の畑を持つ', 160);
+  if (p.job === 'farmer' && hh && (hh.land || 0) < 8 && age >= 20 && age <= 60 && sim.today - (hh.landDay ?? -999) > DAYS_PER_YEAR * 2) push('land', 1.2 + C, (hh.land || 0) > 0 ? '畑を広げる' : '自分の畑を持つ', 160 + (hh.land || 0) * 25);
   const home = sim.homeOf(p);
   if (home && home.type === 'house' && home.owner != null && home.owner !== p.hh && age >= 22 && age <= 60) push('house', 1.5 + p.values.family * 2, '自分の家を持つ', Math.round((home.value || houseValue(sim, home)) * 1.15));
   if (hh && age >= 24 && age <= 55 && hh.members.some((id) => { const k = alive(sim, id); return k && !k.tutored && (p.children || []).includes(k.id) && sim.ageOf(k) >= 5 && sim.ageOf(k) <= 12; })) push('tutor', 0.8 + p.values.family * 2, '子どもに読み書きを習わせる', 50);
-  if (age >= 44 && age <= 62) push('nest', 0.6 + C + (1 - amb), town.type === 'village' ? '老後は畑を眺めて静かに暮らす' : '老後は田舎で静かに暮らす', 130);
+  if (age >= 44 && age <= 62 && !p.nestDone) push('nest', 0.6 + C + (1 - amb), town.type === 'village' ? '老後は畑を眺めて静かに暮らす' : '老後は田舎で静かに暮らす', 130);
   return out;
 }
 
@@ -180,7 +183,7 @@ export function initCareer(sim) {
     // これまでに貯めてきた分：家計と財布から少しずつ（お金は増やさない）
     const hh = sim.hh(p);
     const years = clamp((age - 18) / 12, 0, 1.5);
-    const want = Math.round(plan.need * R.range(0.05, 0.75) * years);
+    const want = Math.round(Math.min(plan.need * 0.95, plan.need * R.range(0.05, 0.75) * years));
     let got = Math.min(want, Math.max(0, (p.purse || 0) - 3));
     p.purse -= got;
     if (hh && got < want && hh.money > 60) { const x = Math.min(want - got, (hh.money - 60) * 0.35); hh.money -= x; got += x; }
@@ -340,6 +343,8 @@ function achieve(sim, p, plan, cnt) {
     case 'land': {
       if (!hh) return;
       const lord = Object.values(S.households).filter((h) => h.id !== hh.id && h.s === p.s && (h.land || 0) >= 6).sort((a, b) => b.land - a.land)[0];
+      if (!lord && (town.type !== 'village' || !sim.rng.chance(0.3))) return; // 売り手がいなければ、村の荒れ地を開くしかない
+      hh.landDay = sim.today;
       if (lord) { lord.land -= 2; lord.money += plan.saved; } else S.towns[p.s].fund += plan.saved;
       plan.saved = 0;
       hh.land = (hh.land || 0) + 2;
@@ -373,7 +378,7 @@ function achieve(sim, p, plan, cnt) {
       return;
     }
     case 'nest': {
-      p.nestEgg = (p.nestEgg || 0) + plan.saved; plan.saved = 0;
+      p.nestEgg = (p.nestEgg || 0) + plan.saved; plan.saved = 0; p.nestDone = true;
       done('老後の蓄えができた。これでいつ仕事を退いても大丈夫だ', null, '老後の蓄えをこしらえた', null, true);
       return;
     }
@@ -418,8 +423,8 @@ function succession(sim, m) {
   if (m._succ) return;
   m._succ = true;
   const job = m.job || m.formerJob;
-  const apps = (m.apprentices || []).map((id) => alive(sim, id)).filter((q) => q && q.master === m.id);
-  const same = apps.filter((q) => q.job === job && q.s === m.s);
+  const apps = (m.apprentices || []).map((id) => alive(sim, id)).filter((q) => q && (q.master === m.id || q.formerMaster === m.id));
+  const same = apps.filter((q) => q.job === job && q.s === m.s && q.shop == null);
   const child = (m.children || []).map((id) => alive(sim, id)).find((q) => q && q.job === job && q.s === m.s && sim.ageOf(q) >= 16 && q.shop == null);
   const heir = same[0] || child || null;
   const b = m.shop != null ? sim.building(m.shop) : null;
@@ -434,7 +439,7 @@ function succession(sim, m) {
     }
   }
   for (const q of apps) {
-    if (q === heir) continue;
+    if (q === heir || q.master !== m.id) continue;
     q.formerMaster = m.id;
     if (heir && q.job === job && q.appr && (heir.skill[job] || 0) >= 0.4) {
       q.master = heir.id; (heir.apprentices = heir.apprentices || []).push(q.id);
@@ -505,10 +510,11 @@ function considerRetire(sim, p, cnt) {
   if (NO_RETIRE.includes(job) || JOBS[job]?.crook) return;
   const skill = p.skill?.[job] || 0.3;
   const body = p.maxhp ? clamp((p.hp ?? p.maxhp) / p.maxhp, 0.2, 1) : 1;
-  const heir = (p.apprentices || []).map((id) => alive(sim, id)).find((q) => q && q.job === job && q.s === p.s)
+  const heir = (p.apprentices || []).map((id) => alive(sim, id)).find((q) => q && (q.master === p.id || q.formerMaster === p.id) && q.job === job && q.s === p.s)
     || (p.children || []).map((id) => alive(sim, id)).find((q) => q && q.job === job && q.s === p.s && sim.ageOf(q) >= 18);
   const spare = (cnt[p.s]?.[job] || 0) > quotaOf(sim, p.s, job);
-  if (!heir && !spare && age < 62) return;
+  const n = cnt[p.s]?.[job] || 0, q = quotaOf(sim, p.s, job);
+  if (!heir && !spare && !(age >= 64 && q > 1 && !FOOD.includes(job) && n - 1 >= Math.ceil(q * 0.8))) return;
   const nest = p.nestEgg || (p.plan?.goal === 'nest' && p.plan.stage === 'done');
   const chance = clamp(0.07 * (age - 54) + (1 - body) * 0.5 + (0.5 - p.pers.C) * 0.2 - (skill - 0.5) * 0.3 + (nest ? 0.15 : 0) + (heir ? 0.1 : 0), 0.02, 0.85);
   if (!R.chance(chance)) return;
@@ -537,7 +543,7 @@ function fillVacancies(sim, cnt) {
     const lacking = Object.keys(quota).filter((j) => !NO_VACANCY.includes(j) && (cnt[s.id]?.[j] || 0) < quota[j]);
     if (!lacking.length) continue;
     const job = R.pick(lacking);
-    const pool = sim.living().filter((q) => q.s === s.id && !q.appr && q.shop == null && !q.retired && q.jail == null && sim.ageOf(q) >= 16 && sim.ageOf(q) <= 50
+    const pool = sim.living().filter((q) => q.s === s.id && (q.sex === 'f' || !WOMEN.includes(job)) && !q.appr && q.shop == null && !q.retired && q.jail == null && sim.ageOf(q) >= 16 && sim.ageOf(q) <= 50
       && !NO_PLAN_RANK.includes(q.rank) && !['noble', 'knight'].includes(q.rank) && !sim.hh(q)?.bandits
       && (q.job ? COMMON.includes(q.job) && canLeave(sim, cnt, s.id, q.job) : !q.formerJob));
     if (!pool.length) continue;

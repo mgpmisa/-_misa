@@ -256,9 +256,12 @@ export function generateWorld(rng, seed) {
     hp.push(0, idx(a.x, a.z));
     cost[idx(a.x, a.z)] = 0;
     const goal = idx(b.x, b.z);
+    const done = new Uint8Array(N);
     let it = 0;
-    while (hp.size && it++ < 80000) {
+    while (hp.size && it++ < 200000) {
       const i = hp.pop();
+      if (done[i]) continue;
+      done[i] = 1;
       if (i === goal) break;
       const x = i % W, z = (i / W) | 0;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -343,6 +346,13 @@ export function generateWorld(rng, seed) {
         const t = get(x, z);
         if (t === T.ROAD || t === T.BRIDGE || isWater(t) || t === T.BLD) continue;
         set(x, z, T.WALL); s.walls.push({ x, z });
+      }
+      // 街道がどうしても通らなくても、東西南北の真ん中には必ず門を開ける
+      for (const [gx, gz, dx, dz] of [[s.x, s.z - R - 1, 0, -1], [s.x, s.z + R + 1, 0, 1], [s.x - R - 1, s.z, -1, 0], [s.x + R + 1, s.z, 1, 0]]) {
+        if (get(gx, gz) !== T.WALL) continue;
+        set(gx, gz, T.ROAD); s.walls = s.walls.filter((w) => w.x !== gx || w.z !== gz);
+        for (let k = 1; k <= 2; k++) { const t = get(gx + dx * k, gz + dz * k); if (t === T.GRASS || t === T.SAVANNA || t === T.FOREST || t === T.DESERT || t === T.SNOW || t === T.BEACH || t === T.WALL) set(gx + dx * k, gz + dz * k, T.ROAD); }
+        for (let k = 1; k <= R; k++) { const t = get(gx - dx * k, gz - dz * k); if (t === T.ROAD || t === T.PLAZA || t === T.BLD) break; if (t === T.GRASS || t === T.SAVANNA || t === T.FOREST || t === T.DESERT || t === T.SNOW || t === T.BEACH) set(gx - dx * k, gz - dz * k, T.ROAD); }
       }
     } else if (s.type === 'village') {
       place('church', '礼拝堂', 3, 4);
@@ -596,4 +606,26 @@ export function biomeOf(t) {
     case T.RIVER: return 'river';
     default: return 'town';
   }
+}
+
+// 古いセーブ用：王都の城壁の東西南北に門を開ける
+export function openGates(world) {
+  const get = (x, z) => (x >= 0 && z >= 0 && x < W && z < H ? world.tiles[z * W + x] : T.DEEP);
+  const set = (x, z, t) => { if (x >= 0 && z >= 0 && x < W && z < H) world.tiles[z * W + x] = t; };
+  const open = [T.GRASS, T.SAVANNA, T.FOREST, T.DESERT, T.SNOW, T.BEACH];
+  let n = 0;
+  for (const s of world.settlements) {
+    if (!s.walls || !s.walls.length) continue;
+    const R = Math.max(...s.walls.map((w) => Math.max(Math.abs(w.x - s.x), Math.abs(w.z - s.z)))) - 1;
+    for (const [gx, gz, dx, dz] of [[s.x, s.z - R - 1, 0, -1], [s.x, s.z + R + 1, 0, 1], [s.x - R - 1, s.z, -1, 0], [s.x + R + 1, s.z, 1, 0]]) {
+      if (get(gx, gz) !== T.WALL) continue;
+      set(gx, gz, T.ROAD); n++;
+      s.walls = s.walls.filter((w) => w.x !== gx || w.z !== gz);
+      for (let k = 1; k <= 2; k++) { const t = get(gx + dx * k, gz + dz * k); if (open.includes(t) || t === T.WALL) set(gx + dx * k, gz + dz * k, T.ROAD); }
+      for (let k = 1; k <= R; k++) { const t = get(gx - dx * k, gz - dz * k); if (t === T.ROAD || t === T.PLAZA || t === T.BLD) break; if (open.includes(t)) set(gx - dx * k, gz - dz * k, T.ROAD); }
+      s.gates = s.gates || [];
+      s.gates.push({ x: gx, z: gz, dx, dz });
+    }
+  }
+  return n;
 }

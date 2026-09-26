@@ -7,6 +7,10 @@ import {
 } from './data.js';
 import { kinTerm } from './kin.js';
 
+// 要職は大人（21歳以上）だけ、14〜16歳は見習いでもできる仕事だけ
+const SENIOR_JOBS = new Set(['general', 'chancellor', 'treasurer', 'royalguard', 'courtmage', 'knight', 'guildmaster', 'paladin', 'elder', 'captain', 'doctor', 'priest', 'scholar', 'sage', 'teacher', 'midwife', 'jailer', 'changer', 'merchant', 'innkeeper', 'banditchief', 'swindler', 'storyteller', 'butler']);
+const YOUTH_JOBS = new Set(['farmer', 'fisher', 'sailor', 'shepherd', 'gatherer', 'maid', 'stablehand', 'laundress', 'messenger', 'servant', 'woodcutter', 'charcoal', 'miner', 'gardener', 'cook', 'baker', 'smith', 'carpenter', 'tailor', 'weaver', 'potter', 'cobbler', 'nanny', 'musician', 'dancer', 'hunter', 'rancher', 'beekeeper', 'miller', 'mason', 'diver', 'soldier', 'militia']);
+
 const HAIR = ['#e8c872', '#b07a3a', '#6b4226', '#2e1f16', '#c2542d', '#8a5a2b'];
 const HAIR_S = ['#2e1f16', '#1a1410', '#4a3020', '#6b4226'];
 const SKIN = ['#f3d2b3', '#e8b98f', '#d9a077'];
@@ -239,8 +243,9 @@ export function generateHistory(rng, world) {
       const quota = JOB_QUOTA[st];
       const cnt = {};
       for (const q of alive) if (q.s === p.s && q.job) cnt[q.job] = (cnt[q.job] || 0) + 1;
-      const lacking = Object.keys(quota).filter((j) => (cnt[j] || 0) < quota[j] && !['king', 'noble', 'thief', 'beggar'].includes(j));
-      if (father && father.job && !['king', 'royal'].includes(father.job) && rng.chance(0.55)) p.job = father.job;
+      const a0 = age(p, y);
+      const lacking = Object.keys(quota).filter((j) => (cnt[j] || 0) < quota[j] && !['king', 'noble', 'thief', 'beggar'].includes(j) && (a0 >= 21 || !SENIOR_JOBS.has(j)) && (a0 >= 17 || YOUTH_JOBS.has(j)));
+      if (father && father.job && !['king', 'royal'].includes(father.job) && (a0 >= 21 || !SENIOR_JOBS.has(father.job)) && (a0 >= 17 || YOUTH_JOBS.has(father.job)) && rng.chance(0.55)) p.job = father.job;
       else if (lacking.length && rng.chance(0.6)) p.job = rng.pick(lacking);
       else p.job = st === 'port' ? rng.pick(['fisher', 'sailor', 'farmer']) : 'farmer';
       const par = father && father.job === p.job ? father : mother && mother.job === p.job ? mother : null;
@@ -433,7 +438,7 @@ export function generateHistory(rng, world) {
     for (const [job, n] of Object.entries(quota)) {
       if (job === 'king' || job === 'noble') continue;
       while ((cnt[job] || 0) < n) {
-        let pool = adults.filter((p) => p.job !== job && (!p.job || p.job === 'farmer' || p.job === 'fisher' || p.job === 'sailor') && (cnt[p.job] || 0) > (quota[p.job] || 0) - (p.job === 'farmer' ? 0 : 0));
+        let pool = adults.filter((p) => p.job !== job && (age(p, Y) >= 21 || !SENIOR_JOBS.has(job)) && (!p.job || p.job === 'farmer' || p.job === 'fisher' || p.job === 'sailor') && (cnt[p.job] || 0) > (quota[p.job] || 0) - (p.job === 'farmer' ? 0 : 0));
         if (job === 'thief' || job === 'beggar') pool = pool.filter((p) => p.pers.A < 0.5 || p.pers.C < 0.4);
         if (!pool.length) pool = adults.filter((p) => p.job !== job && !['king', 'royal', 'noble'].includes(p.job) && (!p.job || (cnt[p.job] || 0) > (quota[p.job] || 0)));
         if (!pool.length) break;

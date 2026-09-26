@@ -532,6 +532,11 @@ function arriveConvoy(sim, c) {
     for (const id of rs) { const q = S.people[id]; if (q) { sim.remember(q, `船で${to.name}の港に着いた`, { emo: 0.35, imp: 0.35, k: 'travel' }); q.needs.pleasure = Math.min(100, q.needs.pleasure + 15); } }
     return;
   }
+  // 船乗りの手間賃（船主の家計から）
+  if (c.kind === 'ship') {
+    const hh = S.households[c.hh];
+    for (const id of c.crew) { const q = S.people[id]; const qh = q && sim.hh(q); if (qh && hh && qh !== hh) { hh.money -= 8; qh.money += 8; } }
+  }
   finish(sim, c);
 }
 function departReturn(sim, c) {

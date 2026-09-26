@@ -150,7 +150,9 @@ function commitMurder(sim, killer, victim) {
 export function markWanted(sim, p, crime, days) {
   const cur = sim.S.wanted[p.id];
   sim.S.wanted[p.id] = { crime, days: (cur?.days || 0) + days, since: sim.today, kingdom: sim.townOf(p).kingdom, bounty: (cur?.bounty || 0) + Math.round(days / 2) };
-  p.rank = 'outlaw';
+  if (p.rank !== 'outlaw') p.rankBefore = p.rankBefore || p.rank;
+  // 王族・貴族は罪を犯しても身分そのものは失わない（お尋ね者の印は wanted で持つ）
+  if (!['king', 'royal', 'noble'].includes(p.rank)) p.rank = 'outlaw';
 }
 
 export function arrest(sim, guard, p) {
@@ -160,7 +162,7 @@ export function arrest(sim, guard, p) {
   if (!prison) return;
   p.fight = null; p.action = null; p.path = []; p.mission = null;
   p.jail = prison.id; p.prisonDays = w ? w.days : 5; p.crime = w ? w.crime : '騒ぎ';
-  p.pos = { ...prison.door }; p.inside = prison.id; p.rank = 'prisoner';
+  p.pos = { ...prison.door }; p.inside = prison.id; if (p.rank !== 'outlaw' && p.rank !== 'prisoner') p.rankBefore = p.rankBefore || p.rank; if (!['king', 'royal', 'noble'].includes(p.rank)) p.rank = 'prisoner';
   delete sim.S.wanted[p.id];
   guard.needs.esteem = Math.min(100, guard.needs.esteem + 30); guard.fame += 4;
   sim.hh(guard).money += (w?.bounty || 5);
@@ -186,7 +188,7 @@ export function tryCrime(sim, p) {
   // 盗み
   if (night && (p.job === 'thief' || desperate || (p.pers.A < 0.25 && p.values.ambition > 0.7 && hh.money < 40))) {
     const s = sim.townOf(p);
-    const targets = s.buildings.map((id) => sim.building(id)).filter((b) => (b.type === 'house' || b.type === 'mansion' || b.type === 'market') && b.hh !== p.hh && (b.type === 'market' || (sim.S.households[b.hh]?.money || 0) > 30));
+    const targets = s.buildings.map((id) => sim.building(id)).filter((b) => (b.type === 'house' || b.type === 'mansion' || b.type === 'market') && b.hh !== p.hh && !(b.wary > sim.today) && (b.type === 'market' || (sim.S.households[b.hh]?.money || 0) > 30));
     if (targets.length) {
       const b = R.pick(targets);
       return { type: 'steal', score: (p.job === 'thief' ? 7 : 4) + (1 - p.pers.A) * 2, place: { x: b.door.x, z: b.door.z }, dur: 15, crimeTarget: b.id };
@@ -215,11 +217,12 @@ export function crimeArrive(sim, p) {
   const a = p.action, R = sim.rng;
   if (a.type === 'steal') {
     const b = sim.building(a.crimeTarget);
+    b.wary = sim.today + 4; // 狙われた家はしばらく用心する
     const victims = b.type === 'market' ? null : sim.S.households[b.hh];
     const witnesses = sim.living().filter((q) => q !== p && !q.bandit && q.action?.type !== 'sleep' && Math.hypot(q.pos.x - p.pos.x, q.pos.z - p.pos.z) < 5 && (!q.inside || q.inside === b.id));
     const guards = witnesses.filter((q) => LAWFUL.has(q.job)).length;
     const dogs = Object.values(sim.S.creatures).filter((c) => c.role === 'watchdog' && Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 6);
-    if (dogs.length) { witnesses.push(...sim.living().filter((q) => q.inside === b.id && q !== p).slice(0, 2)); sim.pushLog(`${b.name}の近くで犬が激しく吠えた。`, 'event', [], p.pos); }
+    if (dogs.length) { witnesses.push(...sim.living().filter((q) => q.inside === b.id && q !== p).slice(0, 2)); if (b.barked !== sim.today) { b.barked = sim.today; sim.pushLog(`${b.name}の近くで犬が激しく吠えた。`, 'event', [], p.pos); } }
     const skill = p.skill.thief || 0.2;
     const ok = R.chance(clamp(0.55 + p.pers.C * 0.15 + skill * 0.3 - witnesses.length * 0.15 - guards * 0.2, 0.05, 0.95));
     if (ok) {
@@ -312,7 +315,8 @@ export function justiceDaily(sim) {
     }
     if (p.prisonDays <= 0) {
       p.jail = null; p.inside = null; p.pos = { ...jail.door }; p.action = null;
-      p.rank = p.job === 'thief' ? 'citizen' : (JOBS[p.job]?.rank || 'commoner');
+      p.rank = p.rankBefore && !['outlaw', 'prisoner'].includes(p.rankBefore) ? p.rankBefore : p.job === 'thief' ? 'citizen' : (JOBS[p.job]?.rank || 'commoner');
+      delete p.rankBefore;
       if (p.rank === 'outlaw') p.rank = 'wanderer';
       p.pers.C = clamp(p.pers.C + 0.04, 0, 1);
       if (p.job === 'thief' && R.chance(0.35 + p.pers.C * 0.3)) {
