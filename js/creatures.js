@@ -5,6 +5,7 @@ import { findPath } from './path.js';
 import { clamp } from './rng.js';
 import { startFight } from './society.js';
 import { DROPS, addItem, makeItem } from './items.js';
+import { splitCoins, splitLoot } from './guild.js';
 
 // 生息数の目安
 const POP = {
@@ -422,14 +423,14 @@ export function killCreature(sim, c, killer) {
     const p = killer;
     p.xp = (p.xp || 0) + Math.round(def.hp / 3 + c.lv * 5); sim.levelCheck(p);
     const hh = sim.hh(p);
-    for (const d of DROPS[c.sp] || []) if (sim.rng.chance(d === 'scale' || d === 'horn' || d === 'demoncore' ? 0.9 : 0.6)) addItem(p, d === 'gemx' ? makeItem('magicstone') : makeItem(d));
+    for (const d of DROPS[c.sp] || []) if (sim.rng.chance(d === 'scale' || d === 'horn' || d === 'demoncore' ? 0.9 : 0.6)) splitLoot(sim, p, addItem(p, d === 'gemx' ? makeItem('magicstone') : makeItem(d)));
     if (!def.monster) {
       const meat = Math.max(1, Math.round(def.size * 3));
       if (['livestock', 'wild'].includes(def.kind)) sim.sell(p, 'meat', meat);
       if (p.job === 'hunter') p.needs.esteem = Math.min(100, p.needs.esteem + 10);
     } else {
       const loot = (def.loot || 5) * c.lv + (c.bounty || 0);
-      hh.money += loot;
+      splitCoins(sim, p, loot);
       p.fame += Math.round((def.loot || 5) / 8) + (c.named ? 30 : 0);
       p.needs.esteem = Math.min(100, p.needs.esteem + 15 + (c.named ? 50 : 0));
       sim.remember(p, `${c.name}を倒した${loot > 30 ? `（${Math.round(loot)}銅貨の報酬）` : ''}`, { emo: 0.6, imp: c.named || def.loot >= 60 ? 1 : 0.45, k: 'hunt', where: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) } });

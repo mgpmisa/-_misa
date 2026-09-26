@@ -43,17 +43,18 @@ function frame(now) {
   }
   for (const e of sim.events) {
     switch (e.type) {
-      case 'say': ui.say(e.id, e.text); break;
+      case 'say': ui.say(e.id, e.text); if (ui.ivOpen != null) ui.iv.say(e.id, e.text); break;
       case 'log': ui.addLog(e.entry); break;
       case 'news': ui.onNews(e.entry); break;
       case 'died': if (ui.follow === e.id) ui.follow = null; break;
-      case 'hit': renderer.hit(e.id); if (ui.bubblesOn) ui.floatHit(e.id, e.dmg); break;
+      case 'hit': if (ui.ivOpen != null) ui.iv.hit(e.id); renderer.hit(e.id); if (ui.bubblesOn) ui.floatHit(e.id, e.dmg); break;
       case 'building': renderer.addBuilding(e.id); break;
       case 'borders': ui.redrawMinimapBase(); break;
     }
   }
   sim.events.length = 0;
   renderer.update(realDt, ui.selected, ui.follow);
+  ui.updateInterior(realDt);
   ui.update();
   requestAnimationFrame(frame);
 }
@@ -70,13 +71,14 @@ function setupInput() {
     const hit = renderer.pick(e.clientX, e.clientY);
     if (!hit) return;
     if (hit.entity != null) ui.select(hit.entity, false);
-    else if (hit.building != null) ui.selectBuilding(hit.building);
+    else if (hit.building != null) { ui.selectBuilding(hit.building); ui.openInterior(hit.building); }
     else if (hit.tile) ui.selectTile(hit.tile);
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('resize', () => renderer.resize());
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.key === 'Escape' && ui.ivOpen != null) { ui.closeInterior(); return; }
     if (e.key === ' ') { ui.setSpeed(ui.speed ? 0 : 1); e.preventDefault(); }
     if (e.key === '1') ui.setSpeed(1);
     if (e.key === '2') ui.setSpeed(4);

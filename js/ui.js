@@ -4,6 +4,9 @@ import { W, H, T, TILE_NAME, biomeOf } from './world.js';
 import { innerThought } from './speech.js';
 import * as SPR from './sprites.js';
 import { ITEMS, itemName, itemValue } from './items.js';
+import { InteriorView } from './interior.js';
+import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
+import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -16,6 +19,7 @@ const ACTION_LABEL = {
   guild: 'ギルドで依頼を探している', report: 'ギルドに依頼の報告をしている', buygear: '鍛冶場で装備を選んでいる', gather: '素材を集めている', hunt: '賞金首を追っている', quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
   march: '前線で戦っている', crusade: '魔王討伐の旅をしている', defend: '町を守っている', flee: '逃げている', court: '想い人に会いに来ている', trade: '商いをしている', travel: '旅をしている', visit: '知り合いの家を訪ねている',
 };
+const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle']);
 const ACTION_GO = {
   sleep: '寝床へ向かっている', eat: '食事をしに家へ向かっている', shop: '市場へ向かっている', tavern: '酒場へ向かっている', plaza: '広場へ向かっている',
   stroll: 'ぶらぶら歩いている', pray: '祈りに向かっている', play: '遊びに出かけるところ', rest: '家へ帰るところ', home: '家へ帰るところ', festival: '祭りの広場へ向かっている',
@@ -52,7 +56,7 @@ export class UI {
     $('viewLow').onclick = () => this.r.lowView();
     $('viewWorld').onclick = () => { this.follow = null; this.r.worldView(); };
     $('menuBtn').onclick = () => { $('menu').hidden = !$('menu').hidden; };
-    $('pixelSel').onchange = (e) => this.r.setPixel(+e.target.value);
+    $('pixelSel').onchange = (e) => { this.r.setPixel(+e.target.value); if (this.iv) this.iv.setPixel(+e.target.value); };
     $('bubbleChk').onchange = (e) => { this.bubblesOn = e.target.checked; if (!this.bubblesOn) this.clearBubbles(); };
     $('shadowChk').checked = this.r.renderer.shadowMap.enabled;
     $('shadowChk').onchange = (e) => this.r.setShadows(e.target.checked);
@@ -473,12 +477,55 @@ export class UI {
     return short ? t.slice(0, 10) : t;
   }
 
+  // ---------- 内装 ----------
+  openInterior(id) {
+    const b = this.sim.building(id);
+    if (!b || !INTERIOR_TYPES.has(b.type)) return false;
+    $('interior').hidden = false;
+    if (!this.iv) {
+      this.iv = new InteriorView($('ivCanvas'), this.sim);
+      this.iv.setPixel(+$('pixelSel').value || 2);
+      let down = null;
+      $('ivCanvas').addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+      $('ivCanvas').addEventListener('pointerup', (e) => {
+        if (!down) return;
+        const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y); down = null;
+        if (moved > 6) return;
+        const hit = this.iv.pick(e.clientX, e.clientY);
+        if (hit && hit.entity != null) this.select(hit.entity, false);
+      });
+      $('ivCanvas').addEventListener('contextmenu', (e) => e.preventDefault());
+      $('ivClose').onclick = () => this.closeInterior();
+      window.addEventListener('resize', () => this.ivOpen != null && this.iv.resize());
+    }
+    this.iv.resize();
+    const r = this.iv.open(id);
+    this.ivOpen = id;
+    $('ivTitle').textContent = r.title; $('ivSub').textContent = r.subtitle;
+    return true;
+  }
+  closeInterior() {
+    if (this.iv) this.iv.close();
+    this.ivOpen = null;
+    $('interior').hidden = true;
+  }
+  updateInterior(dt) {
+    if (this.ivOpen == null) return;
+    this.iv.update(dt);
+    this.ivT = (this.ivT || 0) + dt;
+    if (this.ivT > 2) { this.ivT = 0; const b = this.sim.building(this.ivOpen); const n = this.iv.countInside?.(); if (b && n) $('ivSub').textContent = `${$('ivSub').textContent.replace(/・中に.*$/, '')}・中に${n.people}人${n.monsters ? `・魔物${n.monsters}体` : ''}`; }
+  }
+
   // ---------- 詳細パネル ----------
   renderInspector(force) {
     if ($('inspector').hidden) return;
     const body = $('inspBody');
     const scroll = $('inspector').scrollTop;
-    if (this.selBuilding != null) body.innerHTML = this.buildingHtml(this.sim.building(this.selBuilding));
+    if (this.selBuilding != null) {
+      body.innerHTML = this.buildingHtml(this.sim.building(this.selBuilding));
+      const eb = $('enterBtn');
+      if (eb) eb.onclick = () => this.openInterior(this.selBuilding);
+    }
     else if (this.selTile) body.innerHTML = this.tileHtml(this.selTile);
     else if (this.selected != null) {
       const e = this.sim.entity(this.selected);
@@ -640,6 +687,13 @@ export class UI {
     const sim = this.sim, S = sim.S;
     const typeLabel = { watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
+    if (INTERIOR_TYPES.has(b.type)) h += `<div class="row-btns"><button id="enterBtn">${['cave', 'pyramid', 'demoncastle', 'ruins', 'mine'].includes(b.type) ? '奥へ踏み込んで見る' : '中に入って見る'}</button></div>`;
+    if (b.type === 'house' || b.type === 'mansion') {
+      const own = b.owner != null ? S.households[b.owner] : null;
+      const oh = own ? headOf(sim, own) : null;
+      const status = b.hh == null ? '空き家' : b.owner === b.hh ? '持ち家' : own ? '借家' : '町の貸家';
+      h += `<div class="section"><h4>家の値打ちと持ち主</h4><dl class="kv"><dt>住まい</dt><dd>${status}</dd><dt>持ち主</dt><dd>${own ? `${esc(own.name)}${oh ? `（${this.pLink(oh, oh.given)}）` : ''}` : '町'}</dd><dt>値打ち</dt><dd>${b.value || '—'}銅貨</dd>${b.rent ? `<dt>家賃</dt><dd>週${b.rent}銅貨${b.arrears ? `　<b class="down">滞納${b.arrears}週</b>` : ''}</dd>` : ''}</dl></div>`;
+    }
     const hh = b.hh != null ? S.households[b.hh] : null;
     if (hh) h += `<div class="section"><h4>暮らしている家族</h4><dl class="kv"><dt>蓄え</dt><dd>${Math.round(hh.money)}銅貨</dd><dt>食糧</dt><dd>${Math.floor(hh.food)}食分</dd></dl><ul class="rels" style="margin-top:6px">${hh.members.map((id) => S.people[id]).filter(Boolean).map((q) => `<li><span>${this.pLink(q, `${q.given}・${q.family}`)}</span><span class="dead">${sim.ageOf(q)}歳</span></li>`).join('')}</ul></div>`;
     if (b.type === 'smithy' && b.settlement != null) {

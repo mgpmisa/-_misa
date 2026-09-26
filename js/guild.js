@@ -90,12 +90,15 @@ export function guildDaily(sim) {
 export function takeQuest(sim, p) {
   const S = sim.S, R = sim.rng;
   if (p.quest) return;
-  const rank = advRank(p);
+  const pt = partyOf(sim, p);
+  const crew = pt ? pt.members.map((id) => S.people[id]).filter((o) => o && o.deathYear == null && !o.quest && o.jail == null && o.s === p.s && o.hp > o.maxhp * 0.5) : [p];
+  if (pt && !crew.includes(p)) crew.unshift(p);
+  const rank = pt ? Math.round(crew.reduce((s2, o) => s2 + advRank(o), 0) / crew.length + (crew.length >= 3 ? 1 : 0)) : advRank(p);
   const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1);
   if (!cands.length) return;
   const q = R.weighted(cands, (x) => x.reward / 20 + (x.rank === rank ? 2 : 1) + p.values.ambition);
-  const members = [p];
-  if (q.rank >= 2) {
+  const members = pt ? crew : [p];
+  if (!pt && q.rank >= 2) {
     const mates = sim.living().filter((o) => o !== p && isAdventurer(o) && !o.quest && o.s === p.s && o.jail == null && sim.rel(p, o).a > -10 && o.hp > o.maxhp * 0.6).sort((a, b) => sim.rel(p, b).a - sim.rel(p, a).a).slice(0, Math.min(3, q.rank));
     members.push(...mates);
   }
@@ -104,7 +107,8 @@ export function takeQuest(sim, p) {
     m.quest = q.id; m.action = null;
     sim.remember(m, members.length > 1 ? `${members.map((x) => x.given).join('・')}と組んで「${q.title}」を引き受けた` : `ギルドで「${q.title}」を引き受けた`, { emo: 0.4, imp: 0.5, k: 'quest' });
   }
-  if (members.length > 1) sim.pushLog(`冒険者${members.map((x) => x.given).join('・')}がパーティーを組み、「${q.title}」を引き受けた。`, 'event', members.map((x) => x.id), p.pos);
+  if (pt) { q.party = pt.id; sim.pushLog(`パーティー「${pt.name}」（${members.map((x) => x.given).join('・')}）が「${q.title}」を引き受けた。`, 'event', members.map((x) => x.id), p.pos); }
+  else if (members.length > 1) sim.pushLog(`冒険者${members.map((x) => x.given).join('・')}が臨時のパーティーを組み、「${q.title}」を引き受けた。`, 'event', members.map((x) => x.id), p.pos);
   else sim.pushLog(`冒険者${p.given}が「${q.title}」を引き受けた。`, 'event', [p.id], p.pos);
 }
 
@@ -172,7 +176,7 @@ export function reportQuest(sim, p) {
   if (giver && giver.deathYear == null && giver.rank !== 'king') { const hh = sim.hh(giver); if (hh) hh.money -= Math.min(hh.money * 0.5, q.reward * 0.5); }
   const share = Math.round(q.reward / members.length);
   for (const m of members) {
-    sim.hh(m).money += share;
+    m.purse = (m.purse || 0) + share * 0.7; if (sim.hh(m)) sim.hh(m).money += share * 0.3;
     m.qp = (m.qp || 0) + 1 + q.rank;
     const before = m.advRank || 0;
     m.advRank = advRank(m);
@@ -187,6 +191,13 @@ export function reportQuest(sim, p) {
   }
   if (giver && giver.deathYear == null) { sim.remember(giver, `頼んでいた「${q.title}」を冒険者が片づけてくれた`, { emo: 0.6, imp: 0.5, k: 'quest' }); for (const m of members) sim.relMut(giver, m).a += 10; }
   q.state = 'done'; q.closed = sim.today; q.doneBy = members.map((m) => m.given).join('・');
+  const pt = q.party != null ? S.advParties?.[q.party] : null;
+  if (pt) {
+    pt.done++; pt.fame += 2 + q.rank * 3; pt.log.unshift(`${sim.year()}年 ${q.title}`); pt.log.length = Math.min(pt.log.length, 12);
+    q.doneBy = `「${pt.name}」`;
+    for (const a of members) for (const b of members) if (a !== b) sim.relMut(a, b).a += 4;
+    if ([10, 25, 50].includes(pt.done)) sim.news(`パーティー「${pt.name}」が依頼達成${pt.done}件を数え、名を上げている`, 2, p.pos);
+  }
   sim.pushLog(`冒険者${q.doneBy}が「${q.title}」を達成した。`, 'event', members.map((m) => m.id), p.pos);
   // 素材を売る
   sellMaterials(sim, members);
@@ -204,7 +215,7 @@ export function sellMaterials(sim, people) {
       if (keep) continue;
       const n = it.n || 1;
       town.mats[it.id] = (town.mats[it.id] || 0) + n;
-      sim.hh(m).money += Math.round(d.value * n * 0.7);
+      m.purse = (m.purse || 0) + Math.round(d.value * n * 0.7);
       m.inv.splice(m.inv.indexOf(it), 1);
     }
   }
@@ -220,4 +231,116 @@ export function huntBounty(sim, p, target) {
       arrest(sim, p, target);
     } else startFight(sim, p, target);
   }
+}
+
+// ---------- 冒険者パーティー ----------
+const PARTY_A = ['銀の', '暁の', '黄昏の', '鋼の', '紅の', '蒼き', '風の', '星降る', '灰色の', '獅子の', '白銀の', '炎の', '月影の', '北風の', '砂漠の', '黒鉄の'];
+const PARTY_B = ['牙', '剣', '翼', '盾', '誓い', '旅団', '狼', '灯火', '矢', '一団', '同盟', '爪', '風', '鷹'];
+const ROLE_OF = { warrior: '前衛', paladin: '前衛', adventurer: '遊撃', archer: '後衛', sage: '魔法', cleric: '回復', guildmaster: '前衛' };
+export const partyRole = (p) => ROLE_OF[p.job] || '遊撃';
+export function partyOf(sim, p) { const pt = p.party != null ? sim.S.advParties?.[p.party] : null; return pt && !pt.gone ? pt : null; }
+
+// 毎日：気の合う冒険者どうしがパーティーを組み、仲たがいすると解散する
+export function partiesDaily(sim) {
+  const S = sim.S, R = sim.rng;
+  S.advParties = S.advParties || {};
+  S.nextParty = S.nextParty || 1;
+  for (const pt of Object.values(S.advParties)) {
+    if (pt.gone) continue;
+    const alive = pt.members.map((id) => S.people[id]).filter((m) => m && m.deathYear == null && m.party === pt.id);
+    // 亡くなった仲間を弔う
+    for (const id of pt.members) {
+      const m = S.people[id];
+      if (m && m.deathYear != null && !pt.mourned?.includes(id)) {
+        pt.mourned = [...(pt.mourned || []), id];
+        for (const o of alive) sim.remember(o, `パーティー「${pt.name}」の仲間${m.given}を失った`, { emo: -0.9, imp: 0.9, about: [m.id], k: 'death' });
+        pt.log.unshift(`${sim.year()}年 ${m.given}を失う`);
+      }
+    }
+    pt.members = alive.map((m) => m.id);
+    if (!pt.members.includes(pt.leader)) {
+      const nl = alive.slice().sort((a, b) => b.lv - a.lv)[0];
+      if (nl) { pt.leader = nl.id; sim.remember(nl, `「${pt.name}」のリーダーを引き継いだ`, { emo: 0.3, imp: 0.7, k: 'party' }); }
+    }
+    // 仲たがい：仲間どうしの好感度が低い、または人数が足りない
+    let worst = 0, pair = null;
+    for (const a of alive) for (const b of alive) if (a !== b) { const v = sim.rel(a, b).a; if (v < worst) { worst = v; pair = [a, b]; } }
+    if (alive.length < 2 || worst < -25) { disband(sim, pt, alive, pair); continue; }
+    // 一緒にいると仲が深まる
+    for (const a of alive) for (const b of alive) if (a !== b) sim.relMut(a, b).a = Math.min(100, sim.rel(a, b).a + 0.3);
+  }
+  // 冒険者の数が少ない王都には、流れの冒険者がやって来る。若者が冒険者を志すこともある
+  for (const cap of S.world.settlements.filter((s) => s.type === 'capital')) {
+    if (S.towns[cap.id].occupied) continue;
+    const advs = sim.living().filter((p) => p.s === cap.id && isAdventurer(p));
+    const openQ = (S.quests || []).filter((q) => q.s === cap.id && q.state === 'open').length;
+    if (advs.length < 6 + Math.min(6, openQ / 2) && R.chance(0.3)) sim.adventurerArrives(cap);
+    if (R.chance(0.08)) {
+      const kingdomTowns = S.world.settlements.filter((s) => s.kingdom === cap.kingdom).map((s) => s.id);
+      const y = sim.living().find((p) => kingdomTowns.includes(p.s) && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 24 && p.spouseId == null && p.values.courage > 0.6 && p.values.ambition > 0.55 && !['king', 'royal', 'noble'].includes(p.rank) && !isAdventurer(p) && !JOBS[p.job]?.guardTown && R.chance(0.3));
+      if (y) {
+        const from = sim.town(y.s);
+        y.formerJob = y.job; y.job = R.pick(['adventurer', 'warrior', 'archer']); y.rank = 'adventurer'; y.skill[y.job] = 0.15;
+        if (y.s !== cap.id) {
+          const inn = sim.townBuilding(cap, 'tavern');
+          const id = S.nextHh++;
+          S.households[id] = { id, members: [], house: inn ? inn.id : null, inn: true, s: cap.id, money: 10, food: 0, comfort: 0, name: `${y.family}（宿住まい）` };
+          sim.moveTo(y, S.households[id]); y.s = cap.id;
+        }
+        sim.remember(y, `家族の反対を押し切って、${from.name}を出て冒険者になった`, { emo: 0.7, imp: 1, k: 'career' });
+        y.deeds.push(`${sim.year()}年、冒険者を志した`);
+        sim.pushLog(`${from.name}の${y.given}（${sim.ageOf(y)}歳）が、冒険者になると言って家を飛び出した。`, 'event', [y.id], y.pos);
+        for (const pid of [y.fatherId, y.motherId]) { const par = S.people[pid]; if (par && par.deathYear == null) sim.remember(par, `${y.given}が冒険者になると言って出ていった。無事でいてくれればいいが`, { emo: -0.4, imp: 0.8, about: [y.id], k: 'family' }); }
+      }
+    }
+  }
+  // 結成：ソロの冒険者が、気の合う仲間を誘う
+  for (const cap of S.world.settlements.filter((s) => s.type === 'capital')) {
+    const free = sim.living().filter((p) => p.s === cap.id && isAdventurer(p) && !partyOf(sim, p) && p.jail == null && sim.ageOf(p) >= 16 && p.job !== 'guildmaster');
+    if (free.length < 2 || !R.chance(0.6)) continue;
+    const leader = free.slice().sort((a, b) => (b.lv + b.pers.E * 3 + b.values.ambition * 3) - (a.lv + a.pers.E * 3 + a.values.ambition * 3))[0];
+    const roles = new Set([partyRole(leader)]);
+    const picks = [leader];
+    const others = free.filter((o) => o !== leader && sim.rel(leader, o).a > -5).sort((a, b) => (sim.rel(leader, b).a + (roles.has(partyRole(b)) ? -20 : 10) + Math.abs(b.lv - leader.lv) * -1) - (sim.rel(leader, a).a + (roles.has(partyRole(a)) ? -20 : 10) + Math.abs(a.lv - leader.lv) * -1));
+    for (const o of others) { if (picks.length >= 4) break; if (R.chance(0.5 + o.pers.A * 0.4)) { picks.push(o); roles.add(partyRole(o)); } }
+    if (picks.length < 2) continue;
+    let name;
+    for (let i = 0; i < 6; i++) { name = R.pick(PARTY_A) + R.pick(PARTY_B); if (!Object.values(S.advParties).some((x) => x.name === name && !x.gone)) break; }
+    const id = S.nextParty++;
+    S.advParties[id] = { id, name, leader: leader.id, members: picks.map((m) => m.id), s: cap.id, formed: sim.today, year: sim.year(), done: 0, fame: 0, log: [`${sim.year()}年 ${cap.name}で結成`] };
+    for (const m of picks) {
+      m.party = id;
+      sim.remember(m, m === leader ? `仲間を集めてパーティー「${name}」を結成した` : `${leader.given}に誘われ、パーティー「${name}」に加わった`, { emo: 0.8, imp: 0.8, about: picks.filter((x) => x !== m).map((x) => x.id), k: 'party' });
+      for (const o of picks) if (o !== m) sim.relMut(m, o).a += 12;
+    }
+    sim.pushLog(`${cap.name}の冒険者ギルドで、${leader.given}を頭にパーティー「${name}」（${picks.map((m) => `${m.given}・${partyRole(m)}`).join('／')}）が結成された。`, 'event', picks.map((m) => m.id), leader.pos);
+  }
+}
+
+function disband(sim, pt, alive, pair) {
+  pt.gone = true; pt.ended = sim.today;
+  for (const m of alive) {
+    m.party = null;
+    sim.remember(m, pair && pair.includes(m) ? `${pair.find((x) => x !== m).given}と揉めて、パーティー「${pt.name}」は解散した` : `パーティー「${pt.name}」が解散した`, { emo: -0.5, imp: 0.7, k: 'party' });
+  }
+  if (pt.done >= 3 || alive.length) sim.pushLog(`パーティー「${pt.name}」が${pair ? `${pair[0].given}と${pair[1].given}の仲たがいで` : ''}解散した（依頼達成${pt.done}件）。`, 'event', alive.map((m) => m.id), alive[0]?.pos);
+}
+
+// 戦利品の山分け：パーティーの誰かが魔物から素材を得たら、仲間にも分ける
+export function splitLoot(sim, p, it) {
+  const pt = partyOf(sim, p);
+  if (!pt || !it || (it.n || 1) < 2) return;
+  const mates = pt.members.map((id) => sim.S.people[id]).filter((m) => m && m !== p && m.deathYear == null && m.quest === p.quest);
+  if (!mates.length) return;
+  const each = Math.floor((it.n || 1) / (mates.length + 1));
+  if (each < 1) return;
+  for (const m of mates) { it.n -= each; addItem(m, makeItem(it.id, 1, { n: each })); }
+}
+
+// 報酬のお金：パーティーなら一緒に戦った仲間と山分け、ひとりなら財布と家計に
+export function splitCoins(sim, p, amt) {
+  const pt = partyOf(sim, p);
+  const mates = pt ? pt.members.map((id) => sim.S.people[id]).filter((m) => m && m.deathYear == null && (m === p || (m.quest && m.quest === p.quest))) : [p];
+  const each = amt / mates.length;
+  for (const m of mates) { m.purse = (m.purse || 0) + each * 0.7; const hh = sim.hh(m); if (hh) hh.money += each * 0.3; else m.purse += each * 0.3; }
 }
