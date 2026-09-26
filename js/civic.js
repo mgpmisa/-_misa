@@ -425,12 +425,13 @@ export function civicDaily(sim) {
   const civ = ensureCivic(sim), S = sim.S, R = sim.rng;
   const L = sim.living();
   const week = Math.floor(sim.today / 7);
-  // 交代勤務の割り当て：それぞれの町・職で、3人に1人が夜番（週ごとに入れ替わる）
+  // 交代勤務の割り当て：町ごとに、守りの者（兵士・門番・衛兵・自警団）の3人に1人が夜番。どの町も最低1人は夜番（週ごとに入れ替わる）
   const groups = new Map();
-  for (const p of L) if (SHIFT_JOBS.has(p.job) && p.job !== 'watchman' && p.job !== 'knight') { const k = p.s + ':' + p.job; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
+  for (const p of L) if (SHIFT_JOBS.has(p.job) && p.job !== 'watchman' && p.job !== 'knight' && !(p.post != null && (p.postUntil || 0) > sim.today)) { if (!groups.has(p.s)) groups.set(p.s, []); groups.get(p.s).push(p); }
   for (const list of groups.values()) {
     list.sort((a, b) => a.id - b.id);
-    list.forEach((p, i) => { p.shift = list.length === 1 ? (week % 2 ? 'night' : 'day') : (i + week) % 3 === 0 ? 'night' : 'day'; });
+    const n = list.length, nNight = Math.max(1, Math.round(n / 3));
+    list.forEach((p, i) => { p.shift = ((i - week * nNight) % n + n) % n < nNight ? 'night' : 'day'; });
   }
   // 砦の駐屯：その国の王都の兵士から、1週間交代で砦に詰める
   for (const id of S.world.forts || []) {
