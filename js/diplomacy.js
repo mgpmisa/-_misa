@@ -436,7 +436,7 @@ function planRoads(sim) {
     const cands = roadTargets(sim, k.id);
     let started = false;
     for (const c of cands.slice(0, 2)) {
-      if (D.cool[`road:${k.id}:${c.to}`] > sim.today) continue;
+      if (D.cool[`road:${k.id}:${c.to}`] > sim.today || D.cool[`refuse:${k.id}:${sim.town(c.to).kingdom}`] > sim.today) continue;
       const path = planPath(sim, k.id, c.from, c.to);
       if (!path) { D.cool[`road:${k.id}:${c.to}`] = sim.today + 40; continue; }
       const todo = path.filter((i) => !ROADLIKE(S.world.tiles[i]));
@@ -491,8 +491,8 @@ function startRoad(sim, k, c, path, todo, cost) {
     const their = tradeGain(sim, tk, c.to, c.from) + popOf(sim, (p) => sim.town(p.s)?.kingdom === k) * 1.2;
     const theyLike = rel(sim, tk, k) > 10 && PT.type !== 'timid' && K(sim, tk).treasury > 500 && their * ({ merchant: 4, peace: 3, ambitious: 2.5, timid: 1.5 }[PT.type]) > cost * 0.5;
     if (theyLike && kingOf(sim, tk)) partner = tk;
-    else if (crosses && (rel(sim, tk, k) < -20 || (PT.type === 'ambitious' && rel(sim, tk, k) < 10))) {
-      D.stats.refused++; D.cool[`road:${k}:${c.to}`] = sim.today + 30;
+    else if (crosses && (rel(sim, tk, k) < -20 || (PT.type === 'ambitious' && rel(sim, tk, k) < -5))) {
+      D.stats.refused++; D.cool[`road:${k}:${c.to}`] = sim.today + 30; D.cool[`refuse:${k}:${tk}`] = sim.today + 30;
       addRel(sim, k, tk, -3);
       note(sim, `${kname(sim, tk)}は、${kname(sim, k)}の街道が自国の土地を通ることを拒んだ`, [k, tk], { pos: to });
       return false;
@@ -516,11 +516,13 @@ function startRoad(sim, k, c, path, todo, cost) {
 // 道すじの強い魔物：先に討伐（ギルドへ王の布告の依頼。報酬は報告のとき国庫から）
 function checkThreats(sim, road) {
   const S = sim.S, D = S.diplo, w = S.world;
-  const pts = road.todo.filter((_, i) => i % 8 === 0).slice(road.lo >> 3);
+  const pts = [];
+  for (let j = road.lo; j <= road.hi; j += 8) pts.push(j);
   // 道すじの場所ごとに、まわりの魔物の強さを見る。弱い獣や小物がばらばらにいるだけなら、人夫と護衛で追い払える
   const ids = new Set(); let power = 0, named = null;
-  for (const i of pts) {
-    const x = i % W, z = (i / W) | 0;
+  let bLo = Infinity, bHi = -Infinity;
+  for (const j of pts) {
+    const i = road.todo[j], x = i % W, z = (i / W) | 0;
     if (w.settlements.some((s) => cheb(s.x, s.z, x, z) <= (s.r || 6) + 3)) continue;
     const th = threatsNear(sim, x, z, 5);
     let local = 0;
@@ -528,12 +530,14 @@ function checkThreats(sim, road) {
     if (local < 160 && th.named == null) continue;
     for (const id of th.ids) ids.add(id);
     power = Math.max(power, local);
+    bLo = Math.min(bLo, j - 8); bHi = Math.max(bHi, j + 8);
     if (th.named != null) named = th.named;
   }
+  road.block = ids.size ? { lo: bLo, hi: bHi } : null;   // 魔物の縄張りにかかる区間（そこまでは造り進められる）
   if (!ids.size) { if (road.stage === 'purge') { road.stage = 'build'; note(sim, `${road.name}の道すじの魔物がいなくなり、普請が再開された`, [road.k], { pos: sim.town(road.from) }); } return false; }
   if (road.stage !== 'purge') {
     road.stage = 'purge'; road.purgeDay = sim.today; D.stats.purges++;
-    note(sim, `${road.name}の道すじに強い魔物がいる。${kname(sim, road.k)}は討伐が済むまで普請を止め、ギルドに討伐を頼んだ`, [road.k], { news: 1, pos: sim.town(road.from) });
+    note(sim, `${road.name}の道すじに強い魔物がいる。${kname(sim, road.k)}はギルドに討伐を頼み、魔物の縄張りの手前まで普請を進める`, [road.k], { news: 1, pos: sim.town(road.from) });
   }
   const k = K(sim, road.k);
   S.quests = S.quests || [];
@@ -564,16 +568,18 @@ function stepRoad(sim, road) {
         if (path) { road.path = path; road.todo = path.filter((i) => !ROADLIKE(w.tiles[i])); road.lo = 0; road.hi = road.todo.length - 1; road.purgeDay = sim.today; note(sim, `${road.name}は、魔物の縄張りを避けて道すじを引き直した`, [road.k], { pos: sim.town(road.from) }); checkThreats(sim, road); return; }
       }
       failRoad(sim, road, '道すじの魔物を退けられず、普請を諦めた');
+      return;
     }
-    return;
   }
-  if (road.stage !== 'build') return;
+  if (road.stage !== 'build' && road.stage !== 'purge') return;
+  const blk = road.stage === 'purge' ? road.block : null;
+  const canGo = (dir) => (road.lo <= road.hi) && (!blk || (dir > 0 ? road.lo < blk.lo : road.hi > blk.hi));
   if (k.war) return;
   // 両端から工事（共同なら相手国は向こうの端から）
   const sides = [{ kid: road.k, dir: 1, crewKey: 'crew' }];
   if (road.partner != null && K(sim, road.partner) && !atWar(sim, road.k, road.partner)) sides.push({ kid: road.partner, dir: -1, crewKey: 'pcrew' });
   for (const sd of sides) {
-    if (road.lo > road.hi) break;
+    if (!canGo(sd.dir)) continue;
     const KK = K(sim, sd.kid);
     const head = road.todo[sd.dir > 0 ? road.lo : road.hi];
     const hx = head % W, hz = (head / W) | 0;
@@ -599,7 +605,7 @@ function stepRoad(sim, road) {
     if (!workers.length) { if (sim.rng.chance(0.2)) note(sim, `${kname(sim, sd.kid)}の国庫が乏しく、${road.name}の普請が止まっている`, [sd.kid], { pos: { x: hx, z: hz } }); continue; }
     let work = workers.reduce((s, p) => s + WORK_DAY * (0.8 + (p.skill?.[p.job] || 0.3) * (p.job === 'roadworker' ? 0.6 : 0.2)), 0);
     const changed = [];
-    while (work > 0 && road.lo <= road.hi) {
+    while (work > 0 && canGo(sd.dir)) {
       const i = road.todo[sd.dir > 0 ? road.lo : road.hi];
       const t = w.tiles[i];
       const need = TILE_WORK[t] || 1;
@@ -1243,7 +1249,7 @@ export function diplomacyHourly(sim) {
   const h = Math.floor(sim.hour());
   // 朝7時：普請場の近くに住む人夫を現場へ（遠い町の人夫は泊まり込みとみなす）
   if (h === 7) for (const road of D.roads) {
-    if (road.stage !== 'build') continue;
+    if (road.stage !== 'build' && road.stage !== 'purge') continue;
     for (const [key, dir] of [['crew', 1], ['pcrew', -1]]) {
       if (road.lo > road.hi) break;
       const i = road.todo[dir > 0 ? road.lo : road.hi], x = i % W, z = (i / W) | 0;
