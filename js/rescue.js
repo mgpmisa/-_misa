@@ -103,6 +103,16 @@ function tooStrong(c, threat) {
   const def = SPECIES[c.sp] || {};
   return threat > TOO_STRONG || def.boss || c.sp === 'dragon' || (c.named && c.hostile);
 }
+// 近くに竜のような手に負えない相手がいる場所か（そこへは駆けつけず、警鐘と討伐依頼に任せる）
+function deadlyNear(sim, x, z, r = 16) {
+  if (!sim._cgrid) return false;
+  for (const o of around(sim._cgrid, x, z, r)) {
+    if (o.hp <= 0 || o.dormant || o.inDungeon || !o.hostile) continue;
+    if (Math.hypot(o.pos.x - x, o.pos.z - z) > r) continue;
+    if (tooStrong(o, powerC(o))) return true;
+  }
+  return false;
+}
 function nearestTown(sim, x, z) {
   let best = null, bd = Infinity;
   for (const s of sim.S.world.settlements) { const d = Math.hypot(s.x - x, s.z - z) - s.r; if (d < bd) { bd = d; best = s; } }
@@ -177,7 +187,7 @@ export function cry(sim, p, c) {
 function hear(sim, victim, c, inc) {
   const S = sim.S, R = ensureRescue(sim), rng = sim.rng;
   const threat = packPower(sim, c);
-  const strongFoe = tooStrong(c, threat);
+  const strongFoe = tooStrong(c, threat) || deadlyNear(sim, c.pos.x, c.pos.z);
   const need = threat * NEED;
   const hearers = [];
   for (const q of sim.living()) {
@@ -328,6 +338,12 @@ function stepIncident(sim, inc) {
   if (c.fleeUntil > S.t && !helpersNear.some((p) => p.fight?.target === c.id) && helpersNear.every((p) => dist(p, c) > 7)) return finish(sim, inc, 'drivenOff');
   if (Math.hypot(c.pos.x - (inc.ox ?? inc.x), c.pos.z - (inc.oz ?? inc.z)) > 22 && S.t - inc.lastFight > 6) return finish(sim, inc, 'left');
   if (S.t - inc.t0 > 300) return finish(sim, inc, 'timeout');
+  // 竜などが近くに来たら、駆けつけた者も引き上げる
+  if (deadlyNear(sim, c.pos.x, c.pos.z)) {
+    for (const id of inc.rescuers) { const p = S.people[id]; if (alive(sim, p) && p.mission?.inc === c.id) { p.mission = null; if (p.fight?.target === c.id) p.fight = null; sim.startAction(p, { type: 'flee', place: sim.placeFor(p, 'home'), dur: 60 }); } }
+    R.stats.tooStrong++;
+    return finish(sim, inc, 'timeout');
+  }
   // 獣は、人が大勢で来たら逃げる（群れの長は子分より粘る。魔物は monsters.js の退き方に任せる）
   const def = SPECIES[c.sp] || {};
   if (def.kind === 'wild' && !(c.fleeUntil > S.t)) {
@@ -400,7 +416,7 @@ function stepIncident(sim, inc) {
 function dispatch(sim, inc, c, starter, reporter) {
   const S = sim.S, R = ensureRescue(sim), rng = sim.rng;
   const threat = packPower(sim, c);
-  if (tooStrong(c, threat)) { R.stats.tooStrong++; return false; }
+  if (tooStrong(c, threat) || deadlyNear(sim, c.pos.x, c.pos.z)) { R.stats.tooStrong++; return false; }
   const need = threat * NEED;
   const s = sim.town(inc.sid);
   let sum = inc.rescuers.map((id) => S.people[id]).filter((q) => alive(sim, q)).reduce((t, q) => t + humanPower(q), 0);
@@ -540,7 +556,7 @@ export function rescueHourly(sim) {
       const finder = people.find((p) => !p.mission && Math.hypot(p.pos.x - c.pos.x, p.pos.z - c.pos.z) < (p.job === 'hunter' ? sight + 4 : sight));
       if (!finder) continue;
       const threat = packPower(sim, c);
-      if (tooStrong(c, threat)) continue;   // 警鐘と討伐依頼に任せる
+      if (tooStrong(c, threat) || deadlyNear(sim, c.pos.x, c.pos.z)) continue;   // 警鐘と討伐依頼に任せる
       R.stats.patrolFound++;
       // 数の減った獣は殺さず、追い払うだけ（どの種も絶滅させない）
       if (!c.hostile && SPECIES[c.sp]?.kind === 'wild' && (isRare(sim, c.sp) || !mustKill(sim, c))) {
