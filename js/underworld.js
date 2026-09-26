@@ -503,7 +503,7 @@ function sexCrimeDaily(sim) {
   }
   if (sim.today - uw.lastSex < 8 || !R.chance(0.03 * rate)) return;
   const offs = sim.living().filter((p) => sim.ageOf(p) >= 20 && sim.ageOf(p) <= 60 && free(p) && p.pers.A < 0.2 && p.pers.C < 0.45 && !S.wanted[p.id] && !ELITE.has(p.rank) && !p.hero);
-  const off = R.weighted(offs, (p) => (0.25 - p.pers.A) * 10);
+  const off = R.weighted(offs, (p) => (0.25 - p.pers.A) * 10 * (p.sex === 'm' ? 4 : 1));
   if (!off || !adult(sim, off)) return;
   const vics = sim.living().filter((q) => q !== off && q.s === off.s && adult(sim, q) && free(q) && q.hh !== off.hh && q.spouseId !== off.id && !sim.isKin(off, q) && q.jail == null && !q.uwTrauma);
   const vic = vics.length ? R.pick(vics) : null;

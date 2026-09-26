@@ -4,7 +4,11 @@
 import { SPECIES } from './data.js';
 import { killCreature, makeCreature, applyStats, townMask, buildGrid, around } from './creatures.js';
 import { startFight } from './society.js';
-import { T, W, H, walkable, tileAt } from './world.js';
+import { T, W, H, walkable, tileAt, biomeOf } from './world.js';
+
+// 食物連鎖の表は動物担当の fauna.js にある。まだつながっていなくても動くように、あとから読み込む
+let FA = null;
+import('./fauna.js').then((m) => { FA = m; }).catch(() => {});
 
 // 種族の系統（進化しても同じ群れのまま）
 const FAMILY = {
@@ -26,6 +30,12 @@ const FAM = {
 // 仲間が増える上限（種ごと）。creatures.js の生息数の目安の約1.4倍
 const SP_CAP = { goblin: 14, orc: 9, skeleton: 11, mummy: 8, spider: 8, imp: 20 };
 const MAX_BAND = 10;
+// 数の目安は固定数でなく広さあたりの密度（160×160マスを1とした広さの倍率を掛ける）
+const AREA = () => (W * H) / 25600;
+const capOf = (sp) => Math.round((SP_CAP[sp] || 10) * AREA());
+// どの魔物も絶滅しない最低数（160×160マスあたり）と、湧く場所
+const MIN_DENS = { goblin: 5, orc: 3, skeleton: 4, mummy: 3, spider: 3, slime: 5, golem: 1, wyvern: 1, unicorn: 1, imp: 3 };
+const SPRING = { goblin: ['cave'], skeleton: ['cave'], spider: ['cave'], mummy: ['pyramid'], golem: ['ruins'], slime: ['ruins'], imp: ['demoncastle'] };
 const GEN_NAMES = ['ガルザーク', 'ベリアス', 'ヴォルグ', 'ザガン', 'モラクス', 'アンドラス', 'グシオン', 'バラム', 'マルバス', 'ハルファス', 'フォカロル', 'ナベリウス'];
 const GEN_EPI = ['黒炎の', '鉄血の', '冷笑の', '千刃の', '沈黙の', '嵐の', '毒舌の', '双角の'];
 const FIGHTER_JOBS = new Set(['knight', 'soldier', 'adventurer', 'wizard', 'general', 'royalguard', 'courtmage', 'warrior', 'archer', 'cleric', 'sage', 'paladin', 'guildmaster', 'watchman', 'guard']);
@@ -257,7 +267,7 @@ function fight(sim, A, B) {
   let grown = 0;
   const gain = decisive ? 2 : 1;
   for (let i = 0; i < gain; i++) {
-    if (win.members.length >= MAX_BAND || (count[base] || 0) >= (SP_CAP[base] || 10)) break;
+    if (win.members.length >= MAX_BAND || (count[base] || 0) >= capOf(base)) break;
     const p = sim.randomNear(wb.x, wb.z, 3);
     if (!p) break;
     const c = makeCreature(sim, base, p.x, p.z, { lair: win.lair, hx: wb.x, hz: wb.z, range: 7, lv: R.int(1, 3), age: 0 });
@@ -585,6 +595,27 @@ const GROW_DAYS = 10;
 // 夜は住処で眠る種（昼に動く）。不死者・蜘蛛・ゴブリン・魔族は夜も動く
 const DIURNAL = new Set(['orc', 'orcking', 'slime', 'bigslime', 'kingslime', 'unicorn', 'golem', 'wyvern']);
 const PREY_SP = new Set(['deer', 'boar', 'rabbit', 'squirrel', 'camel', 'reindeer', 'penguin', 'monkey', 'rat', 'frog', 'turtle', 'crow']);
+// 食物連鎖（fauna.js があればその表、なければ控えめな自前の表）
+function preyList(sp) {
+  if (FA) return FA.preyFor(sp);
+  return SPECIES[sp].diet === 'none' || SPECIES[sp].diet === 'grass' ? [] : [...PREY_SP];
+}
+function canEat(sim, c, o, desperate) {
+  if (o.owner != null || o.hp <= 0 || o.dormant) return false;
+  if (FA) return FA.canHunt(sim, c.sp, o.sp, desperate);
+  if (!PREY_SP.has(o.sp)) return false;
+  return desperate || (sim._monCount?.[o.sp] || 0) > 4; // 安全弁：数の少ない獲物は狩らない
+}
+const meals = (sp) => Math.max(1, Math.round((FA ? FA.foodValue(sp) : 6) / 5));
+function forage(sim, c, units) { // 草・木の実をあさる（スライム・ゴブリン・蜘蛛の虫など）
+  const base = FA ? (FA.FOOD_WEB[c.sp]?.base || []) : (SPECIES[c.sp].diet === 'grass' ? ['plant'] : []);
+  for (const k of base) {
+    if (k !== 'plant' && k !== 'nuts') { if (k === 'insect' && sim.rng.chance(0.5)) return 1; continue; }
+    const got = FA ? FA.eatFrom(sim, c.pos.x, c.pos.z, k, units) : units * 0.6;
+    if (got > 0.2) return got / units;
+  }
+  return 0;
+}
 const BACKLINE = new Set(['wizard', 'cleric', 'sage', 'archer', 'courtmage', 'priest']);
 const eats = (c) => SPECIES[c.sp].diet !== 'none';
 const isNight = (sim) => { const h = sim.hour(); return h >= 21 || h < 5; };
@@ -741,7 +772,7 @@ function familyDaily(sim, list) {
     }
   }
   for (const c of list) {
-    if (c.mate && !alive(S, S.creatures[c.mate])) { const lost = c.mate; c.mate = null; c.widowed = sim.today; c.mourn = lost; }
+    if (c.mate && !alive(S, S.creatures[c.mate])) { const lost = c.mate; c.mate = null; c.widowed = sim.today; c.mournFor = lost; }
     c.young = (c.young || []).filter((id) => alive(S, S.creatures[id]));
     // 子の成長
     if (c.role === 'young' && c.age >= GROW_DAYS) {
@@ -752,24 +783,29 @@ function familyDaily(sim, list) {
 }
 
 // ---------- 飢え：狩り・備蓄・略奪・餓死 ----------
-function preyNear(sim, x, z, r) {
-  const out = [];
-  for (const o of Object.values(sim.S.creatures)) if (PREY_SP.has(o.sp) && o.hp > 0 && o.owner == null && Math.abs(o.pos.x - x) < r && Math.abs(o.pos.z - z) < r) out.push(o);
-  return out;
-}
 function hungerDaily(sim, list) {
   const S = sim.S, R = sim.rng;
   // 群れ：働き手が狩りに出て、巣に食料をためる。序列の高い者から食べる
+  const all = Object.values(S.creatures);
   for (const band of Object.values(S.bands)) {
     const ms = bandMembers(sim, band).filter(eats);
     if (!ms.length) continue;
     band.stock = band.stock || 0;
     const base = bandBase(sim, band);
-    const prey = preyNear(sim, base.x, base.z, 22);
     const hunters = ms.filter((c) => c.role !== 'young' && c.id !== band.leader);
-    const got = Math.round(hunters.length * Math.min(1, prey.length / 6) * R.range(0.4, 0.8));
-    band.stock += got;
-    if (prey.length > 5 && hunters.length && R.chance(0.3)) killCreature(sim, R.pick(prey), R.pick(hunters));
+    const desperate = (band.hungry ?? 60) < 20;
+    let kills = 0;
+    for (const h of hunters) {
+      if (kills >= 2 || !R.chance(0.45)) continue;
+      // 食物連鎖の表にある獲物だけ、数の少ない種は（飢えていなければ）見逃す
+      const prey = all.filter((o) => Math.abs(o.pos.x - base.x) < 22 && Math.abs(o.pos.z - base.z) < 22 && canEat(sim, h, o, desperate) && o.atk <= h.atk * 1.2);
+      if (!prey.length) continue;
+      const v = R.pick(prey);
+      band.stock += meals(v.sp); kills++;
+      killCreature(sim, v, h);
+    }
+    // 獲物がとれなくても、木の実・虫をあさって少しは食べる
+    for (const h of hunters) band.stock += forage(sim, h, 1) * 0.6;
     ms.sort((a, b) => (a.rank || 99) - (b.rank || 99));
     for (const c of ms) {
       if (c.hunger > 70) continue;
@@ -785,8 +821,16 @@ function hungerDaily(sim, list) {
       if (sim.today - (band.lastLoot || -99) >= 4 && R.chance(0.5)) loot(sim, band);
     }
   }
-  // 群れのない魔物：自分で探す
-  for (const c of list) if (!c.band && eats(c) && c.hunger < 50 && R.chance(0.5)) c.hunger = Math.min(100, c.hunger + 40);
+  // 群れのない魔物：自分で狩るか、草・木の実をあさる
+  for (const c of list) {
+    if (c.band || !eats(c) || c.hunger > 60) continue;
+    const f = forage(sim, c, FA ? Math.min(3, FA.needOf(c.sp) / 2) : 1);
+    if (f > 0) { c.hunger = Math.min(100, c.hunger + 45 * f); continue; }
+    if (preyList(c.sp).length && R.chance(0.4)) {
+      const prey = all.find((o) => Math.abs(o.pos.x - c.pos.x) < 15 && Math.abs(o.pos.z - c.pos.z) < 15 && canEat(sim, c, o, c.hunger < 10) && o.atk <= c.atk * 1.2);
+      if (prey) killCreature(sim, prey, c); // 狩った者は満腹になる
+    }
+  }
   // 餓死
   for (const c of list) {
     if (!eats(c) || c.named || c.sp === 'demonlord') continue;
@@ -913,7 +957,7 @@ export function monsterThink(sim, c, def, all, humans) {
   if (eats(c) && c.hunger < 30) {
     let prey = null, bd = 10;
     for (const o of all) {
-      if (o === c || o.hp <= 0 || o.dormant || !PREY_SP.has(o.sp) || o.owner != null || o.atk > c.atk * 0.7 || o.maxhp > c.hp) continue;
+      if (o === c || o.atk > c.atk * 0.7 || o.maxhp > c.hp || !canEat(sim, c, o, c.hunger < 10)) continue;
       const d = Math.hypot(o.pos.x - c.pos.x, o.pos.z - c.pos.z);
       if (d < bd) { bd = d; prey = o; }
     }
@@ -1082,7 +1126,7 @@ export function onMonsterKilled(sim, c, killer) {
   // 家族は仇を覚える
   for (const id of [c.mate, ...(c.young || []), ...(c.parents || [])]) {
     const k = id && S.creatures[id];
-    if (k && k.hp > 0) { k.avenge = killer.id; k.mourn = c.id; }
+    if (k && k.hp > 0) { k.avenge = killer.id; k.mournFor = c.id; }
   }
   // 群れが戦いの途中で仲間を失った：敗北の記憶
   if (band && killer.s != null) {
@@ -1129,7 +1173,7 @@ function bandCouncil(sim, band, why) {
   for (const c of Object.values(S.creatures)) count[c.sp] = (count[c.sp] || 0) + 1;
   const bsp = FAM[band.fam].base;
   let called = 0;
-  while (party.length < plan.need && called < 3 && (count[bsp] || 0) < (SP_CAP[bsp] || 10) + 2) {
+  while (party.length < plan.need && called < 3 && (count[bsp] || 0) < capOf(bsp) + 2) {
     const p = sim.randomNear(base.x, base.z, 4);
     if (!p) break;
     const c = makeCreature(sim, bsp, p.x, p.z, { lair: band.lair, hx: base.x, hz: base.z, range: 7, lv: R.int(1, 3), age: 30 });
@@ -1234,8 +1278,53 @@ function lifeHourly(sim) {
   for (const band of Object.values(S.bands || {})) if (band.war && band.war.stage === 'gather' && sim.today >= band.war.launchDay) warStep(sim, band, true);
 }
 
+// 安全弁：数が減りすぎた魔物は、巣の奥から湧くか、未開拓地から流れてくる
+function keepAlive(sim) {
+  const S = sim.S, R = sim.rng, w = S.world;
+  const count = sim._monCount;
+  const mask = townMask(sim);
+  for (const [sp, d] of Object.entries(MIN_DENS)) {
+    const min = Math.max(1, Math.round(d * AREA()));
+    if ((count[sp] || 0) >= min) continue;
+    const def = SPECIES[sp];
+    const lairs = (SPRING[sp] || []).flatMap((t) => w.specials.map((id) => sim.building(id)).filter((b) => b && b.type === t));
+    let p = null, lair = null, how;
+    if (lairs.length && R.chance(0.7)) {
+      lair = R.pick(lairs);
+      p = sim.randomNear(lair.door.x, lair.door.z, 4, (t) => walkable(t) && t !== T.BLD);
+      how = `${lair.name}の奥から${def.name}が這い出してきた`;
+    }
+    if (!p) {
+      // 未開拓地：町から遠く、その種の住む土地
+      lair = null;
+      for (let i = 0; i < 80 && !p; i++) {
+        const x = R.int(3, W - 4), z = R.int(3, H - 4), t = tileAt(w, x, z);
+        if (!walkable(t) || t === T.BLD || mask[z * W + x]) continue;
+        if (def.biome && !def.biome.includes(biomeOf(t)) && i < 60) continue;
+        if (w.settlements.some((s) => Math.hypot(s.x - x, s.z - z) < s.r + 25)) continue;
+        p = { x, z };
+      }
+      how = p ? `未開の地から${def.name}の一団が流れてきた（${sim.placeName(p.x, p.z)}）` : null;
+    }
+    if (!p) continue;
+    const n = Math.min(3, min - (count[sp] || 0));
+    for (let i = 0; i < n; i++) {
+      const c = makeCreature(sim, sp, p.x + R.int(-1, 1), p.z + R.int(-1, 1), { lair: lair?.id ?? null, hx: lair ? lair.door.x : p.x, hz: lair ? lair.door.z : p.z, range: 8, lv: R.int(1, 2), age: 30 });
+      if (c.hp <= 0) continue;
+      if (c.inDungeon) { c.inDungeon = false; c.pos = { x: p.x, z: p.z }; }
+      ensureIdentity(sim, c);
+      count[sp] = (count[sp] || 0) + 1;
+    }
+    stat(sim, 'spring');
+    sim.pushLog(`${how}。`, 'event', [], p);
+  }
+}
+
 function lifeDaily(sim) {
   const S = sim.S;
+  sim._monCount = {};
+  for (const c of Object.values(S.creatures)) sim._monCount[c.sp] = (sim._monCount[c.sp] || 0) + 1;
+  keepAlive(sim);
   const list = Object.values(S.creatures).filter((c) => SPECIES[c.sp]?.monster && c.hp > 0 && !c.dormant);
   for (const c of list) ensureIdentity(sim, c);
   adoptNewborns(sim, list);

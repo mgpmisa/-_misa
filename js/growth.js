@@ -365,6 +365,12 @@ function creatureStats(c) {
 }
 
 // ---------- 戦闘の一撃ごと（stepCombat から） ----------
+function swingFactor(sim, p) {
+  const g = p.gr;
+  if (g.swD !== sim.today) { g.swD = sim.today; g.sw = 0; }
+  g.sw++;
+  return g.sw <= 60 ? 1 : 0.05;
+}
 export function growthAttack(sim, e, t, dmg) {
   const R = sim.rng, eh = isHuman(e), th = isHuman(t);
   if (eh && !e.gr) return dmg; if (th && !t.gr) return dmg;
@@ -375,8 +381,8 @@ export function growthAttack(sim, e, t, dmg) {
   let ev = th ? (t.gr.m?.evade ?? 0.03) : 0.03 + ct.wit + ct.vet * 0.004;
   if (eh) ev -= ((e.stats.dex ?? 10) - 10) * 0.004 + ws * 0.0004;
   if (R.chance(clamp(ev, 0.01, 0.25))) {
-    if (th) { gainStat(t, 'agi', 0.3); t.gr.fought = sim.S.t; }
-    if (eh) { gainSkill(sim, e, wk, 0.15); e.gr.fought = sim.S.t; }
+    if (th) { gainStat(t, 'agi', 0.3 * swingFactor(sim, t)); t.gr.fought = sim.S.t; }
+    if (eh) { gainSkill(sim, e, wk, 0.15 * swingFactor(sim, e)); e.gr.fought = sim.S.t; }
     return 0;
   }
   // 盾で受ける
@@ -389,13 +395,14 @@ export function growthAttack(sim, e, t, dmg) {
   // 歴戦の魔物・獣は一撃が重い
   if (!eh) { dmg = Math.round(dmg * (1 + Math.min(0.1, cs.vet * 0.02))); cs.vet = Math.min(5, cs.vet + 0.01); }
   if (!th) ct.vet = Math.min(5, ct.vet + 0.01);
-  // 学び：攻めた側は武器の技能と力、受けた側は打たれ強さ
+  // 学び：攻めた側は武器の技能と力、受けた側は打たれ強さ（1日60合を超えると、それ以上はほとんど身につかない）
   if (eh) {
     const pw = SKILL_POWER[wk] || ['str', 'dex'];
-    gainSkill(sim, e, wk, 0.4); gainStat(e, pw[0], 0.3); gainStat(e, pw[1], 0.15);
+    const f = swingFactor(sim, e);
+    gainSkill(sim, e, wk, 0.4 * f); gainStat(e, pw[0], 0.3 * f); gainStat(e, pw[1], 0.15 * f);
     e.gr.fought = sim.S.t;
   }
-  if (th) { gainStat(t, 'vit', 0.2); t.gr.fought = sim.S.t; }
+  if (th) { gainStat(t, 'vit', 0.2 * swingFactor(sim, t)); t.gr.fought = sim.S.t; }
   return dmg;
 }
 

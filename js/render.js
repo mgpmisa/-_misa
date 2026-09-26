@@ -6,6 +6,8 @@ import { W, H, T } from './world.js';
 import { buildTextures, personTexture, TEX } from './textures.js';
 import { SPECIES, KINGDOMS } from './data.js';
 import * as SPR from './sprites.js';
+import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
+import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
 const wx = (x) => x - W / 2 + 0.5;
 const wz = (z) => z - H / 2 + 0.5;
@@ -767,9 +769,70 @@ export class Renderer {
     if (!r) return;
     this.scene.remove(r.sprite, r.shadow);
     r.sheet.tex.dispose(); r.sprite.material.dispose(); r.shadow.geometry.dispose();
+    if (r.animTex) for (const a of r.animTex.values()) (a.tex || a).dispose?.();
     this.ents.delete(id);
   }
-  hit(id) { const r = this.ents.get(id); if (r) r.flash = 0.18; }
+  hit(id) {
+    const r = this.ents.get(id);
+    if (!r) return;
+    r.flash = 0.18; r.hurtUntil = performance.now() + 300;
+    if (r.sprite.userData.human) r.once = { anim: 'hurt', until: performance.now() / 1000 + 0.35 };
+  }
+
+  // 人のアニメ：an が null なら歩行シートに戻す
+  applyAnim(r, e, an, now, row, walkFrame) {
+    const m = r.sprite.material;
+    if (!an) {
+      if (m.map !== r.sheet.tex) { m.map = r.sheet.tex; m.needsUpdate = true; const h = r.sheet.worldH; r.sprite.scale.set(h * r.sheet.fw / r.sheet.fh, h, 1); }
+      r.sheet.tex.offset.set(walkFrame / r.sheet.cols, 1 - (row + 1) / r.sheet.rows);
+      r.anim = null; return;
+    }
+    r.animTex = r.animTex || new Map();
+    let a = r.animTex.get(an);
+    if (!a) {
+      let s;
+      try { s = drawPersonAnim(e, { age: this.sim.ageOf(e), dead: e.deathYear != null }, an); } catch (err) { return this.applyAnim(r, e, null, now, row, walkFrame); }
+      const tex = new THREE.CanvasTexture(s.canvas);
+      tex.magFilter = tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.colorSpace = THREE.SRGBColorSpace;
+      tex.repeat.set(1 / s.frames, 1 / 4);
+      a = { s, tex }; r.animTex.set(an, a);
+      if (r.animTex.size > 5) { for (const [k, v] of r.animTex) { if (v !== a && v.tex !== m.map) { v.tex.dispose(); r.animTex.delete(k); break; } } }
+    }
+    if (r.anim !== an) { r.anim = an; r.animT0 = now; }
+    if (m.map !== a.tex) { m.map = a.tex; m.needsUpdate = true; r.sprite.scale.set(a.s.frameW * SPR.PIXEL_SCALE, a.s.frameH * SPR.PIXEL_SCALE, 1); }
+    const f = pFrameAt(a.s, now - r.animT0);
+    a.tex.offset.set(f / a.s.frames, 1 - (row + 1) / 4);
+  }
+
+  // 生き物のアニメ：切り替えたら true
+  creatureAnim(r, e, moving, nowMs) {
+    const hurt = r.hurtUntil > nowMs;
+    const name = creatureAnimState(this.sim, e, { moving, hurt, dead: !!r.corpse });
+    if (r.anim !== name) { r.anim = name; r.animT0 = nowMs; }
+    let a = peekCreatureAnim(e, name);
+    if (!a) {
+      if (this._animMs > 8 && r.animInfo) a = r.animInfo; // 1フレームに作る量を抑える
+      else { const t0 = performance.now(); try { a = drawCreatureAnim(e, SPECIES[e.sp], name); } catch (err) { return false; } this._animMs += performance.now() - t0; }
+    }
+    r.animTex = r.animTex || new Map();
+    let tex = r.animTex.get(a);
+    if (!tex) {
+      tex = new THREE.CanvasTexture(a.canvas);
+      tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.colorSpace = THREE.SRGBColorSpace;
+      tex.repeat.set(1 / a.cols, 1 / a.rows);
+      r.animTex.set(a, tex);
+      if (r.animTex.size > 6) { const [k0, t0] = r.animTex.entries().next().value; if (t0 !== r.sprite.material.map) { t0.dispose(); r.animTex.delete(k0); } }
+    }
+    if (r.sprite.material.map !== tex) {
+      r.sprite.material.map = tex; r.sprite.material.needsUpdate = true;
+      r.sprite.scale.set(a.frameW * a.scale, a.frameH * a.scale, 1);
+      r.sprite.center.set(0.5, a.anchorY / a.frameH);
+    }
+    const k = cFrameAt(a, nowMs - r.animT0);
+    tex.offset.set(k / a.cols, 1 - (r.dir + 1) / a.rows);
+    r.animInfo = a;
+    return true;
+  }
 
   entityPos(e) {
     const w = this.sim.S.world;
@@ -791,12 +854,14 @@ export class Renderer {
     const seen = new Set();
     const t = this.controls.target;
     const viewR = 22 / this.camera.zoom + 8;
+    const nowMs = performance.now(); this._animMs = 0;
     const place = (e, isHuman) => {
       const near = Math.abs(e.pos.x - (t.x + W / 2)) < viewR * 1.6 && Math.abs(e.pos.z - (t.z + H / 2)) < viewR * 1.6;
       if (!near && !this.ents.has(e.id)) return;
       const r = this.ensure(e, isHuman);
       if (!r) return;
       seen.add(e.id);
+      if (!isHuman) r.e = e;
       const vis = e.inside == null && !e.dormant;
       r.sprite.visible = r.shadow.visible = vis && near;
       if (!r.sprite.visible) return;
@@ -812,16 +877,25 @@ export class Renderer {
       }
       r.lx = e.pos.x; r.lz = e.pos.z;
       const walking = moved > 0.0005 || !!e.fight;
+      if (!isHuman && moved > 0.0005) r.movedAt = nowMs; // 止まっても0.4秒は歩きを続ける（がたつき防止）
+      const anim = !isHuman && r.sheet.cols >= 3 && this.creatureAnim(r, e, nowMs - (r.movedAt || 0) < 400, nowMs);
       if (walking) r.phase += realDt * (e.fight ? 10 : 7);
       const seq = [0, 1, 2, 1];
       const frame = r.sheet.cols >= 3 ? (walking ? seq[Math.floor(r.phase) % 4] : 1) : 0;
       const row = r.sheet.rows >= 4 ? r.dir : 0;
-      r.sheet.tex.offset.set(frame / r.sheet.cols, 1 - (row + 1) / r.sheet.rows);
+      if (isHuman && r.sheet.cols >= 3) {
+        // 画面の近くの人だけ、しぐさのアニメを付ける
+        const close = Math.abs(e.pos.x - (t.x + W / 2)) < viewR && Math.abs(e.pos.z - (t.z + H / 2)) < viewR;
+        let an = r.once && now < r.once.until ? r.once.anim : personAnimState(sim, e, moved > 0.0005 && !e.fight);
+        if (an === 'walk' || !close) an = null;
+        this.applyAnim(r, e, an, now, row, frame);
+      } else if (!anim) r.sheet.tex.offset.set(frame / r.sheet.cols, 1 - (row + 1) / r.sheet.rows);
       const def = !isHuman ? SPECIES[e.sp] : null;
       let y = p.y + 0.01;
-      if (def?.flies) y += 1.1 + Math.sin(now * 3 + r.phase) * 0.1;
+      const air = anim ? r.animInfo.airborne : def?.flies;
+      if (air) y += 1.1 + Math.sin(now * 3 + r.phase) * 0.1;
       if (def?.swims) y = SEA_Y - 0.05 + Math.sin(now * 2 + r.phase) * 0.05;
-      if (r.sheet.cols < 3 && walking) y += Math.abs(Math.sin(r.phase * 1.5)) * 0.06;
+      if (!anim && r.sheet.cols < 3 && walking) y += Math.abs(Math.sin(r.phase * 1.5)) * 0.06;
       r.sprite.position.set(p.x, y, p.z);
       r.shadow.position.set(p.x, p.y + 0.015, p.z);
       r.shadow.visible = !def?.swims;
@@ -829,6 +903,24 @@ export class Renderer {
     };
     for (const p of sim.living()) place(p, true);
     for (const c of Object.values(sim.S.creatures)) place(c, false);
+    // 亡骸：倒れる姿を見せてから消す
+    for (const [id, r] of this.ents) {
+      if (seen.has(id) || !r.sprite.visible) continue;
+      if (r.sprite.userData.human) {
+        const e = sim.person(id);
+        if (!e || e.deathYear == null || r.sheet.cols < 3) continue;
+        if (!r.corpse) r.corpse = { t0: now };
+        const k = now - r.corpse.t0;
+        this.applyAnim(r, e, 'death', now, r.dir, 1);
+        const dur = r.animTex?.get('death') ? animDuration(r.animTex.get('death').s) : 1;
+        r.sprite.material.opacity = k < dur + 4 ? 1 : Math.max(0, 1 - (k - dur - 4));
+        r.sprite.material.transparent = true; r.shadow.visible = false;
+        if (k < dur + 5) seen.add(id);
+      } else if (r.e && r.e.hp <= 0) {
+        if (!r.corpse) r.corpse = nowMs;
+        if (nowMs - r.corpse < 20000) { this.creatureAnim(r, r.e, false, nowMs); seen.add(id); }
+      }
+    }
     for (const id of [...this.ents.keys()]) if (!seen.has(id)) this.drop(id);
   }
 

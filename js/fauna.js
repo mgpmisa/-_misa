@@ -347,7 +347,17 @@ export function faunaThink(sim, c, def, all, humans) {
     return true;
   }
   // 牧場の家畜は、飢えて人里へ降りた獣でなければ狙わない（柵・牧夫・犬がいるので近寄りがたい）
-  if (PRED.has(c.sp) && def.kind === 'wild' && !c.forage && c.hunger < 40 && ranchGuard(sim, c, def, all)) return true;
+  if (def.kind === 'wild' && preyFor(c.sp).length && c.hunger < 45 && huntByWeb(sim, c, def, all)) return true;
+  // 数の減った獲物は、天敵から早めに逃げる（安全弁：狩られにくくする）
+  if (def.kind === 'wild' && trophicLevel(c.sp) <= 2 && isRare(sim, c.sp)) {
+    for (const o of all) {
+      if (o === c || o.hp <= 0 || o.dormant || !preyFor(o.sp).includes(c.sp)) continue;
+      const dx = c.pos.x - o.pos.x, dz = c.pos.z - o.pos.z, d = Math.hypot(dx, dz);
+      if (d > 7) continue;
+      c.goal = { x: c.pos.x + dx / (d || 1) * 6, z: c.pos.z + dz / (d || 1) * 6, run: true };
+      return true;
+    }
+  }
   // 餌をくれる人に寄っていく
   if (c.likes && humans.length && !c.hostile && c.hunger < 85) {
     for (const q of humans) {
@@ -360,6 +370,31 @@ export function faunaThink(sim, c, def, all, humans) {
 }
 // 野生の獲物（creatures.js の PREY から家畜を除いたもの）
 const WILD_PREY = new Set(['deer', 'boar', 'rabbit', 'squirrel', 'camel', 'reindeer', 'penguin', 'monkey', 'slime', 'frog', 'turtle']);
+// 表にもとづく狩り：好きな獲物（餌の量が多く、近く、弱ったもの）を選ぶ。家畜は飢えて人里へ降りたときだけ
+function huntByWeb(sim, c, def, all) {
+  const R = sim.rng, S = sim.S;
+  const list = preyFor(c.sp);
+  const desperate = c.hunger < 8;
+  let prey = null, bs = 0;
+  for (const o of all) {
+    if (o === c || o.hp <= 0 || o.dormant || o.inDungeon || !list.includes(o.sp)) continue;
+    if (o.owner != null && !c.forage && !desperate) continue;
+    if (!canHunt(sim, c.sp, o.sp, desperate)) continue;
+    if (SPECIES[o.sp].size > def.size * (FOOD_WEB[c.sp]?.pack ? 1.4 : 1.25) && !o.juv) continue;
+    const d = d2(o, c);
+    if (d > 12 || inTownBox(sim, o.pos.x, o.pos.z)) continue;
+    const sc = foodValue(o.sp) / (d + 2) * (o.juv ? 1.6 : 1) * (o.hp < o.maxhp * 0.5 || o.thin ? 1.5 : 1);
+    if (sc > bs) { bs = sc; prey = o; }
+  }
+  if (prey) {
+    if (d2(prey, c) < 1.4) startFight(sim, c, prey); else c.goal = { x: prey.pos.x, z: prey.pos.z, run: true };
+    return true;
+  }
+  if (c.hunger < 12) return false; // 飢えきった獣は何でも襲う（creatures.js の狩りにまかせる）
+  // 獲物を探して縄張りを歩く
+  c.goal = { x: c.home.x + R.range(-c.range, c.range), z: c.home.z + R.range(-c.range, c.range) };
+  return true;
+}
 function ranchGuard(sim, c, def, all) {
   const R = sim.rng;
   let near = null;
@@ -497,6 +532,17 @@ export function faunaDied(sim, c, killer) {
   if (!S.fauna) initFauna(sim);
   const F = S.fauna;
   const human = killer && typeof killer.id === 'number';
+  // 食物連鎖の記録：誰が誰を食べたか
+  if (killer) {
+    const k = (human ? '人' : killer.sp) + '>' + c.sp;
+    F.stats.eaten = F.stats.eaten || {};
+    F.stats.eaten[k] = (F.stats.eaten[k] || 0) + 1;
+    if (!human) killer._ate = { sp: c.sp, pre: killer.hunger || 0 };
+  } else if (c._cause) {
+    F.stats.deaths = F.stats.deaths || {};
+    const k = c._cause + '>' + c.sp;
+    F.stats.deaths[k] = (F.stats.deaths[k] || 0) + 1;
+  }
   // つがいと子
   const mate = cr(S, c.mate);
   if (mate) { mate.mate = null; mate.widowed = c.id; if (MONOGAMOUS.has(c.sp) && R.chance(0.4)) log(sim, `${sim.placeName(c.pos.x, c.pos.z)}で、つがいを失った${beastLabel(mate)}が、いつまでも鳴いていた。`, [], mate.pos); }
@@ -603,7 +649,7 @@ export function faunaHourly(sim) {
 function foodFactor(sim, c, def, si, drought) {
   const t = tileAt(sim.S.world, Math.round(c.pos.x), Math.round(c.pos.z));
   const b = biomeOf(t);
-  const season = def.swims || ['seagull', 'penguin', 'dolphin', 'whale', 'croc', 'frog', 'turtle'].includes(c.sp) ? [1, 1, 1, 0.8][si] : [1.15, 1.1, 0.95, 0.42][si];
+  const season = 1; // 季節の増減は餌場（regrowPatches）が受け持つ
   let bio = { grass: 1, forest: 1, dense: 1, jungle: 1.15, desert: 0.45, snow: 0.5, mountain: 0.6, beach: 0.8, sea: 1, deepsea: 1, river: 1, waste: 0.2, town: 0.7 }[b] ?? 0.8;
   if (c.sp === 'reindeer' && b === 'snow') bio = 0.85; // コケを掘って食べる
   if (c.sp === 'camel' && b === 'desert') bio = 1;
@@ -611,9 +657,6 @@ function foodFactor(sim, c, def, si, drought) {
   let f = season * bio;
   // 雪原の冬はもっと厳しい
   if (si === 3 && b === 'snow' && !['reindeer', 'polarbear', 'penguin'].includes(c.sp)) f *= 0.6;
-  if (drought.size) { const n = nearestTown(sim, c.pos.x, c.pos.z); if (n && n.d < 40 && drought.has(n.s.id)) f *= 0.55; }
-  // 秋は木の実が実る
-  if (OMNI.has(c.sp) && si === 2) f *= 1.3;
   return f;
 }
 
@@ -638,18 +681,21 @@ function feedHour(sim, c, si, h, drought) {
     // 家畜：春〜秋は草を食む。冬と町の中の犬猫・厩舎の馬は飼い主が餌をやる（faunaDaily で c.fed）
     const s = c.owner != null ? sim.town(c.owner) : null;
     const grazing = s?.ranch && c.range === 0 && si !== 3 && h >= 6 && h < 19 && def.diet !== 'meat';
-    if (grazing) c.hunger = Math.min(100, c.hunger + 2.8 * rankMul(c));
+    if (grazing) { const fa = foodAt(sim, c.pos.x, c.pos.z); c.hunger = Math.min(100, c.hunger + 2.8 * Math.max(0.4, Math.min(1, fa.plant)) * rankMul(c)); eatFrom(sim, c.pos.x, c.pos.z, 'plant', needOf(c.sp) / 13 * Math.min(1, fa.plant)); }
     else if (c.fed) c.hunger = Math.min(100, c.hunger + 1.15 * rankMul(c));
     else c.hunger = Math.min(100, c.hunger + (def.diet === 'meat' ? 0.95 : 0.6)); // 犬猫は残飯やネズミ、ほかは道ばたの草で食いつなぐ
   } else {
-    const f = foodFactor(sim, c, def, si, drought);
+    // 狩りの獲物：表の「餌の量 ÷ 必要な量」だけ満たされる。余りは群れに分ける（packShare）
+    if (c._ate) {
+      const full = c._ate.pre + foodValue(c._ate.sp) / needOf(c.sp) * 50;
+      c.hunger = Math.min(100, full);
+      c._left = Math.max(0, full - 100);
+      c._ate = null;
+    }
     const active = !c.sleeping;
-    let gain = 0;
-    if (def.diet === 'grass') gain = active ? 3 * f : 0;
-    else if (def.diet === 'both') gain = active ? 2.4 * f : 0;
-    else if (PRED.has(c.sp)) gain = (def.size <= 0.6 ? 1.5 : 0.8) * f; // 虫・ネズミ・死肉（本格的な狩りは creatures.js）。小さな捕食者は虫やネズミで食いつなげる
-    else gain = active ? 2.8 * f : 0.4; // 魚・虫を食べる鳥や海の生き物
-    if (OMNI.has(c.sp) && def.diet !== 'grass' && active) gain += 0.8 * f;
+    // 餌場（草・木の実・魚・虫）から食べる。狩りは faunaThink の huntByWeb
+    let gain = active || PRED.has(c.sp) ? forageGain(sim, c, def, si, drought) : 0;
+    if (!active) gain *= 0.3;
     if (c.juv) gain *= 0.5;
     gain *= rankMul(c);
     c.hunger = Math.min(100, c.hunger + gain);
@@ -661,8 +707,8 @@ function feedHour(sim, c, si, h, drought) {
     c.hp -= 2.2 + c.maxhp * 0.025;
     const limit = 70 + (c.age > lifeDays(c.sp) * 0.7 ? -30 : 0) + (c.juv ? -30 : 0);
     // 数が減った種は、最後の力で食いつなぐ（絶滅を防ぐ）。家畜は飼い主が見捨てない
-    const rare = !isLive(c) && speciesCount(sim, c.sp) <= Math.max(2, (POP[c.sp] || 6) * 0.6);
-    if (rare || isLive(c) && c.keeper != null) { c.hp = Math.max(c.hp, c.maxhp * 0.3); c.hunger = Math.max(c.hunger, 6); }
+    const rare = !isLive(c) && isRare(sim, c.sp);
+    if (rare || isLive(c) && (c.keeper != null || c.owner != null)) { c.hp = Math.max(c.hp, c.maxhp * 0.3); c.hunger = Math.max(c.hunger, 6); }
     else if (c.hp <= 0 || c.starveH > limit) {
       c.hp = Math.max(c.hp, 0.1);
       S.fauna.stats.starved++;
@@ -683,9 +729,9 @@ function packShare(sim, animals) {
   for (const c of animals) if (PRED.has(c.sp) && SOCIAL.has(c.sp) && c._gkey) (groups[c._gkey] = groups[c._gkey] || []).push(c);
   for (const g of Object.values(groups)) {
     if (g.length < 2) continue;
-    const eater = g.find((c) => c.hunger >= 97 && (c._lastH ?? 100) < 80);
+    const eater = g.find((c) => c._left > 0);
     if (!eater) continue;
-    let pool = 90;
+    let pool = eater._left; eater._left = 0;
     const order = g.filter((c) => c !== eater && d2(c, eater) < 9).sort((a, b) => (a.rank || 99) - (b.rank || 99));
     for (const c of order) {
       const share = Math.min(100 - c.hunger, c.rank <= 2 ? 45 : pool > 40 ? 25 : 8);
@@ -967,6 +1013,9 @@ export function faunaDaily(sim) {
     if (c.wary) for (const k of Object.keys(c.wary)) { c.wary[k] -= 0.08; if (c.wary[k] <= 0) delete c.wary[k]; }
     if (c.likes) for (const k of Object.keys(c.likes)) { c.likes[k] -= 0.05; if (c.likes[k] <= 0 || S.people[k]?.deathYear != null) delete c.likes[k]; }
   }
+  // 餌場の回復と、未開拓地からの移住（安全弁）
+  regrowPatches(sim, si, new Set(Object.keys(S.wx?.drought || {}).map(Number)));
+  frontierImmigration(sim, animals);
   // 種ごとの数の記録（60日分）
   const cnt = {};
   for (const c of animals) if (S.creatures[c.id]) cnt[c.sp] = (cnt[c.sp] || 0) + 1;
@@ -1113,15 +1162,17 @@ function breed(sim, animals, si, dos) {
     const sp = mom.sp, def = SPECIES[sp];
     if (def.kind !== 'wild' || mom.sex !== 'f' || mom.juv || mom.hp <= 0 || !mom.mate) continue;
     const season = sp === 'penguin' ? 3 : 0;
-    if (si !== season) continue;
+    const rareBoost = (count[sp] || 0) < (popTarget(sim, sp) || POP[sp] || 6) * 0.6;
+    if (si !== season && !(rareBoost && si !== 3)) continue;
     const dad = cr(S, mom.mate);
     if (!dad || dad.hp <= 0 || d2(dad, mom) > 14) continue;
     if (juvKids(S, mom).length || mom.hunger < 40 || (mom._bredY === sim.year())) continue;
     // オオカミは長のつがいだけが子を産む
     if (sp === 'wolf' && mom.rank > 2 && mom._gsize >= 3) continue;
-    const cap = Math.round((POP[sp] || 6) * 1.3);
+    const cap = Math.round((popTarget(sim, sp) || POP[sp] || 6) * 1.3);
     if ((count[sp] || 0) >= cap) continue;
-    if (!R.chance(0.22)) continue;
+    // 安全弁：数が目安の6割を下回った種は、よく子を産む
+    if (!R.chance(rareBoost ? 0.5 : 0.22)) continue;
     const [a, b] = LITTER[sp] || [1, 1];
     let n = Math.min(R.int(a, b), cap - (count[sp] || 0));
     const kids = [];
@@ -1252,7 +1303,7 @@ function geese(sim, animals, si, dos) {
   const flocks = {};
   for (const c of animals) if (c.sp === 'goose' && c.flock) (flocks[c.flock] = flocks[c.flock] || []).push(c);
   for (const id of Object.keys(F.flocks)) if (!flocks[id]) delete F.flocks[id];
-  if (Object.keys(F.flocks).length < 2 && (Object.keys(F.flocks).length === 0 || si === 0 && R.chance(0.3))) {
+  if (Object.keys(F.flocks).length < Math.max(2, Math.round(popTarget(sim, 'goose') / 7)) && (Object.keys(F.flocks).length === 0 || si === 0 && R.chance(0.3))) {
     const id = 'f' + (F.flockSeq = (F.flockSeq || 0) + 1);
     const i = Object.keys(F.flocks).length;
     const g = (southSeason ? G.south : G.north)[i % (southSeason ? G.south : G.north).length];
@@ -1461,7 +1512,7 @@ function overpop(sim, animals) {
   const bySp = {};
   for (const c of animals) if (S.creatures[c.id] && SPECIES[c.sp].kind === 'wild') (bySp[c.sp] = bySp[c.sp] || []).push(c);
   for (const [sp, list] of Object.entries(bySp)) {
-    const cap = Math.round((POP[sp] || 8) * 1.6);
+    const cap = Math.round((popTarget(sim, sp) || POP[sp] || 8) * 1.6);
     if (list.length <= cap) continue;
     list.sort((a, b) => a.hunger - b.hunger || b.age - a.age);
     for (const c of list.slice(0, list.length - cap)) { if (c.nick) continue; S.fauna.stats.culled++; kill(sim, c, null, 'sick'); }
@@ -1510,4 +1561,234 @@ export function faunaHtml(sim, c) {
   const likes = Object.entries(c.likes || {}).filter(([, v]) => v >= 2).map(([id]) => S.people[id]).filter(Boolean);
   if (likes.length) rows.push(['寄っていく人', likes.slice(0, 4).map(plink).join('、')]);
   return `<div class="section"><h4>暮らし</h4><dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div>`;
+}
+
+// =====================================================================
+// 食物連鎖：餌場の豊かさ → 草食 → 小さな肉食 → 大きな肉食 → 魔物 → 人
+// =====================================================================
+// lv：栄養段階（0 植物・魚、1 草食、2 小さな肉食、3 大きな肉食、4 魔物、5 人）
+// base：食べる植物・小さな生き物（plant 草、nuts 木の実・果物、fish 魚、insect 虫・ネズミ、carrion 死肉）
+// prey：狩る生き物。need：1日に要る餌の量（食べ物の単位。草食は餌場から減らす量）
+export const FOOD_WEB = {
+  // 草食・雑食（lv1）
+  rabbit: { lv: 1, base: ['plant'], need: 0.5 }, squirrel: { lv: 1, base: ['nuts', 'plant'], need: 0.3 }, deer: { lv: 1, base: ['plant'], need: 3 },
+  reindeer: { lv: 1, base: ['plant'], need: 3 }, boar: { lv: 1, base: ['nuts', 'plant'], need: 2.5 }, camel: { lv: 1, base: ['plant'], need: 3 },
+  monkey: { lv: 1, base: ['nuts', 'plant', 'insect'], need: 1 }, parrot: { lv: 1, base: ['nuts'], need: 0.2 }, goose: { lv: 1, base: ['plant', 'fish'], need: 0.6 },
+  turtle: { lv: 1, base: ['plant', 'fish'], need: 0.3 }, rat: { lv: 1, base: ['plant', 'insect'], need: 0.1 }, crow: { lv: 1, base: ['insect', 'nuts', 'carrion'], need: 0.3 },
+  frog: { lv: 1, base: ['insect'], need: 0.1 }, bat: { lv: 1, base: ['insect'], need: 0.1 },
+  cow: { lv: 1, base: ['plant'], need: 4 }, sheep: { lv: 1, base: ['plant'], need: 2 }, goat: { lv: 1, base: ['plant'], need: 1.5 }, pig: { lv: 1, base: ['plant', 'nuts'], need: 2 },
+  horse: { lv: 1, base: ['plant'], need: 4 }, donkey: { lv: 1, base: ['plant'], need: 3 }, chicken: { lv: 1, base: ['plant', 'insect'], need: 0.2 }, duck: { lv: 1, base: ['plant', 'fish'], need: 0.2 },
+  // 小さな肉食（lv2）
+  fox: { lv: 2, base: ['insect', 'nuts'], prey: ['rabbit', 'squirrel', 'rat', 'frog', 'chicken', 'duck'], need: 1.5 },
+  owl: { lv: 2, base: ['insect'], prey: ['rat', 'rabbit', 'squirrel', 'frog', 'bat'], need: 0.6 },
+  snake: { lv: 2, base: ['insect'], prey: ['rat', 'frog', 'rabbit', 'squirrel'], need: 0.5 },
+  scorpion: { lv: 2, base: ['insect'], prey: ['rat'], need: 0.2 },
+  eagle: { lv: 2, base: ['fish'], prey: ['rabbit', 'squirrel', 'rat', 'monkey', 'goose', 'chicken', 'duck'], need: 1 },
+  seagull: { lv: 2, base: ['fish', 'carrion'], need: 0.4 }, penguin: { lv: 2, base: ['fish'], need: 0.8 }, dolphin: { lv: 2, base: ['fish'], need: 3 },
+  cat: { lv: 2, base: ['carrion'], prey: ['rat', 'frog'], need: 0.3 }, dog: { lv: 2, base: ['carrion'], prey: [], need: 1 },
+  // 大きな肉食（lv3）
+  wolf: { lv: 3, base: ['carrion'], prey: ['deer', 'reindeer', 'boar', 'rabbit', 'goat', 'sheep', 'camel'], need: 5, pack: true },
+  bear: { lv: 3, base: ['nuts', 'fish', 'plant'], prey: ['deer', 'boar', 'rabbit', 'squirrel'], need: 7 },
+  polarbear: { lv: 3, base: ['fish'], prey: ['penguin', 'reindeer'], need: 8 },
+  tiger: { lv: 3, base: ['carrion'], prey: ['deer', 'boar', 'monkey', 'camel', 'goat'], need: 7 },
+  croc: { lv: 3, base: ['fish'], prey: ['deer', 'boar', 'frog', 'turtle', 'monkey', 'goose', 'camel'], need: 4 },
+  whale: { lv: 3, base: ['fish'], need: 20 },
+  // 魔物（lv4）：monsters.js が preyFor / foodValue / canHunt を使う
+  goblin: { lv: 4, base: ['nuts'], prey: ['rabbit', 'squirrel', 'frog', 'rat', 'deer', 'boar', 'chicken', 'goat', 'sheep'], need: 2 },
+  hobgoblin: { lv: 4, prey: ['deer', 'boar', 'rabbit', 'goat', 'sheep', 'pig'], need: 4 },
+  goblinlord: { lv: 4, prey: ['deer', 'boar', 'cow', 'sheep', 'pig'], need: 6 },
+  orc: { lv: 4, prey: ['deer', 'boar', 'bear', 'cow', 'pig', 'sheep', 'horse'], need: 6 },
+  orcking: { lv: 4, prey: ['deer', 'boar', 'bear', 'cow', 'horse'], need: 10 },
+  spider: { lv: 4, base: ['insect'], prey: ['rabbit', 'squirrel', 'rat', 'frog', 'bat', 'monkey'], need: 2 },
+  arachne: { lv: 4, prey: ['deer', 'boar', 'monkey', 'goat'], need: 5 },
+  wyvern: { lv: 4, prey: ['deer', 'reindeer', 'camel', 'boar', 'goat', 'sheep', 'eagle'], need: 10 },
+  dragon: { lv: 4, prey: ['deer', 'boar', 'bear', 'reindeer', 'camel', 'cow', 'horse', 'tiger', 'polarbear'], need: 30 },
+  slime: { lv: 1, base: ['plant'], need: 0.4 }, bigslime: { lv: 1, base: ['plant'], need: 1 }, kingslime: { lv: 4, base: ['plant'], prey: ['rabbit', 'frog', 'rat'], need: 3 },
+  unicorn: { lv: 1, base: ['plant'], need: 3 },
+  // 人（lv5）：狩人・冒険者・漁師
+  human: { lv: 5, base: ['fish'], prey: ['deer', 'boar', 'rabbit', 'reindeer', 'camel', 'bear', 'wolf', 'fox', 'squirrel', 'goose', 'croc', 'tiger'], need: 2 },
+};
+// 広さあたりの密度（生息地1000マスあたりの頭数）。大陸が広がれば、目安も広さに合わせて増える
+const DENSITY = {
+  rat: 1.3, crow: 1.0, owl: 4.6, frog: 31, snake: 1.75, turtle: 15, bat: 4.9, deer: 3.4, boar: 6.2, wolf: 5.4, bear: 3.9, fox: 2.0, rabbit: 4.0, squirrel: 6.2,
+  camel: 13.9, scorpion: 18.5, croc: 19.3, monkey: 52, tiger: 26, parrot: 39, reindeer: 14.2, polarbear: 5.3, penguin: 55, seagull: 43, eagle: 3.2, dolphin: 5.1, whale: 0.28,
+};
+const BASE_RATE = { plant: 3, nuts: 2.4, fish: 2.8, insect: 1.5, carrion: 0.8 };
+
+// 誰が誰を食べるか
+export function preyFor(sp) { return FOOD_WEB[sp]?.prey || []; }
+// 食べられたときの餌の量（体の大きさの2乗に比例）
+export function foodValue(sp) { const s = SPECIES[sp]?.size || 0.5; return Math.round(s * s * 30 * 10) / 10; }
+export function needOf(sp) { return FOOD_WEB[sp]?.need ?? Math.max(0.3, (SPECIES[sp]?.size || 0.5) * 4); }
+export function trophicLevel(sp) { return FOOD_WEB[sp]?.lv ?? (SPECIES[sp]?.monster ? 4 : 1); }
+// 狩ってよいか：表にあり、数が減りすぎていない（安全弁）。desperate なら安全弁を無視する
+export function canHunt(sim, predSp, preySp, desperate = false) {
+  if (!preyFor(predSp).includes(preySp)) return false;
+  if (!desperate && isRare(sim, preySp)) return false;
+  return true;
+}
+
+// ---------- 生息地の広さと数の目安 ----------
+function habitatCounts(sim) {
+  const w = sim.S.world;
+  if (sim._faHab && sim._faHabW === w) return sim._faHab;
+  const cnt = {};
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const t = w.tiles[z * W + x];
+    const b = biomeOf(t);
+    cnt[b] = (cnt[b] || 0) + 1;
+    if (b === 'snow') {
+      const near = [[2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dz]) => { const tt = tileAt(w, x + dx, z + dz); return tt === T.SEA || tt === T.DEEP; });
+      if (near) cnt.snowcoast = (cnt.snowcoast || 0) + 1;
+    }
+  }
+  sim._faHab = cnt; sim._faHabW = w;
+  return cnt;
+}
+export function habitatArea(sim, sp) {
+  const cnt = habitatCounts(sim);
+  return (SPECIES[sp]?.biome || []).reduce((s, b) => s + (cnt[b] || 0), 0);
+}
+// 数の目安：生息地の広さ × 密度（ガンは大陸の広さに比例）
+export function popTarget(sim, sp) {
+  if (sp === 'goose') return Math.max(10, Math.round(14 * W * H / 25600));
+  const d = DENSITY[sp];
+  if (d == null) return POP[sp] ?? null;
+  return Math.max(2, Math.round(habitatArea(sim, sp) * d / 1000));
+}
+export function isRare(sim, sp) {
+  const t = popTarget(sim, sp);
+  if (!t) return false;
+  return speciesCount(sim, sp) < Math.max(2, t * 0.4);
+}
+
+// ---------- 餌場（16マス四方の区画ごとの草・木の実・魚） ----------
+const CELL = 16;
+const PLANT_W = { grass: 1, forest: 0.8, dense: 0.7, jungle: 1.1, desert: 0.15, snow: 0.25, mountain: 0.3, beach: 0.3, waste: 0.05, river: 0.4, town: 0.2 };
+const NUTS_W = { forest: 0.45, dense: 0.6, jungle: 0.7, grass: 0.05 };
+const FISH_W = { river: 1.2, sea: 0.6, deepsea: 0.25, beach: 0.2 };
+function patchCaps(sim) {
+  const w = sim.S.world;
+  if (sim._faCap && sim._faCapW === w) return sim._faCap;
+  const nx = Math.ceil(W / CELL), nz = Math.ceil(H / CELL), n = nx * nz;
+  const plant = new Float32Array(n), nuts = new Float32Array(n), fish = new Float32Array(n);
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    const t = w.tiles[z * W + x];
+    const b = t === T.SWAMP ? 'river' : t === T.PASTURE ? 'grass' : t === T.FIELD ? 'town' : biomeOf(t);
+    const i = Math.floor(z / CELL) * nx + Math.floor(x / CELL);
+    plant[i] += PLANT_W[b] || 0; nuts[i] += NUTS_W[b] || 0; fish[i] += FISH_W[b] || 0;
+  }
+  sim._faCap = { nx, nz, n, plant, nuts, fish }; sim._faCapW = w;
+  return sim._faCap;
+}
+function patchState(sim) {
+  const F = F_(sim), cap = patchCaps(sim);
+  if (!F.patch || F.patch.n !== cap.n) {
+    F.patch = { n: cap.n, plant: Array.from(cap.plant, (v) => Math.round(v * 0.8)), nuts: Array.from(cap.nuts, (v) => Math.round(v * 0.5)), fish: Array.from(cap.fish, (v) => Math.round(v * 0.8)) };
+  }
+  return F.patch;
+}
+function cellOf(sim, x, z) {
+  const cap = patchCaps(sim);
+  const cx = Math.max(0, Math.min(cap.nx - 1, Math.floor(x / CELL))), cz = Math.max(0, Math.min(cap.nz - 1, Math.floor(z / CELL)));
+  return cz * cap.nx + cx;
+}
+// その場所の餌の豊かさ（0〜1.2、1がふつう）
+export function foodAt(sim, x, z) {
+  const P = patchState(sim), cap = patchCaps(sim), i = cellOf(sim, x, z);
+  const a = (k) => (cap[k][i] < 1 ? 0 : Math.max(0, Math.min(1.2, P[k][i] / (cap[k][i] * 0.5))));
+  const si = sim.seasonIdx();
+  return { cell: i, plant: a('plant'), nuts: a('nuts'), fish: a('fish'), insect: a('plant') * [0.8, 1.1, 0.8, 0.3][si], carrion: [0.8, 0.9, 1, 1.2][si] };
+}
+// 餌場から食べる（魔物がスライムに草を食べさせるときなどにも使える）
+export function eatFrom(sim, x, z, kind, units) {
+  if (kind !== 'plant' && kind !== 'nuts' && kind !== 'fish') return 0;
+  const P = patchState(sim), i = cellOf(sim, x, z);
+  const take = Math.min(P[kind][i], units);
+  P[kind][i] -= take;
+  return take;
+}
+// 1日ごとの回復（季節・日照りで変わる。ロジスティック成長）
+function regrowPatches(sim, si, drought) {
+  const P = patchState(sim), cap = patchCaps(sim), S = sim.S;
+  const rP = [0.45, 0.35, 0.2, 0.04][si], rN = [0.05, 0.1, 0.5, 0][si], rF = [0.3, 0.3, 0.25, 0.15][si];
+  let dr = null;
+  if (drought.size) { dr = new Set(); for (const sid of drought) { const s = sim.town(sid); if (s) for (let dz = -30; dz <= 30; dz += CELL) for (let dx = -30; dx <= 30; dx += CELL) dr.add(cellOf(sim, s.x + dx, s.z + dz)); } }
+  for (let i = 0; i < cap.n; i++) {
+    const g = (k, r, floor) => {
+      const c = cap[k][i];
+      if (c < 1) { P[k][i] = 0; return; }
+      const x = P[k][i];
+      P[k][i] = Math.round(Math.min(c, Math.max(0, x + r * x * (1 - x / c) + c * floor)) * 10) / 10;
+    };
+    g('plant', rP * (dr?.has(i) ? 0.3 : 1), si === 3 ? 0.005 : 0.02);
+    if (si === 3) P.nuts[i] = Math.round(P.nuts[i] * 0.93 * 10) / 10; else g('nuts', rN, si === 2 ? 0.08 : 0.005);
+    g('fish', rF, 0.01);
+  }
+}
+
+// 草食・雑食・小さな生き物を食べる者の1時間の食事（餌場を減らす）
+function forageGain(sim, c, def, si, drought) {
+  const web = FOOD_WEB[c.sp];
+  const base = web?.base || (def.diet === 'meat' ? ['carrion'] : ['plant']);
+  const fa = foodAt(sim, c.pos.x, c.pos.z);
+  const bioF = foodFactor(sim, c, def, si, drought);
+  const snow = si === 3 ? 0.6 : 1; // 雪の下の草は掘らないと食べられない
+  let best = 0, kind = null;
+  for (const k of base) {
+    let v = BASE_RATE[k] * (fa[k] ?? 0);
+    if (k === 'plant') v *= snow * bioF;
+    if (k === 'insect' || k === 'carrion') v *= bioF;
+    if (v > best) { best = v; kind = k; }
+  }
+  // 餌場を減らす
+  if (kind && (kind === 'plant' || kind === 'nuts' || kind === 'fish')) eatFrom(sim, c.pos.x, c.pos.z, kind, needOf(c.sp) / 16 * Math.min(1, fa[kind]));
+  return best;
+}
+
+// 安全弁：数が目安の35%を下回った種は、人の住まない未開拓地（町から最も遠い生息地）から移り住んでくる
+function frontierImmigration(sim, animals) {
+  const S = sim.S, R = sim.rng, F = S.fauna, w = S.world, mask = townMask(sim);
+  const count = {};
+  for (const c of animals) if (S.creatures[c.id]) count[c.sp] = (count[c.sp] || 0) + 1;
+  let moved = 0;
+  for (const sp of Object.keys(DENSITY)) {
+    if (moved >= 3) break;
+    const def = SPECIES[sp];
+    if (!def || sp === 'rat' || !def.biome) continue;
+    const t = popTarget(sim, sp), n = count[sp] || 0;
+    if (n >= Math.max(2, t * 0.35) || !R.chance(n === 0 ? 0.8 : 0.4)) continue;
+    // 町から最も遠い生息地のマス
+    let best = null, bd = -1;
+    for (let i = 0; i < 500; i++) {
+      const x = R.int(2, W - 3), z = R.int(2, H - 3);
+      const tt = w.tiles[z * W + x];
+      let b = biomeOf(tt);
+      if (b === 'snow' && def.biome.includes('snowcoast') && !def.biome.includes('snow')) b = [[2, 0], [-2, 0], [0, 2], [0, -2]].some(([dx, dz]) => { const q = tileAt(w, x + dx, z + dz); return q === T.SEA || q === T.DEEP; }) ? 'snowcoast' : 'snow';
+      if (!def.biome.includes(b)) continue;
+      if (def.swims ? !(tt === T.SEA || tt === T.DEEP) : !def.flies && (!walkable(tt) || tt === T.BLD)) continue;
+      if (mask[z * W + x]) continue;
+      let dmin = 1e9;
+      for (const s of w.settlements) dmin = Math.min(dmin, Math.hypot(s.x - x, s.z - z));
+      if (dmin > bd) { bd = dmin; best = { x, z }; }
+    }
+    if (!best) continue;
+    const k = def.pack || SOCIAL.has(sp) ? 3 : 2;
+    const made = [];
+    for (let i = 0; i < k; i++) {
+      const c = makeCreature(sim, sp, best.x + (i ? R.int(-1, 1) : 0), best.z + (i ? R.int(-1, 1) : 0), { range: def.swims ? 20 : 12, age: R.int(matureOf(sp), matureOf(sp) * 4) });
+      if (!S.creatures[c.id]) continue;
+      ensureAnimal(sim, c);
+      c.sex = i % 2 ? 'm' : 'f';
+      c.hunger = 80;
+      made.push(c);
+    }
+    if (made.length >= 2) { made[0].mate = made[1].id; made[1].mate = made[0].id; }
+    if (!made.length) continue;
+    moved++;
+    F.stats.immigrants = (F.stats.immigrants || 0) + made.length;
+    F.stats.immigBy = F.stats.immigBy || {};
+    F.stats.immigBy[sp] = (F.stats.immigBy[sp] || 0) + made.length;
+    log(sim, `人の住まない${sim.placeName(best.x, best.z)}の奥から、${def.name}が${made.length}頭移り住んできた。`, [], best);
+  }
 }

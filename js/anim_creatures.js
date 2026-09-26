@@ -2785,7 +2785,7 @@ function specBiped(anim, x) {
       if (bony) return { loop: true, frames: [f(1, S0, { d: 220 }), f(1, S0, { pre: [['shake', 1]], d: 180 }), f(1, S0, { d: 220 }), f(1, S0, { pre: [['shake', -1]], d: 180 })] };
       if (floaty) return { loop: true, frames: [f(1, { bob: -1 }, { d: 320 }), f(1, { bob: 0 }, { d: 280 }), f(1, { bob: 1 }, { d: 320 }), f(1, { bob: 0 }, { d: 280 })] };
       if (sp === 'penguin') return { loop: true, frames: [f(1, { step: -1 }, { d: 380 }), f(1, { step: 0 }, { d: 300 }), f(1, { step: 1 }, { d: 380 }), f(1, { step: 0, eyes: 'closed' }, { d: 140 })] };
-      if (role === 'young') return { loop: true, frames: [f(1, S0, { d: 200 }), f(1, S0, { pre: [['lift', 2]], d: 140 }), f(1, S0, { pre: [['lift', 1]], d: 120 }), f(1, S0, { d: 260 })] };
+      if (role === 'young' || c.juv) return { loop: true, frames: [f(1, S0, { d: 200 }), f(1, S0, { pre: [['lift', 2]], d: 140 }), f(1, S0, { pre: [['lift', 1]], d: 120 }), f(1, S0, { d: 260 })] };
       const w = winged ? [0, 1, 2, 1] : [1, 1, 1, 1], d0 = golem ? 700 : 440;
       return { loop: true, frames: [f(w[0], S0, { d: d0 }), f(w[1], S0, { pre: [['breathe', 1]], d: d0 }), f(w[2], living ? { ...S0, eyes: 'closed' } : S0, { pre: [['breathe', 1]], d: living ? 130 : d0 }), f(w[3], S0, { d: d0 })] };
     }
@@ -3194,6 +3194,9 @@ export function creatureAnimState(sim, c, ctx = {}) {
     return c.goal?.run || ctx.running ? (def.shape === 'bird' && def.flies ? 'fly' : 'run') : 'walk';
   }
   if (frac < 0.25) return 'dying';
+  // fauna.js の印：眠っている・冬眠・主人の墓守り・子ども
+  if (c.sleeping || c.hibernate) return 'sleep';
+  if (c.mourn && S.t < (c.mourn.until || 0)) return 'rest';
   const hour = sim.hour ? sim.hour() : 12;
   const night = hour >= 21 || hour < 5, day = hour >= 8 && hour < 17;
   const role = c.role;
@@ -3202,7 +3205,8 @@ export function creatureAnimState(sim, c, ctx = {}) {
   if (c.barking != null && S.t - c.barking < 4) return 'call';
   const slot = Math.floor((S.t || 0) / 12);
   const h = strHash(c.id + ':' + slot) / 4294967296;
-  const asleep = !NO_SLEEP.has(c.sp) && def.kind !== 'demon' && (NOCTURNAL.has(c.sp) ? day : night);
+  // fauna.js が眠りを決めている種（sleeping を持つ個体）は、その判断だけに従う
+  const asleep = c.sleeping === undefined && !NO_SLEEP.has(c.sp) && def.kind !== 'demon' && (NOCTURNAL.has(c.sp) ? day : night);
   if (asleep) return h < 0.85 ? 'sleep' : 'rest';
   if (role === 'plow' && hour >= 8 && hour < 16) return 'work';
   if (role === 'dairy' && (hour === 6 || hour === 17)) return 'work';
@@ -3210,7 +3214,7 @@ export function creatureAnimState(sim, c, ctx = {}) {
   if (role === 'wool' && hour === 10 && (sim.seasonIdx ? sim.seasonIdx() === 1 : false)) return 'work';
   if (role === 'pest') return h < 0.5 ? 'work' : 'idle';
   if (role === 'sentry' || role === 'scout' || role === 'castleguard' || role === 'guardian') return h < 0.55 ? 'guard' : h < 0.75 ? 'idle' : h < 0.88 ? 'call' : 'rest';
-  if (role === 'young') return h < 0.35 ? 'play' : h < 0.6 ? 'idle' : h < 0.8 ? (GRAZE_SP.has(c.sp) ? 'graze' : 'rest') : 'rest';
+  if (role === 'young' || c.juv) return h < 0.35 ? 'play' : h < 0.6 ? 'idle' : h < 0.8 ? (GRAZE_SP.has(c.sp) ? 'graze' : 'rest') : 'rest';
   const hungry = (c.hunger ?? 60) < 45;
   const grazer = GRAZE_SP.has(c.sp) || def.diet === 'grass' && def.shape !== 'biped';
   let table;
