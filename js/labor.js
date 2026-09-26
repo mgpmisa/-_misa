@@ -1081,12 +1081,12 @@ export function laborTopic(api, A, B) {
   const st = striking(api, A);
   if (st) return { w: 3, fn: (api2, A2, B2, v) => ({ kind: 'opinion', text: v.s(st.demand === 'tax' ? '税が下がるまで、みんなで仕事を止めている' : st.demand === 'rest' ? '休みの日をよこせって、みんなで仕事を止めている' : '給金を上げろって、みんなで仕事を止めている', 'v'), sentiment: 0.1 }) };
   const hot = api.S.labor?.strikes?.find((x) => x.state === 'on' && x.sid === A.s);
-  if (hot) return { w: 1.6, fn: (api2, A2, B2, v) => ({ kind: 'gossip', text: v.s(`${GROUP_NAME[hot.group]}が仕事を止めているらしい`, 'n'), sentiment: -0.1 }) };
+  if (hot) return { w: 1.6, fn: (api2, A2, B2, v) => ({ kind: 'news', text: v.s(`${GROUP_NAME[hot.group]}が仕事を止めているらしい`, 'raw') + '。', sentiment: -0.1 }) };
   if ((A.fatigue || 0) > 70) return { w: 1.8, fn: (api2, A2, B2, v) => ({ kind: 'complain', text: v.s(api2.rng.pick(['もう何日も休んでいない', 'このところ働きづめで、体がきしむ', '休みの日も働かないと、税が払えない']), 'v'), sentiment: -0.5 }) };
   if (L.restY && api.ageOf(A) >= 16) return { w: 1, fn: (api2, A2, B2, v) => ({ kind: 'happy', text: v.s(api2.rng.pick(['今日は休みの日だから、のんびりする', '休みの日くらい、家族と過ごしたい', '休みだし、広場で見世物でも見に行こうと思う']), 'v'), sentiment: 0.4 }) };
   const recent = A.memories?.filter((m) => m.k === 'spend' && api.today - m.t < 3 && m.emo > 0 && m.imp >= 0.45);
   if (recent?.length && (L.vanity > 0.55 || L.style === 'spender')) { const m = api.rng.pick(recent); return { w: 0.5 + L.vanity * 0.6, fn: (api2, A2, B2, v) => ({ kind: 'boast', text: v.s(`この前、${m.txt.replace(/。.*$/, '')}`, 'v'), sentiment: 0.3 }) }; }
-  if (L.style === 'miser' && api.rng.chance(0.3)) return { w: 0.6, fn: (api2, A2, B2, v) => ({ kind: 'opinion', text: v.s('無駄づかいする奴の気が知れない', 'n'), sentiment: -0.1 }) };
+  if (L.style === 'miser' && api.rng.chance(0.3)) return { w: 0.6, fn: (api2, A2, B2, v) => ({ kind: 'opinion', text: v.s('無駄づかいする奴の気が知れない', 'v'), sentiment: -0.1 }) };
   if (A.workReason && ['family', 'dream', 'debt', 'love', 'tax'].includes(A.workReason)) {
     const lines = { family: '家族のために働いている', dream: '夢のために、少しずつ貯めている', debt: '借金を返し終わるまでは、休めない', love: 'この仕事が好きで続けている', tax: '稼ぎのほとんどが税に消える' };
     return { w: 0.7, fn: (api2, A2, B2, v) => ({ kind: 'work', text: v.s(lines[A2.workReason], 'v'), sentiment: A2.workReason === 'love' ? 0.4 : -0.1 }) };

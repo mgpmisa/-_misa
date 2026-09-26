@@ -303,7 +303,11 @@ function takeGoods(sim, sid, g, n, payer, why) {
   const cost = n * m.price[g];
   if (payer && payer.money < cost) return false;
   m.stock[g] -= n;
-  if (payer) { payer.money -= cost; m.commission = (m.commission || 0) + cost * 0.06; }
+  if (payer) {
+    payer.money -= cost;
+    m.commission = (m.commission || 0) + cost * 0.06;
+    if (m.cash != null) m.cash += cost * 0.94;   // 市場の金庫（resources.js）があれば、代金はそこへ入る
+  }
   noteUsed(G, g, n);
   return cost || true;
 }
@@ -569,7 +573,8 @@ function drinkers(sim, sid, g, n) {
     if (takeGoods(sim, sid, g, 1, hh)) {
       q.needs.pleasure = Math.min(100, q.needs.pleasure + 12);
       const keeper = sim.living().find((x) => x.job === 'innkeeper' && x.s === sid);
-      if (keeper && sim.hh(keeper)) sim.hh(keeper).money += sim.S.towns[sid].price[g] * 0.15;   // 酒場の取り分
+      const share = sim.S.towns[sid].price[g] * 0.15;   // 酒場の取り分（市場の代金から分ける）
+      if (keeper && sim.hh(keeper)) { sim.hh(keeper).money += share; const t = sim.S.towns[sid]; if (t.cash != null) t.cash -= share; }
     }
   }
 }
@@ -706,6 +711,11 @@ function householdShopping(sim, hh, si) {
   // 豊かな家：羽根ぶとん・香水
   if (hh.money > 260 && R.chance(1 / 150) && takeGoods(sim, hh.s, 'feather', 4, hh)) hh.comfort = Math.min(10, (hh.comfort || 0) + 0.5);
   if (hh.money > 260 && R.chance(1 / 60) && takeGoods(sim, hh.s, 'perfume', 1, hh) && first) first.needs.esteem = Math.min(100, first.needs.esteem + 12);
+  // 豊かな家のごちそう：魔物の肝・白き地茸・魚卵（精がつく・自慢になる）
+  if (hh.money > 300 && R.chance(0.04)) {
+    const g = ['liver', 'truffle', 'roe'].find((x) => m.stock[x] >= 1 && m.price[x] < hh.money * 0.15);
+    if (g && takeGoods(sim, hh.s, g, 1, hh)) for (const id of hh.members) { const q = S.people[id]; if (q?.needs) { q.needs.pleasure = Math.min(100, q.needs.pleasure + 15); if (g === 'liver') q.hp = Math.min(q.maxhp, q.hp + 10); } }
+  }
 }
 
 // 一人ひとりの必要：仕事の道具・武具・冒険の携帯食・お守り・研究の材料・楽器・舟・畑の土づくり
@@ -731,7 +741,7 @@ function personNeeds(sim, p, si) {
   // 冒険者：依頼に出るときの携帯食とお守り
   const adv = J.rank === 'adventurer' || p.party;
   if (adv && p.quest && R.chance(0.5)) { const w = { money: p.purse || 0 }; if (w.money > m.price.cured + 5 && takeGoods(sim, p.s, 'cured', 1, w)) p.purse = w.money; else if (hh.money > 30) takeGoods(sim, p.s, 'cured', 1, hh); }
-  if ((adv || (p.pers?.N > 0.7 && hh.money > 60)) && !p.charmDay && R.chance(adv ? 0.04 : 0.01) && takeGoods(sim, p.s, 'charm', 1, hh)) {
+  if ((adv || (p.pers?.N > 0.6 && hh.money > 50)) && !p.charmDay && R.chance(adv ? 0.05 : 0.02) && takeGoods(sim, p.s, 'charm', 1, hh)) {
     p.charmDay = sim.today;
     sim.remember(p, 'お守りを買って懐に入れた', { emo: 0.3, imp: 0.2 });
   }
@@ -823,7 +833,7 @@ function townNeeds(sim, s, pop, si) {
     if (takeGoods(sim, s.id, 'lime', 1, w)) ok++;
     if (ok) { t.works = (t.works || 0) + ok; if (t.works % 12 < ok && R.chance(0.6)) sim.pushLog(`${s.name}で、石畳と井戸の縁が町の蓄えで直された。`, 'event', [], s); }
   }
-  if (w.money > 500 && (t.statues || 0) < 3 && m0(t, 'statue') && R.chance(0.2) && takeGoods(sim, s.id, 'statue', 1, w)) {
+  if (w.money > 380 && (t.statues || 0) < 3 && m0(t, 'statue') && R.chance(0.25) && takeGoods(sim, s.id, 'statue', 1, w)) {
     t.statues = (t.statues || 0) + 1;
     sim.pushLog(`${s.name}の広場に新しい彫像が据えられた。`, 'event', [], s);
     for (const q of pop) if (q.needs) q.needs.esteem = Math.min(100, q.needs.esteem + 5);
@@ -910,7 +920,7 @@ function nobleLife(sim) {
     const royalTreasury = hh.royal && k && k.treasury > 1200;
     let budget = Math.max(0, (hh.money - 150) * (0.05 + Math.min(0.06, c.envy * 0.01))) + (royalTreasury ? 40 : 0);
     if (budget < 3) { unmetLux(sim, hh, c); continue; }
-    const want = HOBBIES[c.hobby].goods.concat(['wine', 'spice', 'jewelry', 'furniture', 'finery', 'perfume', 'painting', 'book']);
+    const want = HOBBIES[c.hobby].goods.concat(['wine', 'spice', 'jewelry', 'furniture', 'finery', 'perfume', 'painting', 'book', 'statue', 'truffle', 'liver']);
     const tries = R.int(1, 2);
     for (let i = 0; i < tries; i++) {
       const hobbyPick = R.chance(0.65);
@@ -939,7 +949,7 @@ function nobleLife(sim) {
     c.envy = Math.max(0, c.envy - 0.2);
     // 霊薬：年老いた・弱った当主は、長生きの薬を求める
     const age = sim.ageOf(lead);
-    if ((age >= 55 || lead.hp < lead.maxhp * 0.5 || lead.sick) && m.stock.elixir >= 1 && hh.money > m.price.elixir + 200 && R.chance(0.08)) {
+    if ((age >= 50 || lead.hp < lead.maxhp * 0.7 || lead.sick) && m.stock.elixir >= 1 && hh.money > m.price.elixir + 150 && R.chance(0.25)) {
       if (takeGoods(sim, hh.s, 'elixir', 1, hh)) {
         lead.hp = lead.maxhp; lead.needs.survival = 100;
         lead.elixirs = (lead.elixirs || 0) + 1;
