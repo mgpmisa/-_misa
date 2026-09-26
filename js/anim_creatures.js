@@ -2422,9 +2422,9 @@ const FX = {
     P.ell(x, y, 2.2, 2.2, color); P.ell(x, y, 1.2, 1.2, lt(color, 0.3)); P.px(x, y, '#ffffff');
     for (let i = 1; i <= 3; i++) P.px(view === 'S' ? x - face * (2 + i * 2) : x, view === 'S' ? y + (i & 1) : view === 'F' ? y - 2 - i * 2 : y + 2 + i * 2, lt(color, 0.1));
   },
-  burst(P, An, view, face, k, color = '#c02040') { // 魔王の闇の波動
-    const [hx, ty] = headTop(An); const cy = ty + 16, r = 8 + k * 5;
-    for (let a = 0; a < 24; a++) { const t = a * Math.PI / 12; const x = hx + Math.round(Math.cos(t) * r), y = cy + Math.round(Math.sin(t) * r * 0.6); P.px(x, y, a & 1 ? color : '#ff80a0'); }
+  burst(P, An, view, face, k, color = '#c02040') { // 魔王の闇の波動（二重の輪）
+    const [hx, ty] = headTop(An); const cy = ty + 16, r = 6 + (k % 4) * 5;
+    for (const [rr, c] of [[r, color], [r - 2, '#ff9ab0'], [r - 4, '#5a1030']]) { if (rr < 2) continue; for (let a = 0; a < 56; a++) { const t = a * Math.PI / 28; P.px(hx + Math.round(Math.cos(t) * rr), cy + Math.round(Math.sin(t) * rr * 0.6), c); } }
   },
   circle(P, An, view, face, k, color = '#80f0a0') { // 地面の魔法陣（体の上にも少しかかる）
     for (let a = 0; a < 32; a++) { const t = a * Math.PI / 16 + k * 0.2; const x = CX + Math.round(Math.cos(t) * 12), y = GROUND - 1 + Math.round(Math.sin(t) * 2.5); if (Math.sin(t) > 0) P.px(x, y, a % 4 === 0 ? '#ffffff' : color); }

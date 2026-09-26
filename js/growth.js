@@ -94,14 +94,14 @@ const TITLES = [
   ['剣術', 70, '剣の達人'], ['剣術', 90, '剣聖'], ['槍術', 70, '槍の名手'], ['斧術', 70, '斧の豪傑'], ['鈍器', 70, '鉄槌の戦士'],
   ['弓術', 70, '弓の名手'], ['弓術', 90, '百発百中の射手'], ['短剣', 70, '短剣の使い手'], ['格闘', 70, '拳の達人'], ['盾', 70, '鉄壁'],
   ['攻撃魔法', 70, '大魔導師'], ['回復魔法', 70, '癒しの手'], ['祈り', 75, '篤信の人'], ['医術', 70, '名医'], ['薬学', 70, '薬の名人'],
-  ['鍛冶', 80, '名工'], ['木工', 80, '名棟梁'], ['石工', 80, '石の名人'], ['細工', 80, '細工の名人'], ['裁縫', 80, '仕立ての名人'],
-  ['焼き物', 80, '名陶工'], ['醸造', 80, '酒造りの名人'], ['料理', 75, '料理上手'], ['農耕', 80, '篤農家'], ['畜産', 80, '家畜の名人'],
-  ['採掘', 80, '掘り名人'], ['伐採', 80, '森の達人'], ['狩猟', 75, '名狩人'], ['釣り', 75, '釣り名人'], ['商い', 75, '商売上手'],
-  ['話術', 75, '弁舌家'], ['統率', 75, '名将'], ['歌と楽器', 75, '名演奏家'], ['踊り', 75, '舞の名手'], ['絵画', 75, '名画家'],
-  ['読み書き', 80, '能筆家'], ['学問', 80, '碩学'], ['騎乗', 75, '名騎手'], ['隠密', 75, '影歩き'], ['盗み', 75, '盗みの名人'],
-  ['泳ぎ', 70, '泳ぎの達者'], ['登山', 70, '山歩きの達人'], ['航海', 75, '名航海士'],
+  ['鍛冶', 92, '名工'], ['木工', 92, '名棟梁'], ['石工', 92, '石の名人'], ['細工', 92, '細工の名人'], ['裁縫', 92, '仕立ての名人'],
+  ['焼き物', 92, '名陶工'], ['醸造', 92, '酒造りの名人'], ['料理', 85, '料理上手'], ['農耕', 92, '篤農家'], ['畜産', 92, '家畜の名人'],
+  ['採掘', 92, '掘り名人'], ['伐採', 92, '森の達人'], ['狩猟', 85, '名狩人'], ['釣り', 92, '釣り名人'], ['商い', 92, '商売上手'],
+  ['話術', 88, '弁舌家'], ['統率', 90, '名将'], ['歌と楽器', 85, '名演奏家'], ['踊り', 85, '舞の名手'], ['絵画', 85, '名画家'],
+  ['読み書き', 92, '能筆家'], ['学問', 92, '碩学'], ['騎乗', 80, '名騎手'], ['隠密', 80, '影歩き'], ['盗み', 80, '盗みの名人'],
+  ['泳ぎ', 70, '泳ぎの達者'], ['登山', 70, '山歩きの達人'], ['航海', 92, '名航海士'],
 ];
-const STAT_TITLES = [['str', 17, '怪力'], ['vit', 17, '鉄の体'], ['agi', 16.5, '俊足'], ['dex', 17, '器用な手'], ['int', 17, '博識'], ['wis', 18, '徳の人'], ['cha', 17, '人気者']];
+const STAT_TITLES = [['str', 17.5, '怪力'], ['vit', 17.5, '鉄の体'], ['agi', 16.5, '俊足'], ['dex', 17.5, '器用な手'], ['int', 17.5, '博識'], ['wis', 18.5, '徳の人'], ['cha', 17.5, '人気者']];
 const WALK_TITLE_H = 260; // 旅に明け暮れた時間（毎時の見本で数える）で「健脚」
 
 // ---------- 小さな道具 ----------
@@ -167,13 +167,13 @@ export function ensureGrowth(sim, p) {
     pot[k] = pm * 0.55 + 10 * 0.2 + pot[k] * 0.25;
   }
   for (const k of STAT_KEYS) pot[k] = r1(clamp(pot[k], 5, 16));
-  const g = p.gr = { pot, tr: {}, last: {}, rec: {}, walkH: 0, m: null, sync: null, syncJob: null, v: 1 };
+  const g = p.gr = { pot, tr: {}, last: {}, rec: {}, walkH: 0, sync: null, syncJob: null, v: 1 };
   const tr = g.tr, sk = p.skills = p.skills || {};
   const set = (k, v) => { if (v > 0.5) sk[k] = r1(Math.max(sk[k] || 0, clamp(v, 0, 95))); };
   const years = clamp(age - 16, 0, 30);
   // 暮らしで誰もが身につける分
   if (age >= 8) {
-    tr.str = Math.min(2, (age - 8) * 0.12); tr.vit = Math.min(2, (age - 8) * 0.12);
+    tr.str = Math.min(0.8, (age - 8) * 0.06); tr.vit = Math.min(0.8, (age - 8) * 0.06);
     set('料理', age >= 14 ? 6 + hrand(id, 31) * 22 : 2);
     const rankRW = { king: 60, royal: 55, noble: 50, knight: 35, citizen: 22, adventurer: 18, commoner: 8, wanderer: 10 }[p.rank] ?? 8;
     set('読み書き', rankRW * Math.min(1, age / 16) + (p.skill?.study || 0) * 40);
@@ -192,23 +192,23 @@ export function ensureGrowth(sim, p) {
     const jobSk = (p.skill?.[p.job] ?? Math.min(0.9, 0.2 + years / 40)) * 100;
     if (jg[0] !== W) set(main, jobSk);
     if (jg[2]) set(jg[2] === W ? weaponKey(p) : jg[2], jobSk * 0.4);
-    for (const k of jg[1]) tr[k] = (tr[k] || 0) + Math.min(6, years * 0.3);
+    for (const k of jg[1]) tr[k] = (tr[k] || 0) + Math.min(3.5, years * 0.18);
   }
   // 武器の腕：戦う職業とレベルから
   const combat = JOBS[p.job]?.combat || 0;
   if (age >= 14 && (combat || p.eq?.weapon)) {
     const wk = weaponKey(p);
     set(wk, 6 + ((p.lv || 1) - 1) * 5 + combat * 5 + hrand(id, 41) * 8);
-    if (wk === '攻撃魔法') tr.int = (tr.int || 0) + Math.min(4, combat);
-    else tr.str = (tr.str || 0) + Math.min(4, combat * 0.8);
-    tr.vit = (tr.vit || 0) + Math.min(3, combat * 0.6); tr.agi = (tr.agi || 0) + Math.min(3, combat * 0.6);
+    if (wk === '攻撃魔法') tr.int = (tr.int || 0) + Math.min(2.5, combat * 0.6);
+    else tr.str = (tr.str || 0) + Math.min(2.5, combat * 0.5);
+    tr.vit = (tr.vit || 0) + Math.min(2, combat * 0.4); tr.agi = (tr.agi || 0) + Math.min(2, combat * 0.4);
     if (p.eq?.shield) set('盾', 5 + ((p.lv || 1) - 1) * 4 + combat * 3);
     if (wk !== '格闘') set('格闘', 4 + combat * 4);
   }
   if (['cleric', 'priest', 'nun', 'paladin', 'sage'].includes(p.job)) set('回復魔法', Math.max(sk['回復魔法'] || 0, 15 + years * 1.2));
   if (['thief', 'pickpocket', 'banditchief', 'pirate'].includes(p.job) || p.bandit) { set('隠密', 15 + years); set('盗み', 10 + years); }
   if (['wanderer', 'messenger', 'merchant', 'bard', 'adventurer'].includes(p.job)) g.walkH = Math.min(400, years * 12);
-  for (const k of STAT_KEYS) tr[k] = r1(Math.min(9, tr[k] || 0));
+  for (const k of STAT_KEYS) tr[k] = r1(Math.min(6, tr[k] || 0));
   computeStats(sim, p);
   // もともと届いている称号は、黙って持たせる（最初の日に速報があふれないように）
   checkTitles(sim, p, true);
@@ -325,7 +325,7 @@ export function growthStats(sim, p) {
     trade: clamp(1 + ((sk['商い'] || 0) - 20) * 0.0015 + ((p.stats.cha ?? 10) - 10) * 0.004, 0.95, 1.15),
     evade: clamp(0.03 + (st('agi') - 10) * 0.006 + (wk === '短剣' || wk === '格闘' ? ws * 0.0006 : 0), 0.01, 0.2),
   };
-  p.gr.m = m;
+  Object.defineProperty(p.gr, 'm', { value: m, writable: true, configurable: true, enumerable: false }); // 控え（保存しない）
   return m;
 }
 export const moveMul = (p) => p.gr?.m?.spd || 1;
@@ -473,11 +473,13 @@ export function growthDaily(sim) {
       const last = g.last[k];
       if (last == null) { g.last[k] = today; continue; }
       if (today - last > 20 && sk[k] > 15) sk[k] = Math.max(15, sk[k] - 0.03 * (sk[k] / 50));
-      if (sk[k] < 0.5) delete sk[k];
+      if (sk[k] < 0.5) delete sk[k]; else sk[k] = Math.round(sk[k] * 1000) / 1000;
     }
-    for (const k of Object.keys(g.rec)) { g.rec[k] *= 0.8; if (g.rec[k] < 0.02) delete g.rec[k]; }
+    for (const k of Object.keys(g.rec)) { g.rec[k] = Math.round(g.rec[k] * 800) / 1000; if (g.rec[k] < 0.02) delete g.rec[k]; }
     // 体の鍛えた分は、使わなければ少しずつ抜ける
     for (const k of BODY) if (g.tr[k]) g.tr[k] *= 0.999;
+    for (const k of STAT_KEYS) if (g.tr[k]) g.tr[k] = Math.round(g.tr[k] * 1000) / 1000;
+    g.walkH = Math.round(g.walkH || 0);
     computeStats(sim, p);
     checkTitles(sim, p, false);
     checkAspire(sim, p);
@@ -505,7 +507,7 @@ function checkTitles(sim, p, silent) {
     p.deeds.push(`${sim.year()}年、「${t}」と呼ばれるようになった`);
     sim.remember(p, `みんなに「${t}」と呼ばれるようになった。${k && STAT_NAME[k] ? '体が応えてくれている' : 'これまでの積み重ねが実を結んだ'}`, { emo: 0.7, imp: 0.7, k: 'title' });
     if (town) sim.gossip(p, `「${t}」と呼ばれているらしい`, 0.5, sim.living().filter((q) => q.s === p.s && q !== p), { congrat: `「${t}」だなんて、すごいね`, silent: true });
-    if (k && !STAT_NAME[k] && (p.skills[k] || 0) >= 80) sim.news(`${town?.name || ''}の${sim.fullName(p)}が「${t}」と呼ばれるようになった`, 1, p.pos);
+    if (k && !STAT_NAME[k] && (COMBAT_SKILLS.includes(k) || ['攻撃魔法', '回復魔法', '医術', '盾'].includes(k) || (p.skills[k] || 0) >= 92)) sim.news(`${town?.name || ''}の${sim.fullName(p)}が「${t}」と呼ばれるようになった`, 1, p.pos);
     else sim.pushLog?.(`${sim.fullName(p)}が「${t}」と呼ばれるようになった。`, 'event', [p.id], p.pos);
   }
 }
