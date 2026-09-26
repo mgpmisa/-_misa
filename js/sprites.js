@@ -297,7 +297,7 @@ export function drawPerson(p, opts = {}) {
   const blushR = R.f(), browsR = R.f();
   const detail = R.wpick({ none: 3, vneck: 2, buttons: 2, vest: 2, stripeV: 1, sash: 1, patch: 1, collar: 2 });
   const vestCol = jit(R.pick(CLOTH), R, 0.03, 0.1, 0.1);
-  const accent = jit(R.pick(HERALD), R, 0.03, 0.1, 0.08);
+  let accent = jit(R.pick(HERALD), R, 0.03, 0.1, 0.08);
   const itemRoll = R.f(), eyepatchR = R.f(), glassesR = R.f(), skirtR = R.f(), caneR = R.f(), dirtR = R.f();
   const patchPos = [R.f(), R.f()], dirtPos = [R.f(), R.f(), R.f()];
   const sc2 = R.f();
@@ -315,15 +315,15 @@ export function drawPerson(p, opts = {}) {
   const freckles = frecklesR < (f ? 0.22 : 0.16);
   const mole = moleR < 0.16 ? molePos : null;
   const earring = earringR < (f ? 0.28 : 0.1) ? earringC : null;
-  const scarf = scarfR < 0.16 ? scarfC : null;
+  let scarf = scarfR < 0.16 ? scarfC : null;
   const casualHat = casualR < 0.2 ? casualKind : null;
   const blush = blushR < (f ? 0.5 : 0.12);
   const brows = browsR < 0.3;
-  const eyepatch = eyepatchR < (outfit === 'sailor' || outfit === 'thief' ? 0.2 : outfit === 'adventurer' ? 0.08 : 0);
-  const glasses = outfit === 'scholar' || (glassesR < 0.06 && age > 30);
+  let eyepatch = eyepatchR < (outfit === 'sailor' || outfit === 'thief' ? 0.2 : outfit === 'adventurer' ? 0.08 : 0);
+  let glasses = outfit === 'scholar' || (glassesR < 0.06 && age > 30);
   const pantsJobs = ['knight', 'soldier', 'guard', 'thief', 'adventurer', 'hunter', 'sailor', 'fisher', 'miner', 'woodcutter', 'smith', 'prisoner', 'jailer', 'general', 'royalguard', 'warrior', 'archer', 'paladin', 'pirate', 'smuggler', 'banditchief', 'pickpocket', 'diver', 'charcoal', 'mason', 'stablehand', 'messenger', 'watchman', 'captain', 'shipwright'];
-  const skirt = f && (!pantsJobs.includes(outfit) ? skirtR < 0.85 : skirtR < 0.15);
-  const dirt = outfit === 'miner' || outfit === 'beggar' || (outfit === 'smith' && dirtR < 0.6);
+  let skirt = f && (!pantsJobs.includes(outfit) ? skirtR < 0.85 : skirtR < 0.15);
+  let dirt = outfit === 'miner' || outfit === 'beggar' || (outfit === 'smith' && dirtR < 0.6);
   const cane = stage === 'elder' && caneR < 0.45;
   if (age >= 45) hair = mix(hair, o2 < 0.5 ? '#d8d8dc' : '#b8b8bc', Math.min(1, (age - 45) / 28));
   if (age >= 72) hair = mix(hair, '#eeeef0', 0.5);
@@ -435,7 +435,12 @@ export function drawPerson(p, opts = {}) {
     case 'kid': hat = o1 < 0.12 ? (o2 < 0.5 ? 'cap' : 'knit') : null; break;
     default: break;
   }
-  const acc = accentOverride || accent;
+  if (accentOverride) accent = accentOverride;
+  if (forceGlasses) glasses = true;
+  if (forceSkirt && f) skirt = true;
+  if (dirtForce) dirt = true;
+  if (scarfForce) scarf = scarfForce;
+  if (forcePatch) eyepatch = true;
   if (stage === 'baby') { hat = outfit === 'royalkid' ? 'circlet' : (o1 < 0.3 ? 'bonnet' : null); item = null; capeC = null; }
   if (stage === 'elder' && cane && !item) item = 'cane';
   const southWrap = south && !helmet && !hood && !['crown', 'tiara', 'wizard', 'chef', 'circlet', 'katyusha'].includes(hat);
@@ -449,7 +454,7 @@ export function drawPerson(p, opts = {}) {
   if (long) top = long; else top = sep(top, skin, 0.1);
   hair = sep(hair, skin, 0.12);
   if (hood) hood = sep(hood, skin);
-  const plume = [HERALD[Math.floor(rp[0] * 6)], Math.floor(rp[1] * 3)];
+  const plume = [plumeGold ? GOLD : HERALD[Math.floor(rp[0] * 6)], plumeGold ? 1 : Math.floor(rp[1] * 3)];
   const orb = pickBy(['#60e0ff', '#ff6080', '#80ff80', '#c080ff', '#ffd040'], rp[2]);
   const tiaraGem = pickBy(['#d0303a', '#3a7ad8', '#e060c0'], rp[3]);
   const skirtC = outfit === 'plain' || outfit === 'kid' ? (sc2 < 0.5 ? pants : dk(top, 0.08)) : dk(top, 0.06);
@@ -606,6 +611,21 @@ export function drawPerson(p, opts = {}) {
         if (S) { P.rect(sx1, nk, 2, 5, '#8a6a3a'); P.px(sx0 + 1, nk, '#5a3a22'); }
         break;
       case 'split': if (S) P.rect(sx0, nk, sw, torsoH, hatC); else P.rect(B ? bx0 : 8, nk, B ? 8 - bx0 : bx1 - 7, torsoH, hatC); P.rect(tx0, torsoBot, tx1 - tx0 + 1, 1, GOLD); break;
+      case 'coat':
+        if (F) { P.rect(6, nk, 1, 4, dk(top, 0.12)); P.rect(9, nk, 1, 4, dk(top, 0.12)); P.rect(7, nk, 2, 2, '#6a8ab0'); P.rect(bx0 + 1, torsoBot - 1, 2, 1, dk(top, 0.1)); }
+        if (S) { P.rect(sx0, nk, 1, 4, dk(top, 0.12)); P.rect(sx0 + 1, nk, 1, 1, '#6a8ab0'); }
+        break;
+      case 'blood': case 'clay': case 'paint': case 'flour': {
+        const cs = overlay === 'blood' ? ['#a02020', '#801818'] : overlay === 'clay' ? ['#8a5a3a', '#a06a4a'] : overlay === 'flour' ? ['#fbfaf4', '#f0ece0'] : ['#d03030', '#3050c0', '#e0c030'];
+        for (let i = 0; i < 3; i++) { const x = tx0 + 1 + Math.floor(rp[i] * (tx1 - tx0 - 2)), y = nk + 2 + Math.floor(rp[3 + i] * (torsoH + 1)); const xx = B ? 14 - x : x; P.over(xx, y, cs[i % cs.length]); P.over(xx + 1, y, cs[i % cs.length]); }
+        break;
+      }
+      case 'dancer':
+        P.rect(tx0, nk + 3, tx1 - tx0 + 1, torsoH - 4, skin); P.rect(tx0, torsoBot, tx1 - tx0 + 1, 1, GOLD); P.rect(tx0, nk + 2, tx1 - tx0 + 1, 1, GOLD);
+        if (!B) for (let x = tx0; x <= tx1; x += 2) P.px(x, torsoBot + 1, GOLD);
+        break;
+      case 'nunbib': if (!B) P.rect(S ? sx0 : 5, nk, S ? 3 : 6, 2, '#f4f4f4'); break;
+      case 'fur': P.rect(S ? sx0 - 1 : armL, nk, S ? sw + 3 : armR - armL + 1, 2, '#8a6a4a'); P.rect(S ? sx0 : armL + 1, nk, 2, 1, '#a88a6a'); break;
       case 'rags':
         for (let i = 0; i < 3; i++) { const x = tx0 + Math.floor(rp[i] * (tx1 - tx0)), y = nk + 1 + Math.floor(rp[3 + i] * (torsoH - 1)); const xx = B ? 14 - x : x; const c = i & 1 ? dk(top, 0.14) : lt(top, 0.1); P.over(xx, y, c); P.over(xx + 1, y, c); }
         P.clr(tx0, torsoBot); P.clr(tx1 - Math.floor(rp[6] * 2), torsoBot);
@@ -846,6 +866,12 @@ export function drawPerson(p, opts = {}) {
       case 'kerchief': HT(4, t - 1, 8, 2); if (!S) { P.px(4, t + 1, hatC); P.px(11, t + 1, hatC); } else P.rect(11, t + 1, 1, 2, hatC); if (B) P.rect(7, t + 1, 2, 2, hatC); break;
       case 'bonnet': HT(4, t - 1, 8, 2, '#f4f0f0'); if (S) HT(8, t + 1, 3, 3, '#f4f0f0'); else { HT(4, t + 1, 1, 3, '#f4f0f0'); HT(11, t + 1, 1, 3, '#f4f0f0'); } if (B) HT(5, t + 1, 6, 3, '#f4f0f0'); break;
       case 'turban': HT(4, t - 2, 8, 3); for (let x = 4; x < 12; x += 2) P.px(x, t - 1, dk(hatC, 0.12)); P.px(8, t - 3, hatC); if (rp[10] < 0.4 && F) P.px(7, t - 1, '#d0303a'); break;
+      case 'jester': HT(4, t - 1, 8, 2); P.rect(3, t - 2, 2, 1, accent === hatC ? '#3050c0' : shirt); P.px(2, t - 3, shirt); P.rect(7, t - 3, 2, 2, hatC); P.px(8, t - 4, hatC); P.rect(11, t - 2, 2, 1, shirt); P.px(13, t - 3, shirt);
+        P.px(1, t - 4, GOLD); P.px(8, t - 5, GOLD); P.px(14, t - 4, GOLD); break;
+      case 'nunveil': HT(4, t - 1, 8, 2, '#1a1a22'); if (F) { HT(5, t, 6, 1, '#f4f4f4'); HT(4, t, 1, 8, '#1a1a22'); HT(11, t, 1, 8, '#1a1a22'); HT(3, t + 4, 1, 4, '#1a1a22'); HT(12, t + 4, 1, 4, '#1a1a22'); } if (S) { HT(5, t, 3, 1, '#f4f4f4'); HT(8, t, 4, 8, '#1a1a22'); HT(12, t + 3, 1, 5, '#1a1a22'); } if (B) { HT(4, t, 8, 8, '#1a1a22'); HT(3, t + 4, 10, 4, '#1a1a22'); } break;
+      case 'beekeeper': HT(2, t - 1, 12, 1, '#e8e0c8'); HT(5, t - 3, 6, 2, '#e8e0c8'); if (!B) for (let y = t; y < t + headH; y++) for (let x = 4; x <= 11; x++) if ((x + y) & 1) P.px(x, y, '#6a6a6a'); if (B) HT(4, t, 8, headH, '#8a8a8a'); break;
+      case 'tricorne': HT(3, t - 1, 10, 2, '#1a1a22'); HT(5, t - 2, 6, 1, '#1a1a22'); HT(3, t - 1, 10, 1, '#2a2a34'); P.px(3, t - 2, GOLD); P.px(12, t - 2, GOLD); if (F) P.px(8, t - 1, '#f0f0f0'); break;
+      case 'tophat': HT(5, t - 5, 6, 5, '#1a1a1e'); HT(3, t, 10, 1, '#1a1a1e'); HT(5, t - 1, 6, 1, accent); break;
       case 'veil': HT(4, t - 1, 8, 2); if (F) { HT(4, t + 1, 1, 6); HT(11, t + 1, 1, 6); HT(3, t + 4, 1, 4); HT(12, t + 4, 1, 4); } if (S) { HT(8, t + 1, 4, 5); HT(10, t + 6, 3, 3); } if (B) { HT(4, t + 1, 8, 6); HT(3, t + 4, 10, 4); } P.rect(6, t - 1, 2, 1, lt(hatC, 0.12)); break;
     }
 
@@ -880,6 +906,27 @@ export function drawPerson(p, opts = {}) {
       case 'book': P.rect(hx - 1, hy - 1, 2, 3, B ? dk(accent, 0.2) : accent); if (!B) P.rect(hx - 1, hy - 1, 1, 3, '#f0e8d0'); break;
       case 'holybook': P.rect(hx - 1, hy - 1, 2, 3, '#3a2a6a'); if (!B) P.px(hx, hy, GOLD); break;
       case 'dagger': P.rect(hx, hy - 3, 1, 3, steel); P.px(hx, hy, '#2a2a2a'); break;
+      case 'scroll': P.rect(hx - 1, hy - 1, 2, 3, '#f0e8d0'); P.px(hx - 1, hy - 2, '#c8b890'); P.px(hx, hy + 2, '#c8b890'); break;
+      case 'ladle': P.rect(hx, hy - 5, 1, 6, wood); P.rect(hx - 1, hy - 7, 2, 2, '#b8bcc4'); break;
+      case 'shears': P.line(hx - 1, hy - 4, hx, hy, '#c8ccd4'); P.line(hx + 1, hy - 4, hx, hy, '#a8acb4'); P.px(hx, hy + 1, '#3a3a3a'); break;
+      case 'bag': P.rect(hx - 1, hy, 3, 2, '#2a2a2a'); P.px(hx, hy - 1, '#2a2a2a'); P.px(hx, hy, GOLD); break;
+      case 'herbs': P.rect(hx - 1, hy - 1, 2, 3, '#4a9a3a'); P.px(hx - 1, hy - 2, '#e8e060'); P.px(hx, hy - 2, '#6ac050'); break;
+      case 'cleaver': P.rect(hx - 1, hy - 3, 3, 3, steel); P.rect(hx - 1, hy - 3, 1, 3, '#f0f2f6'); P.px(hx, hy, '#3a2616'); break;
+      case 'pot': P.rect(hx - 1, hy - 1, 3, 3, '#b0603a'); P.rect(hx - 1, hy - 1, 3, 1, '#c87a4a'); break;
+      case 'yarn': P.rect(hx - 1, hy - 1, 2, 2, pickBy(['#d03050', '#3050d0', '#e0c030'], rp[9])); break;
+      case 'gem': P.rect(hx - 1, hy - 1, 2, 2, pickBy(['#40c0f0', '#e03050', '#40e080'], rp[9])); P.px(hx - 1, hy - 1, '#ffffff'); break;
+      case 'flask': P.px(hx, hy - 3, '#c8d8e0'); P.rect(hx - 1, hy - 2, 2, 3, pickBy(['#60e080', '#e060c0', '#60a0ff', '#f0a030'], rp[9])); break;
+      case 'orb': P.rect(hx - 1, hy - 2, 3, 3, '#a8e0ff'); P.px(hx - 1, hy - 2, '#ffffff'); P.rect(hx - 1, hy + 1, 3, 1, '#6a4a2a'); break;
+      case 'brush': P.line(hx, hy, hx + dir, hy - 5, wood); P.px(hx + dir, hy - 6, pickBy(['#d03030', '#3050c0', '#e0c030'], rp[9])); break;
+      case 'lantern': P.px(hx, hy - 1, '#3a3a3a'); P.rect(hx - 1, hy, 2, 3, '#ffe070'); P.rect(hx - 1, hy, 2, 1, '#5a4a3a'); break;
+      case 'shovel': P.rect(hx, t + 2, 1, FEET - t - 5, wood); P.rect(hx - 1, FEET - 3, 3, 3, '#9aa0aa'); break;
+      case 'basket': P.rect(hx - 1, hy, 3, 2, '#c8a060'); P.px(hx, hy - 1, '#a88040'); P.px(hx - 1, hy - 1, '#e04040'); break;
+      case 'crook': P.rect(hx, t, 1, FEET - t, wood); P.px(hx + dir, t - 1, wood); P.px(hx + 2 * dir, t, wood); P.px(hx + 2 * dir, t + 1, wood); break;
+      case 'sack': P.rect(hx - 1, hy - 1, 3, 3, '#e8dcc0'); P.px(hx, hy - 2, '#c8b890'); break;
+      case 'pearl': P.px(hx, hy, '#fbfbff'); P.px(hx - 1, hy, '#d8d0e0'); break;
+      case 'mace': P.rect(hx, hy - 4, 1, 5, wood); P.rect(hx - 1, hy - 6, 3, 2, '#a8acb4'); P.px(hx, hy - 7, '#a8acb4'); break;
+      case 'bigaxe': P.rect(hx, hy - 8, 1, 10, wood); P.rect(dir > 0 ? hx + 1 : hx - 3, hy - 8, 3, 4, steel); P.rect(dir > 0 ? hx - 1 : hx + 1, hy - 7, 1, 2, steel); break;
+      case 'smoker': P.rect(hx - 1, hy - 1, 2, 3, '#8a8a8a'); P.px(hx, hy - 3, '#d8d8d8'); P.px(hx + 1, hy - 4, '#e8e8e8'); break;
       case 'lute':
         if (F) { P.rect(bx0 + 1, torsoBot - 3, 3, 3, '#c08a40'); P.px(bx0 + 2, torsoBot - 2, '#3a2616'); P.line(bx0 + 3, torsoBot - 3, bx1 + 1, nk, '#8a5a2a'); }
         if (B) { P.rect(bx0 + 2, nk + 1, 4, 5, '#a8763a'); P.line(bx0 + 4, nk + 1, bx1, t + 2, '#8a5a2a'); }
