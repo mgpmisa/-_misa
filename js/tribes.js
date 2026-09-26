@@ -138,7 +138,7 @@ function findVillageSite(sim, t) {
     const dTown = Math.min(...w.settlements.map((s) => Math.hypot(s.x - x, s.z - z) - s.r));
     if (dTown < MIN_TOWN + VR) continue;
     const dDemon = w.demon ? Math.hypot(w.demon.x - x, w.demon.z - z) - (w.demonR || 20) : 99;
-    if (dDemon < VR + (volcano ? 1 : BIGW ? 5 : 1)) continue;
+    if (dDemon < VR + (volcano ? 1 : BIGW ? 20 : 6)) continue;   // 魔界のすぐそばは魔王軍の通り道（火の山の民だけは例外）
     if (specials.some((b) => cheb(b.x + (b.w >> 1), b.z + (b.d >> 1), x, z) < VR + MIN_SPECIAL)) continue;
     if (others.some((V) => cheb(V.x, V.z, x, z) < VR * 2 + (BIGW ? 8 * LS : 4))) continue;
     // まわりの地形
@@ -628,6 +628,7 @@ export function tribesHourly(sim) {
   const S = sim.S, X = S.tribes;
   if (!X || !X.villages.length) return;
   const h = Math.floor(sim.hour());
+  guardianWard(sim);
   if (h < 8 || h > 19) return;
   // 村に着いたよそ者（行商人・旅人・冒険者）
   for (const V of X.villages) {
@@ -637,6 +638,34 @@ export function tribesHourly(sim) {
       if (p.s === V.sid || p.tribe === V.tribe || p.inside != null || !p.pos) continue;
       if (cheb(p.pos.x, p.pos.z, V.x, V.z) > V.r + 2) continue;
       visitorArrived(sim, V, p);
+    }
+  }
+}
+
+// 守り神の加護：守り神が健在なあいだ、縄張りの魔物や猛獣は村に近づかない（討たれると、この守りが消える）
+function guardianWard(sim) {
+  const S = sim.S, R = sim.rng, X = S.tribes;
+  for (const V of X.villages) {
+    if (V.gone || !['alive', 'angry', 'sealed'].includes(V.gstate)) continue;
+    const g = gOfV(V);
+    const reach = V.r + Math.round(8 * LS);
+    let drove = 0;
+    for (const c of Object.values(S.creatures)) {
+      if (c.hp <= 0 || c.guardian || c.owner != null || c.inDungeon || c.dormant) continue;
+      const def = SPECIES[c.sp];
+      if (!def || !(c.hostile || (def.diet === 'meat' && def.atk >= 8))) continue;
+      if (cheb(c.pos.x, c.pos.z, V.x, V.z) > reach) continue;
+      if (c.occupier != null) continue;
+      if (c.raid === V.sid) c.raid = null;
+      const dx = c.pos.x - V.x, dz = c.pos.z - V.z, d = Math.hypot(dx, dz) || 1;
+      const far = reach + 12;
+      const hx = clamp(Math.round(V.x + dx / d * far), 2, W - 3), hz = clamp(Math.round(V.z + dz / d * far), 2, H - 3);
+      c.home = { x: hx, z: hz }; c.goal = { x: hx, z: hz, run: true, path: true }; c.path = null; c.fleeUntil = S.t + 90;
+      drove++;
+    }
+    if (drove && sim.today !== V.wardDay) {
+      V.wardDay = sim.today;
+      if (R.chance(0.3)) sim.pushLog(`${V.name}に近づいた魔物が、${g?.name || '守り神'}の気配におびえて引き返していった。`, 'event', [], V);
     }
   }
 }

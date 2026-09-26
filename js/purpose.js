@@ -26,6 +26,7 @@ import { pay, earn, spendable } from './property.js';
 import { debtsOf } from './finance.js';
 import { careerWorkPlace } from './career.js';
 import { T } from './world.js';
+import { restDayFor } from './labor.js';
 
 // ---------- 小道具 ----------
 const hash01 = (a, b = 0) => { let x = (Math.imul((a | 0) + 0x9e37, 2654435761) ^ Math.imul(b + 1, 40503)) >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x ^= x >>> 13; return (x >>> 0) / 4294967296; };
@@ -40,38 +41,39 @@ function stats(sim) {
   return S.purpose.stats;
 }
 const stat = (sim, k) => { const s = stats(sim); s[k] = (s[k] || 0) + 1; };
-const isRest = (sim, p) => sim.isRestDay() || calendarHalfDay(sim, p.s);
+const restToday = (sim, p) => (p.job ? restDayFor(sim, p) : sim.isRestDay());
+const isRest = (sim, p) => restToday(sim, p) || calendarHalfDay(sim, p.s);
 
 // ---------- 人生の目的 ----------
 // bias：行動の種類ごとの点数の補正。why：その行動をとる理由（{t} は目的の相手）
 export const LIFE = {
   family: {
     name: '家族を守る',
-    bias: { work: 0.6, home: 0.8, rest: 0.3, cook: 0.8, childcare: 1.0, nurse: 1.5, shop: 0.6, water: 0.4, tavern: -0.8, quest: -1.2, travel: -1, stroll: -0.3, grandkids: 1, garden: 0.5, errand: 0.8 },
+    bias: { dine: -0.3, shopping: 0.3, work: 0.6, home: 0.8, rest: 0.3, cook: 0.8, childcare: 1.0, nurse: 1.5, shop: 0.6, water: 0.4, tavern: -0.8, quest: -1.2, travel: -1, stroll: -0.3, grandkids: 1, garden: 0.5, errand: 0.8 },
     why: { work: '家族を食べさせるため', home: '家族のそばにいたくて', cook: '家族の食事をこしらえるため', childcare: '子どもから目を離さないため', shop: '家の食べ物を切らさないため', nurse: '家族を看病するため', rest: '明日も家族のために働けるよう' },
     thoughts: ['家族さえ無事なら、それでいい。', 'あの子たちが腹をすかせないように、今日も働こう。', '何があっても、この家は自分が守る。'],
   },
   fame: {
     name: '名を上げる',
-    bias: { quest: 1.8, train: 1.5, guild: 1.3, hunt: 1.5, report: 0.8, perform: 1, plaza: 0.5, buygear: 0.8, work: 0.2, rest: -0.6, nap: -0.6, defend: 1 },
-    why: { quest: '名を上げるため', train: '誰よりも強くなるため', guild: '手柄になる依頼を探すため', hunt: '賞金首を仕留めて名を上げるため', perform: '自分の名を広めるため', plaza: '噂の種を拾うため', buygear: '手柄を立てられる装備を求めて', defend: '手柄を立てる好機と見て' },
+    bias: { banquet: 1, show: 0.3, shopping: 0.3, quest: 1.8, train: 1.5, guild: 1.3, hunt: 1.5, report: 0.8, perform: 1, plaza: 0.5, buygear: 0.8, work: 0.2, rest: -0.6, nap: -0.6, defend: 1 },
+    why: { banquet: '顔を売るため', quest: '名を上げるため', train: '誰よりも強くなるため', guild: '手柄になる依頼を探すため', hunt: '賞金首を仕留めて名を上げるため', perform: '自分の名を広めるため', plaza: '噂の種を拾うため', buygear: '手柄を立てられる装備を求めて', defend: '手柄を立てる好機と見て' },
     thoughts: ['いつか吟遊詩人に歌われるような人間になってやる。', 'このまま名もなく終わるものか。', '手柄だ。手柄さえ立てれば……。'],
   },
   faith: {
     name: '神に仕える',
-    bias: { pray: 2.0, grave: 1, housecall: 0.8, nurse: 0.8, help: 0.4, tavern: -1, steal: -3, rob: -3, revenge: -2, court: -0.3, study: 0.3 },
-    why: { pray: '神への務めを果たすため', grave: '亡き人の魂の安らぎを祈るため', housecall: '苦しむ人に手を差し伸べるため', nurse: '神の教えのとおり病人に尽くすため', work: '与えられた務めを誠実に果たすため' },
+    bias: { donate: 1.5, banquet: -0.3, pray: 2.0, grave: 1, housecall: 0.8, nurse: 0.8, help: 0.4, tavern: -1, steal: -3, rob: -3, revenge: -2, court: -0.3, study: 0.3 },
+    why: { donate: '神への感謝を形にするため', pray: '神への務めを果たすため', grave: '亡き人の魂の安らぎを祈るため', housecall: '苦しむ人に手を差し伸べるため', nurse: '神の教えのとおり病人に尽くすため', work: '与えられた務めを誠実に果たすため' },
     thoughts: ['神はきっと見ておられる。', '今日も一日、恥じることなく生きられますように。', '祈りを欠かした日は、どうも落ち着かない。'],
   },
   wealth: {
     name: '金持ちになる',
-    bias: { work: 1.0, trade: 1.8, collect: 1, peddle: 1, tavern: -0.8, stroll: -0.6, rest: -0.5, plaza: -0.4, festival: -0.3, nap: -0.5 },
+    bias: { dine: -0.8, shopping: -0.6, show: -0.6, outing: -0.6, banquet: -0.3, lodge: -0.8, pamper: -0.8, donate: -0.8, work: 1.0, trade: 1.8, collect: 1, peddle: 1, tavern: -0.8, stroll: -0.6, rest: -0.5, plaza: -0.4, festival: -0.3, nap: -0.5 },
     why: { work: '一枚でも多く銅貨を稼ぐため', trade: 'ひと儲けするため', collect: '貸した金を取り返すため', peddle: '稼ぎを増やすため', shop: '安いうちに買っておくため' },
     thoughts: ['銅貨一枚を笑う者は、銅貨一枚に泣く。', 'いつか金貨の詰まった箱を開けてみたい。', 'もっとうまい儲け口はないものか。'],
   },
   love: {
     name: '愛する人と添い遂げる',
-    bias: { court: 2.2, visit: 0.6, home: 1.0, plaza: 0.5, stroll: 0.3, work: 0.3, tavern: -0.3, errand: 0.8 },
+    bias: { dine: 0.4, outing: 0.5, court: 2.2, visit: 0.6, home: 1.0, plaza: 0.5, stroll: 0.3, work: 0.3, tavern: -0.3, errand: 0.8 },
     why: { court: '{t}に会いたくて', home: '{t}と過ごしたくて', plaza: '{t}に会えるかもしれないと思って', stroll: '{t}のことを考えながら', work: '{t}との暮らしのため' },
     thoughts: ['{t}の笑った顔が、頭から離れない。', '{t}と一緒なら、どんな苦労も平気だ。', '{t}は今ごろ、何をしているだろう。'],
   },
@@ -89,20 +91,20 @@ export const LIFE = {
   },
   freedom: {
     name: '自由に生きる',
-    bias: { stroll: 1.4, travel: 1.6, fishing: 1.2, tavern: 0.6, plaza: 0.3, work: -0.5, rest: 0.2 },
-    why: { stroll: '気の向くままに', travel: '一つ所に縛られたくなくて', fishing: 'のんびり釣り糸を垂れたくて', tavern: '好きなときに好きなだけ飲むため', work: '食べていくだけは稼ぐため' },
+    bias: { outing: 1.2, show: 0.6, dine: 0.4, stroll: 1.4, travel: 1.6, fishing: 1.2, tavern: 0.6, plaza: 0.3, work: -0.5, rest: 0.2 },
+    why: { outing: '気の向くままに出かけたくて', stroll: '気の向くままに', travel: '一つ所に縛られたくなくて', fishing: 'のんびり釣り糸を垂れたくて', tavern: '好きなときに好きなだけ飲むため', work: '食べていくだけは稼ぐため' },
     thoughts: ['誰の指図も受けたくない。', '風の吹くまま、気の向くまま。', '明日のことは明日考えればいい。'],
   },
   homecoming: {
     name: '故郷に錦を飾る',
-    bias: { work: 0.9, trade: 1.2, tavern: -0.6, train: 0.3, pray: 0.2 },
+    bias: { dine: -0.4, shopping: -0.4, work: 0.9, trade: 1.2, tavern: -0.6, train: 0.3, pray: 0.2 },
     why: { work: '一旗揚げて故郷へ帰るため', trade: '故郷へ持って帰る財を築くため', pray: '故郷の家族の無事を祈るため' },
     thoughts: ['{t}の母さんは、元気にしているだろうか。', '立派になって{t}に帰るんだ。', '{t}の丘の景色を、ふと思い出した。'],
   },
   atone: {
     name: '罪を償う',
-    bias: { pray: 1.5, help: 1, nurse: 1, childcare: 0.6, housecall: 1, water: 0.6, visit: 0.5, steal: -4, rob: -4, revenge: -3, tavern: -0.6 },
-    why: { pray: '犯した罪の赦しを乞うため', help: '少しでも人の役に立つため', nurse: '罪滅ぼしに人に尽くすため', water: '人の役に立つため', work: 'まっとうに生き直すため', visit: '迷惑をかけた人に顔向けできるように' },
+    bias: { donate: 1.5, pray: 1.5, help: 1, nurse: 1, childcare: 0.6, housecall: 1, water: 0.6, visit: 0.5, steal: -4, rob: -4, revenge: -3, tavern: -0.6 },
+    why: { donate: '罪滅ぼしに', pray: '犯した罪の赦しを乞うため', help: '少しでも人の役に立つため', nurse: '罪滅ぼしに人に尽くすため', water: '人の役に立つため', work: 'まっとうに生き直すため', visit: '迷惑をかけた人に顔向けできるように' },
     thoughts: ['あのときのことを、忘れた日はない。', '償いきれるとは思っていない。それでも。', '今日は、誰かの役に立てただろうか。'],
   },
   craft: {
@@ -119,13 +121,13 @@ export const LIFE = {
   },
   survive: {
     name: '今日を生き延びる',
-    bias: { work: 1.0, beg: 1, eat: 0.5, shop: 0.5, askfood: 0.8, tavern: -1.2, stroll: -0.5 },
+    bias: { dine: -1, shopping: -1, show: -1, outing: -1, lodge: -1, pamper: -1, work: 1.0, beg: 1, eat: 0.5, shop: 0.5, askfood: 0.8, tavern: -1.2, stroll: -0.5 },
     why: { work: '今日の食い扶持を稼ぐため', beg: '今日を食いつなぐため', askfood: '飢えをしのぐため', shop: '今日の食べ物を手に入れるため' },
     thoughts: ['明日のことなんて考えていられない。', 'まずは今夜の寝床と、ひと切れのパンだ。', '生きてさえいれば、なんとかなる。'],
   },
   peace: {
     name: '穏やかに老いる',
-    bias: { garden: 1.4, fishing: 1.2, grandkids: 1.4, storytell: 1.0, rest: 0.6, pray: 0.6, stroll: 0.6, quest: -2, train: -1, work: -0.3 },
+    bias: { outing: 0.3, pamper: 0.6, garden: 1.4, fishing: 1.2, grandkids: 1.4, storytell: 1.0, rest: 0.6, pray: 0.6, stroll: 0.6, quest: -2, train: -1, work: -0.3 },
     why: { garden: '土いじりが何よりの楽しみなので', fishing: 'のんびり過ごしたくて', grandkids: '孫の顔を見るのが生きがいなので', storytell: '昔のことを若い者に伝えたくて', rest: '無理のきかない歳なので', stroll: '足腰が弱らないよう' },
     thoughts: ['もう多くは望まない。', '若いころの苦労も、今となってはいい思い出だ。', '日だまりで茶を飲む。これ以上の贅沢はない。'],
   },
@@ -139,16 +141,16 @@ export const LIFE = {
 
 // ---------- いまの計画（数日〜数十日） ----------
 const PLAN = {
-  debt: { bias: { work: 1.2, tavern: -1.2, stroll: -0.4, plaza: -0.4, festival: -0.3 }, why: { work: '借金を返すため' } },
+  debt: { bias: { dine: -1, shopping: -0.8, show: -0.8, outing: -0.8, lodge: -1, pamper: -1, banquet: -0.5, work: 1.2, tavern: -1.2, stroll: -0.4, plaza: -0.4, festival: -0.3 }, why: { work: '借金を返すため' } },
   nurse: { bias: { nurse: 2, work: -0.8, tavern: -1.5, stroll: -0.8, travel: -2, quest: -2 }, why: { nurse: '{t}を看病するため', work: '{t}の薬代を稼ぐため' } },
   revenge: { bias: { train: 1.5, revenge: 1.5, quest: 1, hunt: 1 }, why: { train: '{t}への仇討ちに備えるため', revenge: '{t}に報いを受けさせるため' } },
   court: { bias: { court: 2, plaza: 0.4, stroll: 0.2, visit: 0.3 }, why: { court: '{t}に想いを伝えるため', plaza: '{t}に会えるかもしれないので' } },
   baby: { bias: { work: 0.7, home: 0.8, shop: 0.6, tavern: -1, quest: -1.5, travel: -1 }, why: { work: 'もうすぐ生まれる子のために蓄えるため', home: '身重の{t}のそばにいるため', shop: '生まれてくる子の支度のため' } },
-  save: { bias: { work: 0.8, tavern: -0.8, stroll: -0.3 }, why: { work: '{t}ための蓄えをつくるため' } },
+  save: { bias: { dine: -1, shopping: -0.8, show: -0.8, outing: -0.8, lodge: -1, pamper: -1, banquet: -0.5, work: 0.8, tavern: -0.8, stroll: -0.3 }, why: { work: '{t}ための蓄えをつくるため' } },
   appr: { bias: { work: 1.0, tavern: -0.4 }, why: { work: '{t}師匠のもとで一人前になるため' } },
   quest: { bias: { quest: 1.5, gather: 1.5, hunt: 1.5, report: 1.5, guild: 0.8 }, why: { quest: '引き受けた依頼を果たすため', gather: '依頼の品を集めるため', hunt: '依頼の賞金首を追うため', report: '依頼の報告のため' } },
   mourn: { bias: { grave: 1.5, pray: 1, tavern: -0.5, festival: -1, plaza: -0.5 }, why: { grave: '亡き{t}を弔うため', pray: '亡き{t}の冥福を祈るため' } },
-  house: { bias: { work: 1.2, tavern: -1 }, why: { work: '住む家を手に入れるため' } },
+  house: { bias: { dine: -1, shopping: -0.8, show: -0.8, outing: -0.8, lodge: -1, pamper: -1, banquet: -0.5, work: 1.2, tavern: -1 }, why: { work: '住む家を手に入れるため' } },
   study: { bias: { study: 1.5, school: 1 }, why: { study: '{t}ため' } },
   train: { bias: { train: 1.5, buygear: 0.5 }, why: { train: '腕を磨いて強くなるため' } },
   kids: { bias: { childcare: 1.2, home: 0.6, cook: 0.5, tavern: -0.6 }, why: { childcare: '幼い{t}を育てるため', home: '幼い{t}のそばにいるため' } },
@@ -180,7 +182,7 @@ const HABITS = {
 const HABIT_TYPES = new Set(Object.values(HABITS).map((h) => h.type));
 
 // 補正をかけない行動（命・務め・集まり）
-const NO_BIAS = new Set(['flee', 'sleep', 'jail', 'march', 'crusade', 'defend', 'deliver', 'sickbed', 'funeral', 'wedding', 'festival', 'levy', 'escort', 'sail', 'riot', 'strike']);
+const NO_BIAS = new Set(['strike', 'flee', 'sleep', 'jail', 'march', 'crusade', 'defend', 'deliver', 'sickbed', 'funeral', 'wedding', 'festival', 'levy', 'escort', 'sail', 'riot', 'strike']);
 // 休日も働く務めの仕事
 const ESSENTIAL = new Set(['innkeeper', 'guard', 'knight', 'soldier', 'jailer', 'king', 'servant', 'gatekeeper', 'militia', 'watchman', 'royalguard', 'doctor', 'midwife']);
 const DUTY_JOBS = new Set(['king', 'royal', 'noble', 'knight', 'soldier', 'general', 'royalguard', 'chancellor', 'treasurer', 'guard', 'jailer', 'gatekeeper', 'militia', 'watchman', 'paladin']);
@@ -426,7 +428,7 @@ function planToday(sim, p) {
   const t = { day: sim.today, k: 'none', type: null, h0: 0, h1: 0, kind: null, friend: null, txt: '', why: '', cut: null, done: false };
   u.today = t;
   if (age < 14 || p.jail != null) { t.txt = age < 14 ? '今日もいっぱい遊ぶ' : ''; return; }
-  const rest = sim.isRestDay();
+  const rest = restToday(sim, p);
   const opts = [];
   const doy = sim.dayOfYear();
   // 家族の誕生日（明日か今日）
@@ -488,8 +490,8 @@ function placeOf(sim, p, kind, friend) {
   }
 }
 const inWin = (h, h0, h1) => h >= h0 && h < h1;
-function habitToday(sim, hb) {
-  const d = sim.today % 7, rest = sim.isRestDay();
+function habitToday(sim, p, hb) {
+  const d = sim.today % 7, rest = restToday(sim, p);
   if (hb.days === 'all') return true;
   if (hb.days === 'work') return !rest;
   if (hb.days === 'rest') return rest;
@@ -521,7 +523,7 @@ export function purposeDecide(sim, p, cands, add) {
   }
   // 生活の癖
   if (hab && !urgent) for (const hb of hab.list) {
-    if (!inWin(h, hb.h0, hb.h1) || u.hd[hb.k] === sim.today || !habitToday(sim, hb)) continue;
+    if (!inWin(h, hb.h0, hb.h1) || u.hd[hb.k] === sim.today || !habitToday(sim, p, hb)) continue;
     if (hb.type === 'tavern' && spendable(sim, p) < 8) continue;
     if (hb.type === 'train' && age > 60) continue;
     const pl = placeOf(sim, p, hb.kind);
@@ -542,10 +544,10 @@ export function purposeDecide(sim, p, cands, add) {
     }
     if (c.type === 'court' && c.friend != null && u.target === c.friend) b += 1;
     if (c.type === 'work' && hab && !ESSENTIAL.has(p.job)) {
-      // 人それぞれの始業・終業。借金や計画があれば長く働く
-      const extra = P.bias.work > 0 ? 1 : 0;
+      // 働く理由による長さと点数は labor.js（p.lab・p.workReason）が受け持つ。ここでは始業の時刻の癖と、今日の心づもりによる早退だけ
+      if (p.lab) b *= 0.5;
       if (h < hab.ws - 0.1 && !rest) b -= 2.2;
-      if (p.workedToday > (hab.len + extra) * 60) b -= 2.6;
+      if (!p.lab && p.workedToday > (hab.len + (P.bias.work > 0 ? 1 : 0)) * 60) b -= 2.6;
       if (cut) b -= 3;
     }
     if (b) c.score += clampN(b, -4, 3.5);
@@ -568,7 +570,8 @@ const WHY_BASE = {
   askfood: '食べるものがないので', buygear: '身を守る装備が要るので', water: '家の水が少なくなったので', laundry: '洗い物がたまったので', cook: '食事の支度の時間なので',
   childcare: '幼い子の面倒を見るため', nap: '眠気に勝てなくて', help: '親の仕事を覚えるため', nurse: '家族を看病するため', grave: '亡き人を偲びに', housecall: '病人を診るため',
   storytell: '昔のことを伝えたくて', fishing: 'のんびりしたくて', garden: '庭の世話をしに', grandkids: '孫の顔を見に', trade: 'ひと儲けするため', travel: '別の土地を見たくて',
-  study: '学ぶため', errand: '用事をすませるため', perform: '歌を聴かせるため', steal: '金に困って', rob: '獲物を狙って', revenge: '恨みを晴らすため', jail: '罪を償うため',
+  study: '学ぶため', errand: '用事をすませるため', dine: '外でうまいものを食べたくて', shopping: '欲しいものがあって', donate: '教会に寄進するため', show: '見世物を楽しみに',
+  outing: '休みの日を楽しむため', banquet: '宴に招かれたので', pamper: '体を休めたくて', lodge: '上等な寝床で休みたくて', strike: '仲間と一緒に待遇を訴えるため', perform: '歌を聴かせるため', steal: '金に困って', rob: '獲物を狙って', revenge: '恨みを晴らすため', jail: '罪を償うため',
   festival: '祭りを楽しみに', wedding: '婚礼を祝いに', funeral: '弔いのため', march: '国の命令で', defend: '町を守るため', crusade: '魔王を討つため', deliver: '知らせを届けるため', sickbed: '病で起き上がれないので',
 };
 const NEED_WHY = { hunger: 'お腹がぺこぺこなので', sleep: 'くたくたで眠いので', pleasure: '何か楽しいことがしたくて', esteem: '誰かに認めてもらいたくて', sloth: '体を休めたくて', lust: '人恋しくて', survival: '怖くて' };
@@ -603,9 +606,9 @@ function whyOf(sim, p, c) {
     const place = JOBS[p.job]?.name ? `${JOBS[p.job].name}の仕事に` : '';
     if (P.why.work && pb >= lb) return fill(P.why.work, sim, p, planTarget(sim, p));
     if (L.why.work && lb > 0.3) return fill(L.why.work, sim, p, targetName(sim, p));
-    if (L.why.work) return fill(L.why.work, sim, p, targetName(sim, p));
-    const wr = { family: '家族を養うため', debt: '借金を返すため', dream: '夢のために貯めるため', fame: '名を上げたくて', love: 'この仕事が好きだから', tax: '税を納めるため', survive: '食べていくため', duty: '務めだから' }[p.workReason];
+    const wr = { debt: '借金を返すため', tax: '重い税を納めるため', survive: '食べていくため', love: 'この仕事が好きだから' }[p.workReason];
     if (wr) return wr;
+    if (L.why.work) return fill(L.why.work, sim, p, targetName(sim, p));
     if (DUTY_JOBS.has(p.job)) return '務めを果たすため';
     if (kidsOf(sim, p).length) return '子どもたちを食べさせるため';
     return `${place ? place.replace(/に$/, 'で') : ''}暮らしを立てるため`;
@@ -815,7 +818,8 @@ export function purposeCard(sim, p) {
   if (u.plan) rows.push(['いまの計画', `${u.plan.txt}${sim.today - u.plan.since > 0 ? `（${sim.today - u.plan.since}日目）` : ''}`]);
   if (u.today && u.today.day === sim.today && u.today.txt) rows.push(['今日の心づもり', `${u.today.txt}${u.today.done ? '（済んだ）' : ''}`]);
   if (u.hab && sim.ageOf(p) >= 14) {
-    if (p.job) rows.push(['働き方', `${hm(u.hab.ws)}ごろから、1日${u.hab.len}時間ほど`]);
+    const len = `${Math.floor(u.hab.len)}時間${u.hab.len % 1 ? `${Math.round((u.hab.len % 1) * 60)}分` : ''}`;
+    if (p.job) rows.push(['働き方', p.lab ? `朝は${hm(u.hab.ws)}ごろから働き始める` : `${hm(u.hab.ws)}ごろから、1日${len}ほど`]);
     if (u.hab.list.length) rows.push(['暮らしの癖', u.hab.list.map((h) => `${h.txt}（${DAYS_JP(h.days)}・${hm(h.h0)}ごろ）`).join('、')]);
   }
   return rows;
@@ -935,7 +939,7 @@ export function spreadSample(sim, acc) {
     if (p.action?.type === 'work' && p.action.phase === 'do') { if (dd.first == null) dd.first = h; dd.last = h; }
     dd.kinds.add(k);
     // 同じ人の、同じ時刻の行動（働く日だけ）
-    if (!sim.isRestDay() && h >= 6 && h < 22) { const slot = Math.floor(h * 2); (dd.slots || (dd.slots = {}))[slot] = k; }
+    if (!restToday(sim, p) && h >= 6 && h < 22) { const slot = Math.floor(h * 2); (dd.slots || (dd.slots = {}))[slot] = k; }
   }
   if (h < 6 || h >= 22) return;
   let sum = 0, cnt = 0;
