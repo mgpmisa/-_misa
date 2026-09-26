@@ -49,6 +49,7 @@ function frame(now) {
       case 'died': if (ui.follow === e.id) ui.follow = null; break;
       case 'hit': if (ui.ivOpen != null) ui.iv.hit(e.id); renderer.hit(e.id); if (ui.bubblesOn) ui.floatHit(e.id, e.dmg); break;
       case 'building': renderer.addBuilding(e.id); break;
+      case 'tiles': renderer.refreshTiles?.(e.list); ui.redrawMinimapBase(); break;
       case 'borders': ui.redrawMinimapBase(); break;
     }
   }

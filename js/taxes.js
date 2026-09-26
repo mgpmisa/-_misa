@@ -108,6 +108,7 @@ export function assess(sim, k, hh, owns = null) {
   if (hh.money < 30) { mul = 0; out.why = '貧しいので免除'; }
   else if (hh.money < 60) { mul = 0.5; out.why = '暮らし向きを見て半分に'; }
   if (hh.inn) mul *= 0.5;
+  if (house && house.owner != null && house.owner !== hh.id && (house.arrears || 0) > 0) { mul *= 0.5; out.why = out.why || '家賃を滞納しているので半分に'; }   // 追い出しを税で早めない
   if (relief) { mul *= 0.5; out.why = out.why || relief; }
   for (const key of ['poll', 'land', 'sales', 'war', 'tithe']) out[key] *= mul;
   if (mul === 0) { out.debt = 0; hh.taxDebt = 0; }   // 貧しい家の滞納は帳消し
@@ -758,7 +759,7 @@ export function taxesDaily(sim) {
     syncLegacy(k);
   }
   rebellionDaily(sim);
-  smugglersDaily(sim);
+  if (!S.uw) smugglersDaily(sim);   // underworld.js（闇の稼業）が動いていれば、密輸人の抜け荷はそちらに任せる
   churchAlms(sim);
   // 古い減免の掃除
   for (const k of S.kingdoms) for (const [sid, d] of Object.entries(k.taxes.relief)) if (d < sim.today) delete k.taxes.relief[sid];

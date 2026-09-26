@@ -29,8 +29,8 @@ import { speechStyle } from './speech.js';
 export const EXP_CS = 8;                       // 区画の大きさ（danger.js の危険地図と同じ）
 const CW = Math.ceil(W / EXP_CS), CHN = Math.ceil(H / EXP_CS), NC = CW * CHN;
 const BIG = W >= 320;                          // 10倍の大陸では、もとの国の広さを丸ごと「開拓済み」にする
-const INIT_PAD = 3;                            // 小さな大陸で、町のまわり何マスまでを最初の領土にするか
-const FR = 7;                                  // 開拓村の柵の半径（チェビシェフ距離）
+const INIT_PAD = 4;                            // 小さな大陸で、町の中心から（半径＋何マス）以内に区画の中心がある所を最初の領土にする
+const FR = BIG ? 7 : 5;                        // 開拓村の柵の半径（チェビシェフ距離）。小さな大陸は土地が混んでいるので小さめ
 const WALKED = 128;
 const ARMY = new Set(['knight', 'soldier', 'general']);
 const KEEP_JOBS = new Set(['carpenter', 'mason', 'woodcutter', 'hunter', 'smith', 'pioneer', 'charcoal', 'roadworker']);
@@ -40,6 +40,7 @@ const BUILDABLE = new Set([T.GRASS, T.SAVANNA, T.DESERT, T.SNOW, T.BEACH]);
 const ACTIVE = new Set(['scout', 'recruit', 'clear', 'fence', 'build', 'fortbuild', 'explore']);
 
 export const RES_NAME = { timber: '良い森', stone: '石切り場', ore: '鉄の鉱脈', gem: '宝石の鉱脈', fertile: '肥えた土地', water: '豊かな水場', salt: '塩田', harbor: '良港' };
+const RES_FORT = { timber: '森の砦', stone: '石切りの砦', ore: '鉄山の砦', gem: '玉石の砦', fertile: '麦野の砦', water: '水場の砦', salt: '塩浜の砦', harbor: '入り江の砦' };
 export const STAGE_NAME = {
   scout: '斥候が下見中', recruit: '開拓団を募集中', clear: '木を伐って整地中', fence: '柵と見張り櫓を建設中', build: '家・井戸・畑を建設中',
   settle: '村として根づいた', fortbuild: '砦を建設中', explore: '未開の地を探索中', done: '完了', failed: '失敗',
@@ -49,6 +50,8 @@ const inb = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
 const cheb = (ax, az, bx, bz) => Math.max(Math.abs(ax - bx), Math.abs(az - bz));
 export const chunkAt = (x, z) => Math.min(CHN - 1, Math.max(0, Math.floor(z / EXP_CS))) * CW + Math.min(CW - 1, Math.max(0, Math.floor(x / EXP_CS)));
 const cCenter = (ci) => ({ x: (ci % CW) * EXP_CS + (EXP_CS >> 1), z: Math.floor(ci / CW) * EXP_CS + (EXP_CS >> 1) });
+// 区画の呼び名（建物の上ではなく、歩ける所の名前で）
+function spotName(sim, ci) { const c = cCenter(ci); const q = sim.randomNear(c.x, c.z, 4) || c; return sim.placeName(q.x, q.z); }
 const nbrs4 = (ci) => { const cx = ci % CW, cz = Math.floor(ci / CW), o = []; if (cx > 0) o.push(ci - 1); if (cx < CW - 1) o.push(ci + 1); if (cz > 0) o.push(ci - CW); if (cz < CHN - 1) o.push(ci + CW); return o; };
 const kname = (k) => KINGDOMS[k]?.name || '';
 const kshort = (k) => kname(k).replace('王国', '');
@@ -83,8 +86,12 @@ function initExpansion(sim) {
       for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) { const k = w.kingdomOf[z * W + x]; if (k >= 0) { cnt[k] = (cnt[k] || 0) + 1; n++; } }
       const top = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
       if (top && n >= 16 && (land[ci] >= 8 || bd <= best.r)) { owner[ci] = +top[0]; kind[ci] = 1; home[ci] = best.kingdom === +top[0] ? best.id : -1; }
-    } else if (bd <= best.r + INIT_PAD && (land[ci] >= 8 || bd <= best.r)) {
-      owner[ci] = best.kingdom; kind[ci] = 1; home[ci] = best.id;
+    } else {
+      // 小さな大陸：町のすぐまわりだけが開拓済み。残りは未開の地
+      const c = cCenter(ci);
+      const near = w.settlements.filter((s) => s.kingdom >= 0 && Math.hypot(c.x - s.x, c.z - s.z) <= s.r + INIT_PAD).sort((a, b) => Math.hypot(c.x - a.x, c.z - a.z) - Math.hypot(c.x - b.x, c.z - b.z))[0];
+      const holder = near || (bd === 0 ? best : null);
+      if (holder && (land[ci] >= 8 || bd === 0)) { owner[ci] = holder.kingdom; kind[ci] = 1; home[ci] = holder.id; }
     }
   }
   // 砦・開拓小屋・鉱山など、国のものになっている特別な場所の区画
@@ -95,6 +102,7 @@ function initExpansion(sim) {
     if (owner[ci] === -1) { owner[ci] = b.kingdom; kind[ci] = 1; }
   }
   const init = KINGDOMS.map((_, k) => owner.filter((o) => o === k).length);
+  const origOwner = owner.slice();
   S.territory = { cs: EXP_CS, cw: CW, ch: CHN, owner, kind, home, init };
   // 知られた土地：自国の領土と、そのまわり2区画（うわさで知っている）
   const ex = new Array(NC).fill(0);
@@ -114,11 +122,12 @@ function initExpansion(sim) {
   const prev = S.expansion;
   S.expansion = {
     v: 1, seq: prev?.seq || 1, projects: prev?.projects || [], res: scanResources(sim, land), tension: {}, pacts: [], wars: [],
-    warSeen: {}, famePrev: {}, lastFail: {}, lastPlan: {}, lastProtest: {}, sk: {},
+    warSeen: {}, famePrev: {}, origOwner, lastFail: {}, lastPlan: {}, lastProtest: {}, sk: {},
     stats: { founded: 0, failed: 0, forts: 0, seized: 0, bought: 0, skirmish: 0, protests: 0, trades: 0, alliances: 0, towns: 0, explored: 0, attacks: 0, deaths: 0 },
     hist: [],
   };
-  for (const s of w.settlements) S.expansion.sk[s.id] = s.kingdom;
+  S.expansion.origK = {};
+  for (const s of w.settlements) { S.expansion.sk[s.id] = s.kingdom; S.expansion.origK[s.id] = s.kingdom; }
   syncAll(sim);
   sim.events?.push({ type: 'borders' });
 }
@@ -264,6 +273,7 @@ export function expansionDaily(sim) {
   const pop = popBySid(sim);
   watchCessions(sim);
   watchWars(sim);
+  uprisings(sim);
   for (const k of S.kingdoms) {
     upkeep(sim, k);
     if ((sim.today + k.id * 2) % 5 === 0) planKingdom(sim, k, pop);
@@ -321,40 +331,47 @@ function planKingdom(sim, k, pop) {
   if (!king) return;
   const amb = king.values.ambition, caution = (king.pers.N + (1 - king.values.courage)) / 2;
   if (sim.today - (X.lastFail[k.id] ?? -99) < 15) return;
-  if (k.war && amb < 0.75) return;
-  if (S.demon?.active && king.values.courage < 0.7) return;
+  if (k.war && amb < 0.75) { X.decision = X.decision || {}; X.decision[k.id] = { d: sim.today, txt: '戦のさなかで、開拓どころではない' }; return; }
+  // 魔王が目覚めているあいだは、よほど勇敢な王でなければ控えめに
+  const demon = !!S.demon?.active;
+  if (demon && king.values.courage < 0.3) return;
   const mine = X.projects.filter((p) => p.k === k.id && ACTIVE.has(p.stage));
   const sizes = S.kingdoms.map((o) => territorySize(sim, o.id));
   const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
   const mySize = sizes[k.id];
   const need = needs(sim, k, pop);
   // 国庫の備え：慎重な王ほど多く残し、野心的な王ほど攻める。小さな国は追いつこうとし、大きな国は治めに追われる
-  let reserve = 750 + caution * 500 - amb * 300 + mine.length * 450;
+  let reserve = 750 + caution * 500 - amb * 300 + mine.length * 450 + (demon ? 300 : 0);
   if (mySize < avgSize * 0.85) reserve -= 150;
   if (mySize > avgSize * 1.25) reserve += 300;
   const maxActive = 1 + (amb > 0.65 && k.treasury > 1800 ? 1 : 0);
   let chance = 0.25 + amb * 0.45 + need.crowded * 0.4 - caution * 0.2;
   if (mySize < avgSize * 0.85) chance += 0.15;
+  if (demon) chance *= 0.5;
+  chance += Math.max(0, Math.min(0.3, (k.treasury - reserve) / 3000));   // 国庫が潤っているほど乗り気
   X.lastPlan[k.id] = sim.today;
+  const note = (txt) => { X.decision = X.decision || {}; X.decision[k.id] = { d: sim.today, txt }; };
   // 砦で資源を先に押さえる
   const forts = X.projects.filter((p) => p.k === k.id && p.kind === 'fort' && p.stage !== 'failed').length;
   if (!mine.some((p) => p.kind === 'fort') && forts < 1 + Math.floor(amb * 3) && k.treasury > reserve * 0.6 + 260 && R.chance(0.15 + amb * 0.35)) {
     const t = pickFortSite(sim, k, need);
     if (t) { startFort(sim, k, t); return; }
   }
-  if (mine.filter((p) => p.kind !== 'fort').length >= maxActive) return;
-  if (k.treasury < reserve || !R.chance(Math.min(0.9, chance))) return;
+  if (mine.filter((p) => p.kind !== 'fort').length >= maxActive) return note('いまの開拓が落ち着くまで、新しい開拓は控える');
+  if (k.treasury < reserve) return note(`国庫が${Math.round(reserve)}銅貨に届くまで、開拓は見送る`);
+  if (!R.chance(Math.min(0.9, chance))) return note('今季は開拓を見送った');
   const cands = candidates(sim, k, need);
   if (!cands.length) {
     if (!mine.some((p) => p.kind === 'explore')) startExplore(sim, k);
-    return;
+    return note('開けそうな土地が見つからず、斥候に未踏の地を探らせる');
   }
-  for (const c of cands.slice(0, 6)) {
+  for (const c of cands.slice(0, 16)) {
     const site = findSite(sim, c.ci);
     if (!site) { X.bad = X.bad || {}; X.bad[c.ci] = sim.today; continue; }
     startVillage(sim, k, c, site);
-    return;
+    return note('新しい土地の開拓を決めた');
   }
+  note('目をつけた土地は、どれも村を開くには向かなかった');
 }
 
 // 区画ごとの自国からの距離（区画の歩数）
@@ -390,7 +407,7 @@ function candidates(sim, k, need) {
     if (X.projects.some((p) => p.ci === ci && p.stage !== 'failed' && p.stage !== 'done')) continue;
     const c = cCenter(ci);
     if (w.demon && Math.hypot(c.x - w.demon.x, c.z - w.demon.z) < (w.demonR || 20) + 14) continue;
-    if (w.settlements.some((s) => cheb(s.x, s.z, c.x, c.z) < s.r + FR + 8)) continue;
+    if (w.settlements.some((s) => cheb(s.x, s.z, c.x, c.z) < s.r + FR + 3)) continue;
     const danger = dm[ci] || 0;
     if (danger > 7) continue;
     let sc = 0;
@@ -409,25 +426,31 @@ function buildableFrac(w, ci) {
   return n / (EXP_CS * EXP_CS);
 }
 
-// 村の敷地：柵の内側（半径7）がほぼ全部、伐れば建てられる土地であること
+// 村の敷地：柵の内側に建物・畑・城壁がなく、6割以上が（伐れば）建てられる土地。広場になる真ん中の3×3は必ず平地
+const HARD = new Set([T.BLD, T.WALL, T.FENCE, T.FIELD, T.PASTURE, T.PLAZA, T.DOCK, T.LAVA, T.WASTE]);
 function findSite(sim, ci) {
   const w = sim.S.world, c = cCenter(ci);
+  const area = (2 * FR + 1) * (2 * FR + 1);
   let best = null, bs = -1e9;
-  for (let z = c.z - 6; z <= c.z + 6; z++) for (let x = c.x - 6; x <= c.x + 6; x++) {
+  for (let z = c.z - 8; z <= c.z + 8; z++) for (let x = c.x - 8; x <= c.x + 8; x++) {
     if (x - FR - 3 < 1 || z - FR - 3 < 1 || x + FR + 3 >= W - 1 || z + FR + 3 >= H - 1) continue;
-    let ok = 0, bad = 0, forest = 0, river = 0, road = 0;
-    for (let dz = -FR; dz <= FR && bad < 12; dz++) for (let dx = -FR; dx <= FR; dx++) {
+    let core = true;
+    for (let dz = -1; dz <= 1 && core; dz++) for (let dx = -1; dx <= 1; dx++) { const t = w.tiles[(z + dz) * W + x + dx]; if (!(BUILDABLE.has(t) || CLEARABLE.has(t) || t === T.ROAD)) { core = false; break; } }
+    if (!core) continue;
+    let ok = 0, soft = 0, hard = 0, forest = 0, river = 0, road = 0;
+    for (let dz = -FR; dz <= FR && !hard; dz++) for (let dx = -FR; dx <= FR; dx++) {
       const t = w.tiles[(z + dz) * W + x + dx];
+      if (HARD.has(t)) { hard++; break; }
       if (BUILDABLE.has(t)) ok++;
       else if (CLEARABLE.has(t)) { ok++; forest++; }
       else if (t === T.ROAD || t === T.BRIDGE) { ok++; road++; }
-      else bad++;
-      if (t === T.BLD || t === T.WALL || t === T.FENCE || t === T.FIELD || t === T.PASTURE || t === T.PLAZA || t === T.DOCK || isWater(t)) bad += 20;
+      else soft++;
     }
-    if (bad > 10) continue;
+    if (hard || soft > area * 0.4) continue;
     for (let dz = -FR - 4; dz <= FR + 4; dz += 2) for (let dx = -FR - 4; dx <= FR + 4; dx += 2) if (inb(x + dx, z + dz) && w.tiles[(z + dz) * W + x + dx] === T.RIVER) river++;
-    if ((w.specials || []).some((id) => { const b = w.buildings[id]; return b && cheb(b.x, b.z, x, z) < FR + 6; })) continue;
-    const sc = ok - bad * 3 - forest * 0.15 + Math.min(river, 4) * 3 + Math.min(road, 6) * 0.5 - Math.hypot(x - c.x, z - c.z) * 0.3;
+    if ((w.specials || []).some((id) => { const b = w.buildings[id]; return b && cheb(b.x, b.z, x, z) < FR + 3; })) continue;
+    if (w.settlements.some((s) => cheb(s.x, s.z, x, z) < s.r + FR + 3)) continue;
+    const sc = ok - soft * 2 - forest * 0.15 + Math.min(river, 4) * 3 + Math.min(road, 6) * 0.5 - Math.hypot(x - c.x, z - c.z) * 0.3;
     if (sc > bs) { bs = sc; best = { x, z }; }
   }
   return best;
@@ -444,6 +467,8 @@ function pickFortSite(sim, k, need) {
     const others = nearOthers(sim, k.id, ci, 3);
     if (!others.length) continue;   // 争いのない所に砦はいらない
     if (X.projects.some((p) => p.ci === ci && !['failed', 'done'].includes(p.stage))) continue;
+    if (X.bad?.[ci] != null && sim.today - X.bad[ci] < 80) continue;
+    if (buildableFrac(w, ci) < 0.15) continue;
     const c = cCenter(ci);
     if (w.settlements.some((s) => cheb(s.x, s.z, c.x, c.z) < s.r + 6)) continue;
     const sc = list.reduce((a, r) => a + (need[r] || 0.5), 0) + others.length - d[ci] * 0.5 + sim.rng.next();
@@ -532,9 +557,10 @@ function startFort(sim, k, t) {
   const pr = newProject(sim, k, 'fort', t.ci, { x: c.x, z: c.z, res: t.res, others: t.others });
   spend(sim, k, pr, 180);
   const r = t.res.find((x) => ['ore', 'gem', 'salt', 'harbor'].includes(x)) || t.res[0];
-  pr.name = `${kshort(k.id)}の${RES_NAME[r].replace(/^(良い|豊かな)/, '')}砦`;
+  pr.dir = dirWord(sim.town(k.capital), c);
+  pr.name = `${kshort(k.id)}の${pr.dir}方${RES_FORT[r]}`;
   pr.resName = RES_NAME[r];
-  sim.news(`${kname(k.id)}が、${sim.placeName(c.x, c.z)}の${RES_NAME[r]}を押さえるため砦を築き始めた`, 2, c);
+  sim.news(`${kname(k.id)}が、${pr.dir}の国境の${RES_NAME[r]}を押さえるため砦を築き始めた`, 2, c);
   for (const o of t.others) protest(sim, o, k.id, t.ci, `${RES_NAME[r]}に砦を築く`);
 }
 
@@ -905,6 +931,7 @@ function found(sim, pr, k) {
   w.settlements.push(s);
   pr.sid = sid;
   S.expansion.sk[sid] = pr.k;
+  (S.expansion.origK = S.expansion.origK || {})[sid] = pr.k;
   const stock = {}, price = {};
   for (const [g, G] of Object.entries(GOODS)) { stock[g] = G.target * (g === 'wheat' ? 0.5 : g === 'wood' ? 0.8 : 0.15); price[g] = G.base; }
   S.towns[sid] = { stock, price, commission: 0, fund: 40, history: [], occupied: false, damage: 0 };
@@ -1032,11 +1059,21 @@ function settleUnit(sim, pr, s, u) {
     for (const pid of ids) sim.moveTo(S.people[pid], hh);
   }
   hh.s = s.id; hh.expProj = null;
-  const b = placeIn(sim, s, 'house', hh.name, sim.rng.chance(0.4) ? 3 : 2, 2);
+  const b = houseFor(sim, s, hh.name);
   if (b) { hh.house = b.id; b.hh = hh.id; b.owner = hh.id; b.value = houseValue(sim, b); b.rent = 0; b.arrears = 0; }
   else hh.street = true;
   for (const pid of hh.members) { const p = S.people[pid]; if (p) { p.s = s.id; p.action = null; } }
   return hh;
+}
+// 家を建てる：柵の内側に場所がなければ、柵の外の道ぞいに（町が柵の外へ広がる）
+function houseFor(sim, s, name) {
+  let b = placeIn(sim, s, 'house', name, sim.rng.chance(0.4) ? 3 : 2, 2);
+  for (let tries = 0; !b && tries < 3; tries++) {
+    if ((s.extraR || 0) < 10) s.extraR = (s.extraR || 0) + 2;
+    b = sim.placeHouse ? sim.placeHouse(s) : null;
+    if (b) { b.name = name; sim.events.push({ type: 'building', id: b.id }); }
+  }
+  return b;
 }
 function makeFields(sim, s, n, changed) {
   const w = sim.S.world;
@@ -1121,8 +1158,14 @@ function stepSettle(sim, pr, k, pop) {
   }
   // 人が集まる：同じ国の宿なし・貧しい家や、よその土地からの移民
   const safety = S.dangerMap?.[chunkAt(s.x, s.z)] || 0;
-  const attract = 0.05 + (w.fields.filter((f) => f.s === s.id).length > n ? 0.03 : 0) - safety * 0.01 + (pr.road && !pr.road.length ? 0.02 : 0);
-  if (n < 45 && R.chance(Math.max(0.01, attract))) newcomers(sim, pr, s);
+  const homeless = Object.values(S.households).filter((h) => h.s === s.id && (h.street || h.house == null) && !h.wander && !h.bandits);
+  if (homeless.length) {
+    const h = homeless[0], b = houseFor(sim, s, h.name);
+    if (b) { h.house = b.id; h.street = false; b.hh = h.id; b.owner = h.id; b.value = houseValue(sim, b); b.rent = 0; b.arrears = 0; spend(sim, k, pr, materials(sim, pr, k, 4, 1)); }
+  } else {
+    const attract = 0.022 + (w.fields.filter((f) => f.s === s.id).length > n ? 0.012 : 0) - safety * 0.006 + (pr.road && !pr.road.length ? 0.01 : 0);
+    if (n < 60 && R.chance(Math.max(0.004, attract))) newcomers(sim, pr, s);
+  }
   // 礼拝堂
   if (n >= 10 && !s.buildings.some((id) => sim.building(id)?.type === 'church') && k.treasury > 500 && R.chance(0.2)) {
     const b = placeIn(sim, s, 'church', '礼拝堂', 3, 3);
@@ -1131,7 +1174,8 @@ function stepSettle(sim, pr, k, pop) {
   // 領土が村のまわりに広がる
   if (n >= 8 && sim.today % 12 === pr.id % 12) growTerritory(sim, pr, s);
   // 町に格上げ（人口と年月）
-  if (s.grade !== 'town' && n >= 22 && age >= 40 && k.treasury > 400) upgradeTown(sim, pr, k, s);
+  const houses = s.buildings.filter((id) => sim.building(id)?.type === 'house').length;
+  if (s.grade !== 'town' && n >= 30 && houses >= 10 && age >= 80 && k.treasury > 600) upgradeTown(sim, pr, k, s);
   if (S.initPop && n > (S.initPop[s.id] || 0)) S.initPop[s.id] = n;
 }
 
@@ -1149,7 +1193,8 @@ function newcomers(sim, pr, s) {
     sim.pushLog(`${got.name}が${from.name}から${s.name}へ移り住んだ。開拓村に新しい煙が上がる。`, 'event', got.members.slice(0, 1), s);
     return;
   }
-  // よその土地からの移民
+  // よその土地からの移民（ときどき）
+  if (!R.chance(0.35)) return;
   const before = pr.units.length;
   addMigrants(sim, pr, s);
   const u = pr.units[before];
@@ -1311,11 +1356,11 @@ function stepFort(sim, pr, k) {
   if (sim.today - pr.sday < 4) return;
   const c = cCenter(pr.ci);
   let b = null;
-  for (let r = 0; r <= 3 && !b; r++) for (let dz = -r; dz <= r && !b; dz++) for (let dx = -r; dx <= r && !b; dx++) {
+  for (let r = 0; r <= 5 && !b; r++) for (let dz = -r; dz <= r && !b; dz++) for (let dx = -r; dx <= r && !b; dx++) {
     if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
-    b = placeBox(sim, 'fort', pr.name, c.x - 1 + dx, c.z - 1 + dz, 3, 3, { kingdom: pr.k, special: true, fort: true, faces: pr.others.map(kshort).join('・'), capital: k.capital, exp: pr.id });
+    b = placeBox(sim, 'fort', pr.name, c.x - 1 + dx, c.z - 1 + dz, 3, 3, { kingdom: pr.k, special: true, fort: true, faces: pr.others.map(kshort).join('・'), capital: k.capital, exp: pr.id }, true);
   }
-  if (!b) return fail(sim, pr, '砦を建てる場所が見つからなかった', true);
+  if (!b) { S.expansion.bad = S.expansion.bad || {}; S.expansion.bad[pr.ci] = sim.today; k.treasury += 120; return fail(sim, pr, '砦を建てる場所が見つからなかった', true); }
   (w.specials = w.specials || []).push(b.id);
   (w.forts = w.forts || []).push(b.id);
   spend(sim, k, pr, materials(sim, pr, k, 10, 16));
@@ -1331,7 +1376,7 @@ function stepFort(sim, pr, k) {
   S.expansion.stats.forts++;
   pr.stage = 'done'; pr.sday = sim.today;
   sim.news(`${pr.name}が完成し、${kname(pr.k)}の兵が詰め始めた`, 2, b.door);
-  sim.chron(`${kname(pr.k)}が${sim.placeName(c.x, c.z)}に${pr.name}を築き、${pr.resName}を押さえた`, pr.k);
+  sim.chron(`${kname(pr.k)}が${pr.dir}の国境に${pr.name}を築き、${pr.resName}を押さえた`, pr.k);
   for (const o of pr.others) {
     const key = `${Math.min(o, pr.k)}-${Math.max(o, pr.k)}`;
     S.expansion.tension[key] = (S.expansion.tension[key] || 0) + 3;
@@ -1340,11 +1385,11 @@ function stepFort(sim, pr, k) {
 }
 
 // 建物を1つ置く（開拓小屋・櫓・砦）。扉は南
-function placeBox(sim, type, name, x0, z0, bw, bd, extra = {}) {
+function placeBox(sim, type, name, x0, z0, bw, bd, extra = {}, rocky = false) {
   const w = sim.S.world;
   const doorX = x0 + Math.floor(bw / 2), doorZ = z0 + bd;
   if (!inb(x0, z0) || !inb(x0 + bw - 1, doorZ)) return null;
-  const ok = (t) => BUILDABLE.has(t) || CLEARABLE.has(t);
+  const ok = (t) => BUILDABLE.has(t) || CLEARABLE.has(t) || (rocky && t === T.ROCK);
   for (let z = z0; z < z0 + bd; z++) for (let x = x0; x < x0 + bw; x++) if (!ok(w.tiles[z * W + x])) return null;
   const dt = w.tiles[doorZ * W + doorX];
   if (!(ok(dt) || dt === T.ROAD)) return null;
@@ -1445,13 +1490,13 @@ function skirmish(sim, A, B, pair) {
   const ci = pair[R.int(0, 1)];
   const c = cCenter(ci);
   const pick = (k) => sim.living().filter((p) => sim.town(p.s)?.kingdom === k.id && ['soldier', 'militia', 'gatekeeper', 'knight', 'guard'].includes(p.job) && p.jail == null && sim.isAdult(p) && !p.mission)
-    .sort((p, q) => Math.hypot(sim.town(p.s).x - c.x, sim.town(p.s).z - c.z) - Math.hypot(sim.town(q.s).x - c.x, sim.town(q.s).z - c.z))[0];
+    .sort((p, q) => Math.hypot(sim.town(p.s).x - c.x, sim.town(p.s).z - c.z) - Math.hypot(sim.town(q.s).x - c.x, sim.town(q.s).z - c.z)).slice(0, 4)[R.int(0, 3)] || null;
   const a = pick(A), b = pick(B);
   X.stats.skirmish++;
   const key = `${Math.min(A.id, B.id)}-${Math.max(A.id, B.id)}`;
   X.tension[key] = (X.tension[key] || 0) + 1.5;
   A.relations[B.id] = Math.max(-100, A.relations[B.id] - 7); B.relations[A.id] = Math.max(-100, B.relations[A.id] - 7);
-  const where = sim.placeName(c.x, c.z);
+  const where = spotName(sim, ci);
   let txt = `国境の${where}で、${A.name}と${B.name}の兵が小競り合いを起こした`;
   if (a && b) {
     const aw = (a.lv || 1) * (0.7 + R.next() * 0.6) > (b.lv || 1) * (0.7 + R.next() * 0.6);
@@ -1503,7 +1548,7 @@ function buyLand(sim, A, B, border) {
   transferChunk(sim, ci, A.id);
   X.stats.bought++;
   const c = cCenter(ci);
-  const where = sim.placeName(c.x, c.z);
+  const where = spotName(sim, ci);
   sim.news(`金に困った${B.name}が、国境の${where}を${A.name}に${price}銅貨で売り渡した`, 2, c);
   sim.chron(`${B.name}が国境の${where}を${A.name}に売り渡した（${price}銅貨）`, A.id);
   return true;
@@ -1613,7 +1658,7 @@ function warFronts(sim) {
     rec.seized.push({ ci, from: lose.id, to: win.id });
     X.stats.seized++;
     const c = cCenter(ci);
-    sim.news(`${rec.name}：${win.name}の軍が国境の${sim.placeName(c.x, c.z)}を占領した`, 2, c);
+    sim.news(`${rec.name}：${win.name}の軍が国境の${spotName(sim, ci)}を${X.origOwner?.[ci] === win.id ? '奪い返した' : '占領した'}`, 2, c);
   }
 }
 function settlePeace(sim, rec, winner, loser) {
@@ -1626,7 +1671,10 @@ function settlePeace(sim, rec, winner, loser) {
   const cmap = contacts(sim);
   const border = cmap[`${Math.min(winner.id, loser.id)}-${Math.max(winner.id, loser.id)}`] || [];
   const cand = [...new Set(border.map((p) => p.find((ci) => S.territory.owner[ci] === loser.id)).filter((ci) => ci != null && seizable(sim, ci, loser.id)))];
-  const extra = cand.sort((a, b) => (X.res[b]?.length || 0) - (X.res[a]?.length || 0)).slice(0, 2);
+  // 勝った国がすでに大きすぎるときは、欲張らない（一国だけが勝ちすぎないように）
+  const ws = territorySize(sim, winner.id), ls = territorySize(sim, loser.id);
+  const take = ws > ls * 1.8 ? 0 : ws > ls * 1.3 ? 1 : 2;
+  const extra = cand.sort((a, b) => (X.res[b]?.length || 0) - (X.res[a]?.length || 0)).slice(0, take);
   for (const ci of extra) transferChunk(sim, ci, winner.id);
   const kept = rec.seized.filter((q) => q.to === winner.id).length;
   const n = kept + back + extra.length;
@@ -1637,6 +1685,31 @@ function settlePeace(sim, rec, winner, loser) {
     sim.chron(`「${rec.name}」の講和で、${winner.name}は国境の${n}区画（約${n * EXP_CS * EXP_CS}マス）を得た`, winner.id);
     sim.news(`「${rec.name}」の講和で、${winner.name}が国境の土地（${n}区画）を得た。30日の休戦が結ばれた`, 3, sim.town(winner.capital));
   }
+}
+
+// 奪われた町の人々が蜂起して、もとの国へ戻ることがある（大きくなりすぎた国ほど治めきれない）
+function uprisings(sim) {
+  const S = sim.S, X = S.expansion, R = sim.rng;
+  if (!X.origK) return;
+  for (const s of S.world.settlements) {
+    const orig = X.origK[s.id];
+    if (orig == null || orig === s.kingdom || s.type === 'capital' || s.abandoned || S.towns[s.id]?.occupied) continue;
+    const O = S.kingdoms[orig], N = S.kingdoms[s.kingdom];
+    if (!O || !N || !kingOf(sim, O)) continue;
+    if (pactOf(X, orig, s.kingdom, 'truce')) continue;
+    const ratio = Math.max(0.5, Math.min(3, territorySize(sim, N.id) / Math.max(1, territorySize(sim, O.id))));
+    let p = 0.004 * ratio * (O.war?.with === N.id ? 3 : 1) * (O.treasury > 800 ? 1.4 : 1);
+    if (!R.chance(p)) continue;
+    const from = N.name;
+    s.kingdom = orig;
+    for (const id of s.buildings) { const b = sim.building(id); if (b) b.kingdom = orig; }
+    O.relations[N.id] = Math.max(-100, O.relations[N.id] - 5); N.relations[O.id] = Math.max(-100, N.relations[O.id] - 12);
+    sim.news(`${s.name}の人々が${from}の支配に反発して蜂起し、ふたたび${O.name}に戻った`, 3, s);
+    sim.chron(`${s.name}の人々が蜂起し、${from}の支配を脱して${O.name}に戻った`, orig);
+    for (const p2 of sim.living()) if (p2.s === s.id && sim.isAdult(p2)) sim.remember(p2, `みんなで立ち上がり、${s.name}は${O.name}に戻った`, { emo: 0.7, imp: 0.9, k: 'war' });
+    X.stats.uprisings = (X.stats.uprisings || 0) + 1;
+  }
+  watchCessions(sim);
 }
 
 // politics.js の endWar から呼ぶ（呼ばれなくても、次の日に自分で気づいて同じことをする）

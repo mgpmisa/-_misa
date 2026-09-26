@@ -7,6 +7,7 @@ import { buildTextures, personTexture, TEX } from './textures.js';
 import { SPECIES, KINGDOMS } from './data.js';
 import * as SPR from './sprites.js';
 import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
+import { convoyViews } from './logistics.js';
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
 const wx = (x) => x - W / 2 + 0.5;
@@ -358,6 +359,7 @@ export class Renderer {
       g.add(hull, mast, sail);
       for (const o of g.children) o.castShadow = true;
       g.position.set(wx(s.dockEnd.x) + 1, SEA_Y, wz(s.dockEnd.z) + 1);
+      g.userData.sid = s.id;
       this.scene.add(g); this.boats.push(g);
     }
     // 街灯（町の広場の四隅）
@@ -924,6 +926,47 @@ export class Renderer {
     for (const id of [...this.ents.keys()]) if (!seen.has(id)) this.drop(id);
   }
 
+  // ---------- 隊商（荷車と船）：logistics.js の convoyViews を毎フレーム映す ----------
+  makeConvoyMesh(kind) {
+    const M = this.mats, g = new THREE.Group();
+    if (kind === 'ship') {
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.7), M.hull); hull.position.y = 0.12;
+      const mast = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.8, 0.08), M.wood); mast.position.y = 1.0;
+      const sail = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.1), M.sail); sail.position.set(0.05, 1.1, 0); sail.rotation.y = Math.PI / 2;
+      g.add(hull, mast, sail);
+    } else {
+      const bed = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.16, 0.55), M.planks); bed.position.y = 0.32;
+      const load = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.28, 0.45), M.cloth); load.position.y = 0.54; load.name = 'load';
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.05, 0.05), M.wood); pole.position.set(0.7, 0.3, 0);
+      g.add(bed, load, pole);
+      for (const [x, z] of [[-0.25, 0.3], [-0.25, -0.3], [0.25, 0.3], [0.25, -0.3]]) {
+        const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 10), M.wood);
+        wh.rotation.x = Math.PI / 2; wh.position.set(x, 0.17, z); g.add(wh);
+      }
+    }
+    for (const o of g.children) o.castShadow = true;
+    return g;
+  }
+  updateConvoys(now) {
+    const w = this.sim.S.world, seen = new Set(), away = new Set();
+    this.convoyObjs = this.convoyObjs || new Map();
+    for (const v of convoyViews(this.sim)) {
+      let o = this.convoyObjs.get(v.id);
+      if (!o) { o = this.makeConvoyMesh(v.kind); this.scene.add(o); this.convoyObjs.set(v.id, o); }
+      seen.add(v.id);
+      if (v.kind === 'ship') away.add(v.home);
+      const x = Math.round(v.x), z = Math.round(v.z), t = w.tiles[z * W + x];
+      const onSea = v.kind === 'ship' || t === T.SEA || t === T.DEEP;
+      o.position.set(wx(v.x), onSea ? SEA_Y + Math.sin(now * 1.5 + v.x) * 0.05 : topY(w.hgt[z * W + x] || 0), wz(v.z));
+      o.rotation.y = -v.angle;                       // 進む向き（+x が船首・荷車の前）
+      if (v.kind === 'ship') o.rotation.x = Math.sin(now + v.z) * (v.state === 'storm' ? 0.18 : 0.04);
+      else { const ld = o.getObjectByName('load'); if (ld) ld.visible = v.load > 0; }
+    }
+    for (const [id, o] of this.convoyObjs) if (!seen.has(id)) { this.scene.remove(o); o.traverse((m) => m.geometry?.dispose()); this.convoyObjs.delete(id); }
+    // 定期船が出ている港では、桟橋の船を隠す
+    for (const b of this.boats) b.visible = !away.has(b.userData.sid);
+  }
+
   // ---------- 毎フレーム ----------
   update(realDt, selectedId, followId) {
     const sim = this.sim;
@@ -966,6 +1009,7 @@ export class Renderer {
     this.waterTex.offset.x = (now * 0.02) % 1;
     for (const m of this.mills) m.rotation.z = now * 0.8 * (sim.S.weather === 'rain' ? 1.8 : 1);
     for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
+    this.updateConvoys(now);
     // 雨・雪（カメラの周りだけ）
     const precip = weather === 'rain' || weather === 'snow';
     this.precip.visible = precip;

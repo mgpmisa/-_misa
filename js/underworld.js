@@ -406,7 +406,7 @@ function drugsDaily(sim) {
         sim.remember(p, '断っていた薬に、また手を出してしまった', { emo: -0.8, imp: 0.8, k: 'drug' });
         record(sim, '薬のぶり返し', null, p);
       } else if (p.addiction <= 0) {
-        const by = S.people[p.uwRehab.by];
+        const by0 = S.people[p.uwRehab.by]; const by = by0 && by0.deathYear == null && by0.needs ? by0 : null;
         p.uwRehab = null; p.addiction = 0; p.uwWithdraw = 0;
         sim.remember(p, 'ついに薬を断ち切った。もう二度と手を出さない', { emo: 0.9, imp: 0.95, about: by ? [by.id] : [], k: 'drug' });
         for (const id of sim.hh(p)?.members || []) { const q = S.people[id]; if (q && q !== p) { sim.relMut(q, p).a += 10; sim.remember(q, `${p.given}が薬を断ち切った`, { emo: 0.7, imp: 0.6, about: [p.id] }); } }

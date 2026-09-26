@@ -9,7 +9,7 @@ export function findPath(world, sx, sz, tx, tz, maxIter = 20000, avoid = null) {
   if (sx === tx && sz === tz) return [];
   if (!ok(tx, tz)) return null;
   const N = W * H;
-  if (!BUF || BUF.n !== N) BUF = { n: N, g: new Float32Array(N), came: new Int32Array(N), stamp: new Uint32Array(N), closed: new Uint32Array(N), gen: 0 };
+  if (!BUF || BUF.n !== N) BUF = { n: N, g: new Float64Array(N), came: new Int32Array(N), stamp: new Uint32Array(N), closed: new Uint32Array(N), gen: 0 };
   const gen = ++BUF.gen;
   const { g, came, stamp, closed } = BUF;
   // 遠い目的地ほど「目的地へ向かう」ことを強めに優先する（最短でなくても自然な道のりで、探索が大幅に減る）

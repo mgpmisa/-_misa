@@ -12,6 +12,8 @@ import { faunaHtml } from './fauna.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
 import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js';
 import { healthLabel } from './health.js';
+import { CIVIC_LABEL, CIVIC_GO, CIVIC_PREF } from './civic.js';
+import { convoyOf, convoyLabel } from './logistics.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -27,7 +29,7 @@ const ACTION_LABEL = {
   guild: 'ギルドで依頼を探している', report: 'ギルドに依頼の報告をしている', buygear: '鍛冶場で装備を選んでいる', gather: '素材を集めている', hunt: '賞金首を追っている', quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
   march: '前線で戦っている', crusade: '魔王討伐の旅をしている', defend: '町を守っている', flee: '逃げている', court: '想い人に会いに来ている', trade: '商いをしている', travel: '旅をしている', visit: '知り合いの家を訪ねている',
 };
-const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle']);
+const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle', 'guardpost', 'academy', 'dojo', 'fort', 'camp']);
 const ACTION_GO = {
   sleep: '寝床へ向かっている', eat: '食事をしに家へ向かっている', shop: '市場へ向かっている', tavern: '酒場へ向かっている', plaza: '広場へ向かっている',
   stroll: 'ぶらぶら歩いている', pray: '祈りに向かっている', play: '遊びに出かけるところ', rest: '家へ帰るところ', home: '家へ帰るところ', festival: '祭りの広場へ向かっている',
@@ -43,6 +45,8 @@ Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来
 Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
 Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
 Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
+Object.assign(ACTION_LABEL, CIVIC_LABEL); Object.assign(ACTION_GO, CIVIC_GO); Object.assign(PREF_LABEL, CIVIC_PREF);
+Object.assign(ACTION_LABEL, { escort: '荷車を護衛している', sail: '船に乗り組んでいる' }); Object.assign(PREF_LABEL, { escort: '護衛', sail: '船旅' });
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -606,7 +610,7 @@ export class UI {
     } else {
       const fin = financeSummary(this.sim, p);
       const uwl = p.deathYear == null ? underworldLabel(this.sim, p) : [];
-      h += `<div class="psub">いま：${esc(this.actionText(p))}${fin ? `<br>${esc(fin)}` : ''}${uwl.length ? `<br>${esc(uwl.join('・'))}` : ''}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
+      h += `<div class="psub">いま：${esc(this.actionText(p))}${fin ? `<br>${esc(fin)}` : ''}${uwl.length ? `<br>${esc(uwl.join('・'))}` : ''}${(() => { const cv = convoyOf(this.sim, p); return cv ? `<br>${esc(convoyLabel(this.sim, cv))}` : ''; })()}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
       h += `<div class="thought"><b>心の声</b>${esc(p.thought || '……')}</div>`;
       h += `<div class="row-btns"><button id="followBtn" class="${this.follow === p.id ? 'on' : ''}">${this.follow === p.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">この人を見る</button></div>`;
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
@@ -721,7 +725,7 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    const typeLabel = { watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    const typeLabel = { guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     if (INTERIOR_TYPES.has(b.type)) h += `<div class="row-btns"><button id="enterBtn">${['cave', 'pyramid', 'demoncastle', 'ruins', 'mine'].includes(b.type) ? '奥へ踏み込んで見る' : '中に入って見る'}</button></div>`;
     if (b.type === 'house' || b.type === 'mansion') {

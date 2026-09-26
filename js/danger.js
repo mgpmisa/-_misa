@@ -1,5 +1,6 @@
 // 危険察知：魔物の分布図（町の人みんなが知っている「危険区域」）と、町の守り
 import { SPECIES, JOBS } from './data.js';
+import { musterOnAlarm } from './civic.js';
 import { W, H, T } from './world.js';
 import { startFight } from './society.js';
 
@@ -76,7 +77,7 @@ export function defendTowns(sim) {
         if (!c.alarmed || S.t - c.alarmed > 1440) {
           c.alarmed = S.t;
           sim.pushLog(`${s.name}に${c.name}が迫り、警鐘が鳴らされた。人々は家に籠もり、衛兵は門を固めた。`, 'event', [], s);
-          for (const q of sim.living()) if (q.s === s.id && q.inside == null && !q.fight && !q.quest && q.mission?.type !== 'crusade') { q.action = null; q.mission = null; sim.startAction(q, { type: 'flee', place: sim.placeFor(q, 'home'), dur: 90 }); }
+          for (const q of sim.living()) if (q.s === s.id && q.inside == null && !q.fight && !q.quest && q.mission?.type !== 'crusade') { if (musterOnAlarm(sim, q, s)) continue; q.action = null; q.mission = null; sim.startAction(q, { type: 'flee', place: sim.placeFor(q, 'home'), dur: 90 }); }
           if (!S.quests?.some((x) => x.target === c.id && x.state !== 'done' && x.state !== 'failed')) c.quested = false;
         }
         continue;
@@ -101,10 +102,11 @@ export function spotThreats(sim, p, grid, around) {
   if (p.inside != null || p.fight || p.jail != null || p.mission?.type === 'defend' || p.mission?.type === 'crusade' || p.mission?.type === 'march') return false;
   const J = JOBS[p.job];
   if (J?.combat >= 2 || DEFENDERS.has(p.job)) return false;
+  const tough = J?.combat >= 1; // 狩人・開拓者・道普請は、獣では逃げない（魔物からは逃げる）
   const sight = 6 + p.pers.N * 3;
   for (const c of around(grid, p.pos.x, p.pos.z, sight)) {
     if (c.dormant || c.hp <= 0) continue;
-    const scary = c.hostile || (['wolf', 'bear', 'tiger', 'polarbear', 'croc'].includes(c.sp));
+    const scary = c.hostile || (!tough && ['wolf', 'bear', 'tiger', 'polarbear', 'croc'].includes(c.sp)) || (tough && ['bear', 'tiger', 'polarbear'].includes(c.sp) && p.lv < 3);
     if (!scary) continue;
     if (Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) > sight) continue;
     // 危険を覚え、家（なければ町の中心）へ逃げる

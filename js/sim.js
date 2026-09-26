@@ -24,6 +24,8 @@ import { faunaDaily, faunaHourly } from './fauna.js';
 import { initUnderworld, underworldDaily, underworldHourly, underworldDecide, underworldArrive, underworldWorkMul } from './underworld.js';
 import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workMul, healMul, tradeMul } from './growth.js';
 import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, healthSpeedMul, healthWorkMul, onDeath } from './health.js';
+import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, civicFirstJob } from './civic.js';
+import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade } from './logistics.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -449,6 +451,7 @@ export class Sim {
   }
   placeFor(p, kind) {
     const R = this.rng, s = this.townOf(p), w = this.S.world;
+    const cp = civicPlace(this, p, kind); if (cp) return cp;
     switch (kind) {
       case 'home': {
         const b = this.homeOf(p);
@@ -621,6 +624,7 @@ export class Sim {
     add(1.2 + (1 - p.pers.E) + (100 - n.sloth) / 18 + (p.hp < p.maxhp * 0.7 ? 2 : 0), 'rest', this.placeFor(p, 'home'), R.int(30, 80));
 
     choreOptions(this, p, add);
+    civicOptions(this, p, add);
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
@@ -690,6 +694,7 @@ export class Sim {
   }
 
   findTrade(p) {
+    if (!canTrade(this, p)) return null;
     const here = this.market(p.s);
     let best = null, bv = 1.25;
     for (const s of this.S.world.settlements) {
@@ -703,10 +708,11 @@ export class Sim {
         if (ratio > bv) { bv = ratio; best = { good: g, dest: s.id, place: { x: s.x, z: s.z } }; }
       }
     }
-    return best;
+    return best || (this.rng.chance(0.3) ? findSeaTrade(this, p) : null);
   }
 
   startAction(p, c) {
+    if (c.type === 'trade') { if (!startTradeConvoy(this, p, c.trade)) p.action = null; return; }
     if (p.inside && c.place && c.place.bld === p.inside) {
       // 同じ建物の中で次の行動に移る（出入口でちらつかない）
       p.action = { type: c.type, dur: c.dur, bld: p.inside, phase: 'walk', untilHour: c.untilHour, friend: c.friend, helper: c.helper, food: c.food, quest: c.quest, trade: c.trade, dest: c.dest, intimacy: c.intimacy, crimeTarget: c.crimeTarget, startNeeds: { ...p.needs }, startMood: p.mood };
@@ -723,6 +729,14 @@ export class Sim {
     p.thought = null;
   }
 
+  // 腕に覚えのある者でも、竜の縄張りのような極端に危ない所は避けて通る
+  dangerHigh() {
+    const m = this.S.dangerMap;
+    if (!m) return null;
+    if (this._dhSrc !== m) { this._dhSrc = m; this._dh = m.map((v) => Math.max(0, v - 5)); }
+    return this._dh;
+  }
+
   computePath(p) {
     const a = p.action;
     const sx = Math.round(p.pos.x), sz = Math.round(p.pos.z);
@@ -731,7 +745,7 @@ export class Sim {
     this._noPath = this._noPath || new Map();
     const key = a.tx * 1000 + a.tz;
     const bad = this._noPath.get(key);
-    const path = bad && bad > this.S.t ? null : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, brave ? null : this.S.dangerMap);
+    const path = bad && bad > this.S.t ? null : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, brave ? this.dangerHigh() : this.S.dangerMap);
     if (!path && !(bad > this.S.t)) { this._noPath.set(key, this.S.t + 120); if (this._noPath.size > 500) this._noPath.clear(); }
     if (!path) {
       // たどり着けない：近くの歩ける場所へ
@@ -828,6 +842,7 @@ export class Sim {
     }
     underworldArrive(this, p);
     choreArrive(this, p, a);
+    civicArrive(this, p, a);
   }
 
   doShop(p) {
@@ -966,7 +981,7 @@ export class Sim {
         hh.money += (p.job === 'noble' ? 4 : 0) * hr;
         break;
       }
-      default: this.genericWork(p, dt, eff);
+      default: this.genericWork(p, dt, eff); civicWork(this, p, dt, eff);
     }
   }
 
@@ -1212,6 +1227,7 @@ export class Sim {
     if (this._defend <= 0) { this._defend = 5; defendTowns(this); }
     stepCombat(this, dt);
     this.checkEncounters(people, dt);
+    stepConvoys(this, dt);
   }
 
   doAction(p, dt) {
@@ -1268,6 +1284,7 @@ export class Sim {
     }
     if (!p.action) return;
     choreDo(this, p, dt);
+    civicDo(this, p, dt);
     for (const k of NEED_KEYS) n[k] = clamp(n[k], 0, 100);
     const wakeEarly = a.type === 'sleep' && n.sleep >= 99 && this.hour() > 4 && this.hour() < 12;
     if (S.t >= a.until || wakeEarly) {
@@ -1560,6 +1577,7 @@ export class Sim {
   // ---------- 時間の節目 ----------
   newHour() {
     this.updatePrices();
+    logisticsHourly(this);
     for (const p of this.living()) {
       const n = p.needs;
       const needAvg = (n.hunger * 1.3 + n.sleep + n.survival * 1.3 + n.lust * 0.5 + n.sloth * 0.7 + n.pleasure + n.esteem) / 6.8;
@@ -1649,8 +1667,7 @@ export class Sim {
       const age = this.ageOf(p);
       if (age < 14) this.remember(p, `${age}歳の誕生日を家族に祝ってもらった`, { emo: 0.7, imp: 0.45 });
       if (age === 14 && !p.job) {
-        const par = [this.person(p.fatherId), this.person(p.motherId)].find((q) => q && q.job && JOBS[q.job].goods);
-        p.job = par ? par.job : this.townOf(p).type === 'port' ? 'fisher' : 'farmer';
+        p.job = civicFirstJob(this, p);
         p.skill[p.job] = apprenticeSkill(p);
         p.rank = p.rank === 'royal' || p.rank === 'noble' ? p.rank : JOBS[p.job].rank;
         this.remember(p, `14歳になり、${JOBS[p.job].name}の見習いを始めた`, { emo: 0.5, imp: 0.8 });
@@ -1698,6 +1715,7 @@ export class Sim {
     partiesDaily(this);
     propertyDaily(this);
     choreDaily(this);
+    civicDaily(this);
     careerDaily(this);
     financeDaily(this);
     creatureDaily(this);

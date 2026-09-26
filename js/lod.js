@@ -196,3 +196,14 @@ export function fogAt(S, x, z) {
   const v = (cx, cz) => { cx = Math.min(FW - 1, Math.max(0, cx)); cz = Math.min(FH - 1, Math.max(0, cz)); return ex[cz * FW + cx] ? 0 : 1; };
   return (v(x0, z0) * (1 - tx) + v(x0 + 1, z0) * tx) * (1 - tz) + (v(x0, z0 + 1) * (1 - tx) + v(x0 + 1, z0 + 1) * tx) * tz;
 }
+
+// 生き物の一覧（毎歩 Object.values(S.creatures) を作り直さない）。
+// 新しい生き物が生まれたとき（S.nextCid が変わったとき）と、注意の地図の作り直し（10分ごと）で作り直す。
+// 消えた生き物がしばらく残ることがあるので、使う側で c.hp > 0 を確かめること。
+export function creatureArray(sim) {
+  const S = sim.S, L = sim._lod || lodBegin(sim);
+  if (!L.all || L.allCid !== S.nextCid || L.allAt !== L.next || L.allS !== S.creatures) {
+    L.all = Object.values(S.creatures); L.allCid = S.nextCid; L.allAt = L.next; L.allS = S.creatures;
+  }
+  return L.all;
+}
