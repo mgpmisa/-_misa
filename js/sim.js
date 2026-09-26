@@ -19,6 +19,7 @@ import { rumorBirth, rumorRelay, rumorHeardText, rumorCorrect } from './rumor.js
 import { calendarDaily, calendarHalfDay } from './calendar.js';
 import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, harvestMul, roadsClosed, weatherMoodDelta, legacyWeatherAt } from './weather.js';
 import { financeDaily, financeHourly, financeCandidates, financeArrive } from './finance.js';
+import { careerDaily, careerOptions, careerDo, careerWorkPlace } from './career.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -554,7 +555,7 @@ export class Sim {
     const workHours = h >= 7 && h < 17;
     if (workAge && job !== 'thief' && job !== 'beggar' && workHours && (!rest || ['innkeeper', 'guard', 'knight', 'soldier', 'jailer', 'king', 'servant'].includes(job)) && p.workedToday < 9 * 60 && n.sleep > 15) {
       const skill = p.skill[job] || 0.3;
-      const wp = this.placeFor(p, JOBS[job].place);
+      const wp = careerWorkPlace(this, p) || this.placeFor(p, JOBS[job].place);
       const unsafe = wp && !JOBS[job].combat && tooDangerous(this, p, wp.x, wp.z);
       add(3 + p.pers.C * 3 + p.values.ambition + skill - (100 - n.sloth) / 30 - (unsafe ? 8 : 0), 'work', unsafe ? this.placeFor(p, 'plaza') : wp, R.int(60, 150));
     }
@@ -614,6 +615,7 @@ export class Sim {
     add(1.2 + (1 - p.pers.E) + (100 - n.sloth) / 18 + (p.hp < p.maxhp * 0.7 ? 2 : 0), 'rest', this.placeFor(p, 'home'), R.int(30, 80));
 
     choreOptions(this, p, add);
+    careerOptions(this, p, add);
     financeCandidates(this, p, add);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
@@ -1180,6 +1182,8 @@ export class Sim {
 
   doAction(p, dt) {
     const a = p.action, n = p.needs, hr = dt / 60, S = this.S;
+    careerDo(this, p, dt);
+    if (!p.action) return;
     switch (a.type) {
       case 'work': this.doWork(p, dt); p.workedToday += dt; break;
       case 'tavern': n.pleasure += 18 * hr; n.esteem += 3 * hr; break;
@@ -1228,6 +1232,7 @@ export class Sim {
       }
       case 'storytell': this.tellStories(p, this.nearby(p, 5)); n.esteem += 3 * hr; break;
     }
+    if (!p.action) return;
     choreDo(this, p, dt);
     for (const k of NEED_KEYS) n[k] = clamp(n[k], 0, 100);
     const wakeEarly = a.type === 'sleep' && n.sleep >= 99 && this.hour() > 4 && this.hour() < 12;
@@ -1650,6 +1655,7 @@ export class Sim {
     partiesDaily(this);
     propertyDaily(this);
     choreDaily(this);
+    careerDaily(this);
     financeDaily(this);
     creatureDaily(this);
     justiceDaily(this);

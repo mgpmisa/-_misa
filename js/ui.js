@@ -8,6 +8,7 @@ import { InteriorView } from './interior.js';
 import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
+import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
@@ -35,6 +36,7 @@ const PREF_LABEL = {
   festival: '祭り', visit: '人を訪ねること', train: '鍛錬', work: '仕事', guild: 'ギルド通い', quest: '冒険', school: '勉強', storytell: '昔話', perform: '歌', court: '恋', trade: '商い', beg: '物乞い', steal: '盗み', buygear: '装備選び',
 };
 Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来ている' }); Object.assign(ACTION_GO, { collect: '借金を取り立てに向かっている' }); Object.assign(PREF_LABEL, { collect: '取り立て' });
+Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -619,6 +621,8 @@ export class UI {
       const likes = Object.entries(p.q || {}).sort((a, b) => b[1] - a[1]);
       const skills = Object.entries(p.skill || {}).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
       const dangers = Object.entries(p.danger || {}).filter(([, v]) => v > 1.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      const cc = careerCard(this.sim, p);
+      if (cc.length) h += `<div class="section"><h4>人生の目標と修業</h4><dl class="kv">${cc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       h += `<div class="section"><h4>経験から学んだこと</h4><dl class="kv">
         <dt>好きな過ごし方</dt><dd>${likes.filter(([, v]) => v > 0.05).slice(0, 3).map(([k]) => esc(PREF_LABEL[k] || k)).join('、') || 'まだ手探り'}</dd>
         <dt>苦手な過ごし方</dt><dd>${likes.filter(([, v]) => v < -0.05).slice(-2).map(([k]) => esc(PREF_LABEL[k] || k)).join('、') || '特になし'}</dd>

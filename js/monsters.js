@@ -773,8 +773,9 @@ function hungerDaily(sim, list) {
     ms.sort((a, b) => (a.rank || 99) - (b.rank || 99));
     for (const c of ms) {
       if (c.hunger > 70) continue;
-      // 子は親が先に食べさせる
+      // 序列の高い者から食べる。残り物がなければ下位は自分であさる（あまり満たされない）
       if (band.stock >= 1) { band.stock -= 1; c.hunger = Math.min(100, c.hunger + 55); }
+      else if (R.chance(0.5)) c.hunger = Math.min(100, c.hunger + 25);
     }
     band.stock = Math.min(band.stock, ms.length * 3);
     band.hungry = ms.reduce((s, c) => s + c.hunger, 0) / ms.length;
@@ -790,7 +791,7 @@ function hungerDaily(sim, list) {
   for (const c of list) {
     if (!eats(c) || c.named || c.sp === 'demonlord') continue;
     if (c.hunger <= 1) c.starve = (c.starve || 0) + 1; else c.starve = 0;
-    if (c.starve >= 4) {
+    if (c.starve >= 6 && sim.rng.chance(0.5)) {
       sim.pushLog(`${sim.placeName(c.pos.x, c.pos.z)}で、${who(c)}が飢えて倒れた。`, 'event', [], c.pos);
       stat(sim, 'starve');
       killCreature(sim, c, null);
@@ -975,7 +976,9 @@ export function monsterTactics(sim, e, t) {
   // 援軍を呼び、囲む（一度の戦いで一回）
   if (!f.called && I >= 0.4) {
     f.called = true;
-    const help = alliesAround(sim, e, 14).filter((o) => !o.fight && o.role !== 'young' && !o.inDungeon && o.sp !== 'demonlord').slice(0, 4);
+    // 相手が強すぎるときは呼ばない（無駄死にさせない）。呼ぶのは元気な仲間だけ
+    const tooStrong = I >= 0.5 && t.hp > e.hp * 3;
+    const help = tooStrong ? [] : alliesAround(sim, e, 10).filter((o) => !o.fight && o.role !== 'young' && !o.inDungeon && o.sp !== 'demonlord' && o.hp > o.maxhp * 0.6).slice(0, 2);
     if (help.length) {
       monsterSay(sim, e, 'call', true);
       for (const o of help) startFight(sim, o, t);

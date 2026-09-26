@@ -2,6 +2,7 @@
 // 性格・身分・記憶・人間関係・世界の情勢から、その人らしい言葉を組み立てる。
 // 同じ人が同じ台詞をくり返さないよう、最近の発言を覚えておく。
 import { casualKin } from './kin.js';
+import { careerThought } from './career.js';
 import { financeThoughts, financeTopic, financeTopicWeight } from './finance.js';
 import { calendarTopicWeight, calendarTopic, calendarReact, calendarThought } from './calendar.js';
 import { JOBS, GOODS, TECHS, RANKS } from './data.js';
@@ -756,6 +757,7 @@ export function innerThought(api, p) {
   const opts = [];
   const ct = calendarThought(api, p); if (ct) opts.push(ct);
   for (const t of financeThoughts(api, p)) opts.push(t);
+  const cth = careerThought(api, p); if (cth) opts.push(cth);
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
   if (low[1] < 30) opts.push(needTxt[low[0]]);
   if (act === 'work') opts.push(`さて、もうひと頑張り。${JOBS[p.job]?.name ?? ''}の仕事は待ってくれない。`);

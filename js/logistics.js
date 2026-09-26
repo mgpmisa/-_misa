@@ -613,9 +613,9 @@ export function logisticsHourly(sim) {
       if (S.convoys.length >= MAX_CONVOYS - 2) break;           // 定期船の分を空けておく
       if (S.towns[s.id].occupied || S.t - (S.logi.lastDep[s.id] ?? -1e9) < 6 * 60 || !sim.rng.chance(0.35)) continue;
       const tr = bestLandTrade(sim, s);
-      if (!tr) continue;
+      if (!tr) { S.logi.why = S.logi.why || {}; S.logi.why[s.id + ':noTrade'] = (S.logi.why[s.id + ':noTrade'] || 0) + 1; continue; }
       const drv = pickCarter(sim, s);
-      if (!drv) continue;
+      if (!drv) { S.logi.why = S.logi.why || {}; S.logi.why[s.id + ':noDriver'] = (S.logi.why[s.id + ':noDriver'] || 0) + 1; continue; }
       if (startTradeConvoy(sim, drv, tr)) S.logi.lastDep[s.id] = S.t;
     }
   }

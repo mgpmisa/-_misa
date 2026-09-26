@@ -41,6 +41,8 @@ const FIERCE = new Set(['bear', 'polarbear', 'boar', 'wolf', 'tiger', 'croc', 'g
 // 人にまで襲いかかる母
 const FIERCE_HUMAN = new Set(['bear', 'polarbear', 'boar', 'tiger', 'wolf', 'croc', 'goose']);
 // 木の実・果物も食べる
+// 罠にかからない（かけない）種
+const NO_TRAP = new Set(['rat', 'turtle', 'frog', 'snake', 'scorpion', 'croc']);
 const OMNI = new Set(['bear', 'boar', 'monkey', 'rat', 'crow', 'squirrel', 'parrot', 'pig', 'fox']);
 // 住処の呼び名
 const DEN = {
@@ -344,6 +346,8 @@ export function faunaThink(sim, c, def, all, humans) {
     c.goal = d2h(c) > 1.5 ? { x: c.home.x + R.range(-0.5, 0.5), z: c.home.z + R.range(-0.5, 0.5), path: !def.flies && !def.swims && d2h(c) > 14 } : null;
     return true;
   }
+  // 牧場の家畜は、飢えて人里へ降りた獣でなければ狙わない（柵・牧夫・犬がいるので近寄りがたい）
+  if (PRED.has(c.sp) && def.kind === 'wild' && !c.forage && c.hunger < 40 && ranchGuard(sim, c, def, all)) return true;
   // 餌をくれる人に寄っていく
   if (c.likes && humans.length && !c.hostile && c.hunger < 85) {
     for (const q of humans) {
@@ -353,6 +357,33 @@ export function faunaThink(sim, c, def, all, humans) {
     }
   }
   return false;
+}
+// 野生の獲物（creatures.js の PREY から家畜を除いたもの）
+const WILD_PREY = new Set(['deer', 'boar', 'rabbit', 'squirrel', 'camel', 'reindeer', 'penguin', 'monkey', 'slime', 'frog', 'turtle']);
+function ranchGuard(sim, c, def, all) {
+  const R = sim.rng;
+  let near = null;
+  for (const s of sim.S.world.settlements) {
+    if (!s.ranch) continue;
+    const cx = (s.ranch.x0 + s.ranch.x1) / 2, cz = (s.ranch.z0 + s.ranch.z1) / 2;
+    if (Math.hypot(cx - c.pos.x, cz - c.pos.z) < 16) { near = { x: cx, z: cz }; break; }
+  }
+  if (!near) return false;
+  // 牧場の近くでは野生の獲物だけを狩る
+  let prey = null, bd = 12;
+  for (const o of all) {
+    if (o === c || o.hp <= 0 || o.dormant || o.owner != null || !WILD_PREY.has(o.sp) || SPECIES[o.sp].size > def.size * 1.4) continue;
+    const d = d2(o, c);
+    if (d < bd && !inTownBox(sim, o.pos.x, o.pos.z)) { bd = d; prey = o; }
+  }
+  if (prey) {
+    if (bd < 1.4) startFight(sim, c, prey); else c.goal = { x: prey.pos.x, z: prey.pos.z, run: true };
+    return true;
+  }
+  // 獲物がいなければ、牧場から離れた方へ探しに行く
+  const dx = c.pos.x - near.x, dz = c.pos.z - near.z, d = Math.hypot(dx, dz) || 1;
+  c.goal = { x: c.pos.x + dx / d * 8 + R.range(-2, 2), z: c.pos.z + dz / d * 8 + R.range(-2, 2) };
+  return true;
 }
 const d2h = (c) => Math.hypot(c.pos.x - c.home.x, c.pos.z - c.home.z);
 
@@ -607,7 +638,7 @@ function feedHour(sim, c, si, h, drought) {
     let gain = 0;
     if (def.diet === 'grass') gain = active ? 3 * f : 0;
     else if (def.diet === 'both') gain = active ? 2.4 * f : 0;
-    else if (PRED.has(c.sp)) gain = 0.55 * f; // 虫・死肉・小さな獲物（本格的な狩りは creatures.js）
+    else if (PRED.has(c.sp)) gain = (def.size <= 0.6 ? 1.5 : 0.55) * f; // 虫・ネズミ・死肉（本格的な狩りは creatures.js）。小さな捕食者は虫やネズミで食いつなげる
     else gain = active ? 2.8 * f : 0.4; // 魚・虫を食べる鳥や海の生き物
     if (OMNI.has(c.sp) && def.diet !== 'grass' && active) gain += 0.8 * f;
     if (c.juv) gain *= 0.5;
@@ -670,7 +701,7 @@ function traps(sim, animals, h) {
     for (const c of animals) {
       if (c.hp <= 0 || !S.creatures[c.id]) continue;
       const def = SPECIES[c.sp];
-      if (def.kind !== 'wild' || def.flies || def.swims || def.size > 1.05 || c.sp === 'rat') continue;
+      if (def.kind !== 'wild' || def.flies || def.swims || def.size > 1.05 || NO_TRAP.has(c.sp)) continue;
       if (Math.abs(c.pos.x - t.x) > 1.8 || Math.abs(c.pos.z - t.z) > 1.8) continue;
       if (c.trapWise) {
         if (R.chance(0.15)) {
@@ -793,13 +824,14 @@ function peopleFeed(sim, animals, h) {
   if (!cands.length) return;
   const people = sim.living().filter((p) => p.inside == null && !p.fight && p.jail == null && (sim.ageOf(p) < 13 || sim.ageOf(p) > 60 || p.pers?.A > 0.72));
   for (const c of cands) {
-    if (!R.chance(0.35)) continue;
+    if (!R.chance(0.12) || c.hunger > 80) continue;
     let q = null;
     for (const p of people) if (Math.abs(p.pos.x - c.pos.x) < 5 && Math.abs(p.pos.z - c.pos.z) < 5) { q = p; break; }
     if (!q) continue;
     const hh = sim.hh(q);
-    if (!hh || (hh.food || 0) < 1.5 && (q.purse || 0) < 1) continue;
-    if (hh.food >= 1.5) hh.food -= 0.1; else q.purse -= 0.3;
+    // 食べ残しがある家の人だけ（家族の食事を削ってまではやらない）
+    if (!hh || (hh.food || 0) < hh.members.length * 2 + 1) continue;
+    hh.food -= 0.05;
     c.hunger = Math.min(100, c.hunger + 30);
     c.likes = c.likes || {};
     c.likes[q.id] = Math.min(10, (c.likes[q.id] || 0) + 1);
@@ -1296,6 +1328,8 @@ function livestockCare(sim, animals, si, dos) {
       if (q) sim.remember(q, `春の毛刈りで${c.given || '羊'}の毛を刈った。よい羊毛がとれた`, { emo: 0.5, imp: 0.35, k: 'farm' });
     }
   }
+  // 牧場の家畜が減りすぎたら、牧場主が隣の村から買い足す（週に一度）
+  if (sim.dayIndex % 7 === 3) restock(sim, animals);
   // 牧場の家畜が増えすぎたら、年をとった食肉用を売る
   for (const s of S.world.settlements) {
     if (!s.ranch) continue;
@@ -1311,6 +1345,40 @@ function livestockCare(sim, animals, si, dos) {
     if (q) sim.remember(q, `${c.given || SPECIES[c.sp].name}を肉屋に売った。${R.pick(['少し寂しい', '世話になった', '仕方のないことだ'])}`, { emo: -0.2, imp: 0.35, k: 'farm' });
     c._faDone = true; // 飼い主の悲しみは上で記録した
     killCreature(sim, c, null);
+  }
+}
+
+function restock(sim, animals) {
+  const S = sim.S, R = sim.rng, F = S.fauna;
+  for (const s of S.world.settlements) {
+    if (!s.ranch) continue;
+    const herd = animals.filter((c) => c.owner === s.id && c.range === 0 && S.creatures[c.id] && c.sp !== 'dog');
+    if (herd.length >= 5) continue;
+    const want = s.kingdom === 2 ? ['goat', 'goat', 'chicken', 'chicken', 'sheep', 'cow'] : ['cow', 'sheep', 'sheep', 'pig', 'chicken', 'chicken', 'duck'];
+    const have = new Set(herd.map((c) => c.sp));
+    const hhs = Object.values(S.households).filter((h) => h.s === s.id && h.members.some((id) => ['rancher', 'shepherd'].includes(S.people[id]?.job)));
+    const hh = hhs.sort((a, b) => b.money - a.money)[0];
+    if (!hh) continue;
+    const bought = [];
+    for (let i = 0; i < 2 && herd.length + bought.length < 5; i++) {
+      const sp = want.find((x) => !have.has(x)) || R.pick(want);
+      const price = SPECIES[sp].size >= 0.9 ? 30 : SPECIES[sp].size >= 0.5 ? 16 : 6;
+      if (hh.money < price + 40) break;
+      const x = R.int(s.ranch.x0, s.ranch.x1), z = R.int(s.ranch.z0, s.ranch.z1);
+      const c = makeCreature(sim, sp, x, z, { owner: s.id, range: 0, age: R.int(20, 120) });
+      if (!S.creatures[c.id]) continue;
+      hh.money -= price;
+      c.keeper = hh.id; c.sex = R.chance(0.7) ? 'f' : 'm'; ensureAnimal(sim, c);
+      have.add(sp); bought.push(c);
+    }
+    if (!bought.length) continue;
+    F.stats.restock = (F.stats.restock || 0) + bought.length;
+    const head = hhMembers(sim, hh).find((q) => sim.ageOf(q) >= 16);
+    const names = bought.map((c) => c.name).join('と');
+    if (head) {
+      sim.remember(head, `牧場の家畜が減ってしまったので、隣の村から${names}を買ってきた`, { emo: 0.2, imp: 0.45, k: 'farm' });
+      log(sim, `${s.name}の${sim.fullName(head)}が、減った家畜を補うため、隣の村から${names}を買ってきた。`, [head.id], { x: s.ranch.x0, z: s.ranch.z0 });
+    }
   }
 }
 

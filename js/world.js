@@ -162,9 +162,32 @@ export function generateWorld(rng, seed) {
     set(x, z, rng.chance(0.03) ? T.LAVA : T.WASTE);
   }
 
+  // --- 陸続きの塊（川は橋を架ければ渡れるので同じ塊に数える。島の町を作らないため） ---
+  const landComp = new Int32Array(N).fill(-1);
+  let mainComp = -1;
+  {
+    const landOk = (t) => t !== T.DEEP && t !== T.SEA && t !== T.PEAK && t !== T.LAVA;
+    let nc = 0, best = 0;
+    for (let i0 = 0; i0 < N; i0++) {
+      if (landComp[i0] >= 0 || !landOk(tiles[i0])) continue;
+      const st = [i0]; landComp[i0] = nc; let n = 0;
+      while (st.length) {
+        const i = st.pop(); n++;
+        const x = i % W, z = (i / W) | 0;
+        if (x > 0 && landComp[i - 1] < 0 && landOk(tiles[i - 1])) { landComp[i - 1] = nc; st.push(i - 1); }
+        if (x < W - 1 && landComp[i + 1] < 0 && landOk(tiles[i + 1])) { landComp[i + 1] = nc; st.push(i + 1); }
+        if (z > 0 && landComp[i - W] < 0 && landOk(tiles[i - W])) { landComp[i - W] = nc; st.push(i - W); }
+        if (z < H - 1 && landComp[i + W] < 0 && landOk(tiles[i + W])) { landComp[i + W] = nc; st.push(i + W); }
+      }
+      if (n > best) { best = n; mainComp = nc; }
+      nc++;
+    }
+  }
+  const onMain = (x, z) => inb(x, z) && landComp[idx(x, z)] === mainComp;
+
   // --- 国と町の場所 ---
   const settlements = [];
-  const farFromAll = (x, z, r) => settlements.every((s) => Math.hypot(s.x - x, s.z - z) >= s.r + r + 5) && Math.hypot(demon.x - x, demon.z - z) > demonR + r + 6;
+  const farFromAll = (x, z, r) => onMain(x, z) && settlements.every((s) => Math.hypot(s.x - x, s.z - z) >= s.r + r + 5) && Math.hypot(demon.x - x, demon.z - z) > demonR + r + 6;
   const targets = [{ x: W * 0.3, z: H * 0.34 }, { x: W * 0.7, z: H * 0.62 }, { x: W * 0.34, z: H * 0.76 }];
   KINGDOMS.forEach((k, ki) => {
     const tg = targets[ki];
@@ -250,46 +273,66 @@ export function generateWorld(rng, seed) {
   };
 
   // --- 道（町と町を結ぶ） ---
-  function roadPath(a, b) {
+  // goal は1点か、「ここに着いたら終わり」を返す関数（既存の道網につなぐとき）
+  function roadPath(a, b, goalFn = null) {
     const cost = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1);
     const hp = new MinHeap();
-    hp.push(0, idx(a.x, a.z));
-    cost[idx(a.x, a.z)] = 0;
-    const goal = idx(b.x, b.z);
+    const start = idx(a.x, a.z);
+    hp.push(0, start);
+    cost[start] = 0;
+    let goal = goalFn ? -1 : idx(b.x, b.z);
     const done = new Uint8Array(N);
     let it = 0;
     while (hp.size && it++ < 200000) {
       const i = hp.pop();
       if (done[i]) continue;
       done[i] = 1;
-      if (i === goal) break;
+      if (goalFn ? (i !== start && goalFn(i)) : i === goal) { goal = i; break; }
       const x = i % W, z = (i / W) | 0;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const nx = x + dx, nz = z + dz;
         if (!inb(nx, nz)) continue;
         const j = idx(nx, nz), t = tiles[j];
         let c;
-        if (t === T.ROAD || t === T.BRIDGE) c = 0.5;
+        if (t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK) c = 0.5;
         else if (t === T.RIVER) c = 9;
-        else if (t === T.SEA || t === T.DEEP || t === T.PEAK || t === T.BLD || t === T.LAVA) continue;
+        else if (t === T.SEA || t === T.DEEP || t === T.PEAK || t === T.BLD || t === T.LAVA || t === T.WALL || t === T.FENCE || t === T.FIELD || t === T.PASTURE) continue;
         else c = (MOVE_COST[t] || 2) + Math.abs(hgt[j] - hgt[i]) * 2;
         const nc = cost[i] + c;
-        if (nc < cost[j]) { cost[j] = nc; came[j] = i; hp.push(nc + (Math.abs(nx - b.x) + Math.abs(nz - b.z)) * 0.5, j); }
+        if (nc < cost[j]) { cost[j] = nc; came[j] = i; hp.push(nc + (goalFn ? 0 : (Math.abs(nx - b.x) + Math.abs(nz - b.z)) * 0.5), j); }
       }
     }
+    if (goal < 0 || came[goal] === -1) return [];
     const path = [];
-    for (let c = goal; c !== -1 && c !== idx(a.x, a.z); c = came[c]) path.push(c);
-    return came[goal] === -1 ? [] : path;
+    for (let c = goal; c !== -1 && c !== start; c = came[c]) path.push(c);
+    if (goalFn) path.push(start);
+    return path;
   }
-  const roadLinks = [];
-  for (const s of settlements) if (s.type !== 'capital') roadLinks.push([settlements[s.kingdom], s]);
-  roadLinks.push([settlements[0], settlements[1]], [settlements[1], settlements[2]], [settlements[0], settlements[2]]);
-  for (const [a, b] of roadLinks) {
-    for (const i of roadPath(a, b)) {
+  // 道を敷く（川には橋。広場・桟橋・建物はそのまま）
+  function layRoad(path) {
+    for (const i of path) {
       const t = tiles[i];
       if (t === T.RIVER) tiles[i] = T.BRIDGE;
-      else if (t !== T.BLD && t !== T.BRIDGE) tiles[i] = T.ROAD;
+      else if (t !== T.BLD && t !== T.BRIDGE && t !== T.PLAZA && t !== T.DOCK && t !== T.WALL && t !== T.FENCE && t !== T.FIELD && t !== T.PASTURE && !isWater(t) && t !== T.PEAK && t !== T.LAVA) tiles[i] = T.ROAD;
     }
+  }
+  const roadLinks = [];
+  const linked = new Set();
+  const link = (a, b) => { const k = a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`; if (linked.has(k)) return; linked.add(k); roadLinks.push([a, b]); };
+  for (const s of settlements) if (s.type !== 'capital') link(settlements[s.kingdom], s);
+  const capLinks = [[settlements[0], settlements[1]], [settlements[1], settlements[2]], [settlements[0], settlements[2]]];
+  for (const [a, b] of capLinks) link(a, b);
+  // 村や港は、いちばん近いほかの町とも結ぶ（隣村へ抜ける街道）
+  for (const s of settlements) {
+    if (s.type === 'capital') continue;
+    const near = settlements.filter((q) => q !== s && q.kingdom === s.kingdom ? q.type !== 'capital' : q !== s).sort((a, b) => Math.hypot(a.x - s.x, a.z - s.z) - Math.hypot(b.x - s.x, b.z - s.z))[0];
+    if (near && Math.hypot(near.x - s.x, near.z - s.z) < 48) link(s, near);
+  }
+  const capPaths = [];
+  for (const [a, b] of roadLinks) {
+    const path = roadPath(a, b);
+    layRoad(path);
+    if (a.type === 'capital' && b.type === 'capital') capPaths.push({ a, b, path: path.slice().reverse() });
   }
 
   // --- 町の中 ---
@@ -320,9 +363,11 @@ export function generateWorld(rng, seed) {
     const pr = s.type === 'capital' ? 2 : 1;
     for (let z = s.z - pr; z <= s.z + pr; z++) for (let x = s.x - pr; x <= s.x + pr; x++) if (!isWater(get(x, z)) && get(x, z) !== T.BLD) set(x, z, T.PLAZA);
     s.plaza = { x: s.x, z: s.z, r: pr };
+    const failed = [];
     const place = (type, name, w, d, opt = {}) => {
       const b = placeOnStreet(s, type, name, w, d, opt);
-      if (b) s.buildings.push(b.id);
+      if (b) { s.buildings.push(b.id); if (opt.yard) makeYard(b); }
+      else if (opt.retry) failed.push([type, name, w, d, opt]);
       return b;
     };
     if (s.type === 'capital') {
@@ -330,17 +375,20 @@ export function generateWorld(rng, seed) {
       place('market', '市場', 5, 2, { extra: { open: true } });
       place('tavern', '宿屋「黄金の獅子」', 4, 4);
       place('guild', '冒険者ギルド', 4, 4);
-      place('barracks', '兵舎', 5, 3);
-      place('prison', '牢獄', 4, 4, { far: true });
-      place('magictower', s.kingdom === 1 ? '魔法の塔' : '学術院', 3, 3, { far: true });
-      place('mansion', '貴族の屋敷', 5, 4, { far: true });
-      place('mansion', '貴族の屋敷', 5, 4, { far: true });
-      place('bakery', 'パン屋', 3, 3);
-      place('smithy', '鍛冶場', 3, 3);
-      place('workshop', '職人の工房', 3, 3);
-      place('clinic', '診療所', 3, 3);
-      place('school', '学校', 4, 3);
-      place('stable', '厩舎', 4, 2, { far: true });
+      const bar = place('barracks', '兵舎', 5, 3, { retry: true });
+      place('prison', '牢獄', 4, 4, { far: true, retry: true });
+      place('magictower', s.kingdom === 1 ? '魔法の塔' : '学術院', 3, 3, { far: true, retry: true });
+      place('mansion', '貴族の屋敷', 5, 4, { far: true, retry: true });
+      place('mansion', '貴族の屋敷', 5, 4, { far: true, retry: true });
+      if (bar) { const y = place('drillyard', '練兵場', 4, 3, { near: bar.door, extra: { open: true }, yard: true, retry: true }); if (y) s.drillyard = y.id; }
+      place('school', '学校', 4, 3, { retry: true });
+      place('bakery', 'パン屋', 3, 3, { retry: true });
+      place('smithy', '鍛冶場', 3, 3, { retry: true });
+      place('clinic', '診療所', 3, 3, { retry: true });
+      place('workshop', '職人の工房', 3, 3, { retry: true });
+      place('academy', s.kingdom === 2 ? '星詠みの魔法学園' : '王立魔法学園', 5, 4, { far: true, retry: true });
+      place('dojo', '剣術道場', 4, 3, { retry: true });
+      place('stable', '厩舎', 4, 2, { far: true, retry: true });
       s.walls = [];
       for (let i = -R - 1; i <= R + 1; i++) for (const [x, z] of [[s.x + i, s.z - R - 1], [s.x + i, s.z + R + 1], [s.x - R - 1, s.z + i], [s.x + R + 1, s.z + i]]) {
         const t = get(x, z);
@@ -369,21 +417,72 @@ export function generateWorld(rng, seed) {
       place('bakery', 'パン屋', 3, 3);
       place('watchtower', '見張り櫓', 1, 1, { far: true, extra: { open: true } });
     }
-    // 町の出入口（門）：町の外周と道が交わるところ
-    s.gates = [];
-    const RR = s.type === 'capital' ? R + 1 : R;
-    for (const [dx, dz] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-      for (let k = RR; k >= RR - 2; k--) {
-        const x = s.x + dx * k, z = s.z + dz * k;
-        const t = get(x, z);
-        if (t === T.ROAD || t === T.BRIDGE) { s.gates.push({ x, z, dx, dz }); break; }
+    // 町の出入口（門）：町の外周で、外へ道が続いているところ。王都では城壁の切れ目がすべて門になる
+    s.gates = findGates(s);
+    // 門の詰所（王都はすべての門、港町は一番大きな門）。門番と自警団の待機場所
+    s.guardposts = [];
+    for (const g of s.type === 'capital' ? s.gates.filter((q) => q.x === s.x || q.z === s.z) : s.type === 'port' ? s.gates.slice(0, 1) : []) {
+      const b = placeNear(s, g, 'guardpost', '門の詰所', 2, 2, { inside: true }) || placeNear(s, g, 'guardpost', '門の詰所', 2, 2, { inside: false });
+      if (b) { g.post = b.id; s.guardposts.push(b.id); }
+    }
+    // 城下町：王都の門の外、街道ぞいに宿場と門前市を開く。城壁の中に入りきらなかった店もここへ
+    if (s.type === 'capital') {
+      const main = s.gates.filter((g) => g.x === s.x || g.z === s.z);
+      const outside = [...failed, ['tavern', '門前の宿場', 3, 3, {}], ['market', '門前市', 4, 2, { extra: { open: true } }], ['stable', '駅馬車の厩', 3, 2, {}]];
+      let gi = 0;
+      for (const [type, name, w, d, opt] of outside) {
+        let b = null;
+        for (let k = 0; k < main.length && !b; k++) b = placeNear(s, main[(gi + k) % main.length], type, name, w, d, { ...opt, inside: false, reach: 10 });
+        if (!b && opt.retry) for (const g of s.gates) { b = placeNear(s, g, type, name, w, d, { ...opt, inside: false, reach: 14 }); if (b) break; }
+        if (b) { if (opt.yard) makeYard(b); if (type === 'drillyard') s.drillyard = b.id; }
+        else if (opt.retry) s.missing = [...(s.missing || []), type];
+        gi++;
       }
     }
+  }
+  // 練兵場のような「中を歩ける広場」の建物：床は石畳で歩ける
+  function makeYard(b) {
+    for (let z = b.z; z < b.z + b.d; z++) for (let x = b.x; x < b.x + b.w; x++) set(x, z, T.PLAZA);
+    b.yard = true;
+  }
+  function findGates(s) {
+    const RR = s.type === 'capital' ? s.r + 1 : s.r;
+    const out = [];
+    for (let i = -RR; i <= RR; i++) for (const [x, z, dx, dz] of [[s.x + i, s.z - RR, 0, -1], [s.x + i, s.z + RR, 0, 1], [s.x - RR, s.z + i, -1, 0], [s.x + RR, s.z + i, 1, 0]]) {
+      const t = get(x, z), t2 = get(x + dx, z + dz);
+      if (t !== T.ROAD && t !== T.BRIDGE) continue;
+      if (t2 !== T.ROAD && t2 !== T.BRIDGE) continue;
+      if (out.some((g) => Math.abs(g.x - x) + Math.abs(g.z - z) <= 2)) continue;
+      out.push({ x, z, dx, dz });
+    }
+    // 東西南北の真ん中の門を先に
+    out.sort((a, b) => (a.x === s.x || a.z === s.z ? 0 : 1) - (b.x === s.x || b.z === s.z ? 0 : 1));
+    return out;
+  }
+  // 門のそば（inside：城壁の内側 / 外側）の道に面して建物を置く
+  function placeNear(s, g, type, name, w, d, opt = {}) {
+    const RR = s.type === 'capital' ? s.r + 1 : s.r;
+    const reach = opt.reach || 5;
+    const streets = [];
+    for (let z = g.z - reach; z <= g.z + reach; z++) for (let x = g.x - reach; x <= g.x + reach; x++) {
+      const t = get(x, z);
+      if (t !== T.ROAD && t !== T.PLAZA && t !== T.BRIDGE) continue;
+      const cheb = Math.max(Math.abs(x - s.x), Math.abs(z - s.z));
+      if (opt.inside ? cheb >= RR : cheb <= RR) continue;
+      streets.push({ x, z, d: Math.abs(x - g.x) + Math.abs(z - g.z) + rng.next() });
+    }
+    streets.sort((a, b) => a.d - b.d);
+    const proxy = { x: s.x, z: s.z, r: opt.inside ? RR - 1 : RR + reach + 2, id: s.id, kingdom: s.kingdom };
+    const b = tryPlace(world0(), proxy, streets, type, name, w, d, opt, rng, opt.inside ? null : RR);
+    if (globalThis.DBG && type === 'guardpost') console.log('gp', s.name, g.x - s.x, g.z - s.z, opt.inside, streets.length, !!b, JSON.stringify(streets.slice(0, 4).map((q) => [q.x - s.x, q.z - s.z])));
+    if (b) s.buildings.push(b.id);
+    return b;
   }
   function placeOnStreet(s, type, name, w, d, opt = {}) {
     const R = s.r + (s.extraR || 0);
     const streets = [];
     for (let z = s.z - R; z <= s.z + R; z++) for (let x = s.x - R; x <= s.x + R; x++) if (get(x, z) === T.ROAD || get(x, z) === T.PLAZA) streets.push({ x, z, d: Math.abs(x - s.x) + Math.abs(z - s.z) + (opt.jitter ? rng.next() * opt.jitter : rng.next()) });
+    if (opt.near) for (const q of streets) q.d = Math.abs(q.x - opt.near.x) + Math.abs(q.z - opt.near.z) + rng.next();
     streets.sort((a, b) => (opt.far ? b.d - a.d : a.d - b.d));
     return tryPlace(world0(), s, streets, type, name, w, d, opt, rng);
   }
@@ -407,34 +506,78 @@ export function generateWorld(rng, seed) {
     }
   }
 
-  // 畑・牧場（村の外側）
+  // 畑・牧場（町の外側）。森を切り開いて畑にすることもある。広い土地がなければ小さな畑を
   const fields = [], pastures = [];
+  const FIELD_LAND = [T.GRASS, T.SAVANNA, T.FOREST, T.DENSE];
+  const makePlot = (s, x0, z0, w, dd, pasture, fence = true) => {
+    for (let z = z0; z < z0 + dd; z++) for (let x = x0; x < x0 + w; x++) {
+      const edge = fence && (x === x0 || z === z0 || x === x0 + w - 1 || z === z0 + dd - 1);
+      const i = idx(x, z);
+      hgt[i] = hgt[idx(x0, z0)];
+      if (edge) set(x, z, (x === x0 + 1 && z === z0) ? T.GRASS : T.FENCE);
+      else if (pasture) { set(x, z, T.PASTURE); pastures.push({ x, z, s: s.id }); }
+      else { set(x, z, T.FIELD); fields.push({ x, z, s: s.id }); }
+    }
+    if (pasture) s.ranch = { x0: x0 + 1, z0: z0 + 1, x1: x0 + w - 2, z1: z0 + dd - 2 };
+  };
   for (const s of settlements) {
     const nField = s.type === 'village' ? 4 : s.type === 'capital' ? 3 : 1;
+    const RR = s.type === 'capital' ? s.r + 1 : s.r;
     let made = 0;
-    for (let tries = 0; tries < 300 && made < nField; tries++) {
-      const a = rng.next() * Math.PI * 2, d = s.r + rng.range(3, 9);
+    for (let tries = 0; tries < 500 && made < nField; tries++) {
+      const small = tries >= 250;
+      const a = rng.next() * Math.PI * 2, d = RR + rng.range(2, small ? 13 : 10);
       const x0 = Math.round(s.x + Math.cos(a) * d), z0 = Math.round(s.z + Math.sin(a) * d);
-      const w = rng.int(5, 8), dd = rng.int(4, 6);
-      if (!free(x0 - 1, z0 - 1, x0 + w, z0 + dd, [T.GRASS, T.SAVANNA, T.FOREST])) continue;
-      const pasture = s.type === 'village' && made === 0;
-      for (let z = z0; z < z0 + dd; z++) for (let x = x0; x < x0 + w; x++) {
-        const edge = x === x0 || z === z0 || x === x0 + w - 1 || z === z0 + dd - 1;
-        const i = idx(x, z);
-        hgt[i] = hgt[idx(x0, z0)];
-        if (edge) set(x, z, (x === x0 + 1 && z === z0) ? T.GRASS : T.FENCE);
-        else if (pasture) { set(x, z, T.PASTURE); pastures.push({ x, z, s: s.id }); }
-        else { set(x, z, T.FIELD); fields.push({ x, z, s: s.id }); }
-      }
-      if (pasture) {
-        s.ranch = { x0: x0 + 1, z0: z0 + 1, x1: x0 + w - 2, z1: z0 + dd - 2 };
-      }
+      const w = small ? rng.int(4, 5) : rng.int(5, 8), dd = small ? rng.int(3, 4) : rng.int(4, 6);
+      if (!free(x0 - 1, z0 - 1, x0 + w, z0 + dd, FIELD_LAND)) continue;
+      // 城壁や家並みに食い込まない
+      if (Math.max(Math.abs(x0 - 1 - s.x), Math.abs(z0 - 1 - s.z)) <= RR && Math.max(Math.abs(x0 + w - s.x), Math.abs(z0 + dd - s.z)) <= RR) continue;
+      if (!(x0 - 1 > s.x + RR || x0 + w < s.x - RR || z0 - 1 > s.z + RR || z0 + dd < s.z - RR)) continue;
+      makePlot(s, x0, z0, w, dd, s.type === 'village' && made === 0 && !s.ranch);
       made++;
+    }
+    // 外に土地がない村・港は、町はずれの空き地を畑にする（柵なし）
+    if (made === 0 && s.type !== 'capital') {
+      const cands = [];
+      for (let z0 = s.z - s.r; z0 <= s.z + s.r - 2; z0++) for (let x0 = s.x - s.r; x0 <= s.x + s.r - 2; x0++) {
+        if (!free(x0, z0, x0 + 2, z0 + 2, [T.GRASS, T.SAVANNA])) continue;
+        cands.push({ x0, z0, d: Math.max(Math.abs(x0 + 1 - s.x), Math.abs(z0 + 1 - s.z)) + rng.next() });
+      }
+      cands.sort((a, b) => b.d - a.d);
+      for (const c of cands) {
+        if (made >= 2) break;
+        if (!free(c.x0, c.z0, c.x0 + 2, c.z0 + 2, [T.GRASS, T.SAVANNA])) continue;
+        makePlot(s, c.x0, c.z0, 3, 3, false, false);
+        made++;
+      }
     }
   }
 
-  // --- 特別な場所 ---
+  // 国境の砦：王都どうしを結ぶ街道が国境を越えるあたりに、それぞれの国が砦を置く
+  const forts = [];
   const specials = [];
+  const dirName = (from, x, z) => { const a = Math.atan2(z - from.z, x - from.x); const k = Math.round(a / (Math.PI / 2)); return ['東', '南', '西', '北', '西'][(k + 4) % 4 === 3 ? 3 : (k + 4) % 4]; };
+  for (const { a, b, path } of capPaths) {
+    if (path.length < 10) continue;
+    let cross = path.findIndex((i) => kingdomOf[i] !== a.kingdom && kingdomOf[i] >= 0);
+    if (cross < 0) cross = Math.floor(path.length / 2);
+    for (const [s, from, to] of [[a, Math.max(0, cross - 9), cross - 2], [b, cross + 2, Math.min(path.length - 1, cross + 9)]]) {
+      const streets = [];
+      for (let k = from; k <= to; k++) {
+        const i = path[k]; const x = i % W, z = (i / W) | 0;
+        if (tiles[i] !== T.ROAD) continue;
+        if (settlements.some((q) => Math.max(Math.abs(q.x - x), Math.abs(q.z - z)) <= q.r + 5)) continue;
+        streets.push({ x, z });
+      }
+      if (!streets.length) continue;
+      const mid = streets[Math.floor(streets.length / 2)];
+      const proxy = { x: mid.x, z: mid.z, r: 8, id: undefined, kingdom: s.kingdom };
+      const other = KINGDOMS[s === a ? b.kingdom : a.kingdom].name.replace('王国', '');
+      const f = tryPlace(world0(), proxy, streets, 'fort', `${KINGDOMS[s.kingdom].name.replace('王国', '')}の${dirName(s, mid.x, mid.z)}の砦`, 3, 3, { extra: { special: true, fort: true, faces: other, capital: s.id } }, rng);
+      if (f) { forts.push(f.id); specials.push(f.id); }
+    }
+  }
+  // --- 特別な場所 ---
   const farFromTowns = (x, z, d) => settlements.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + d);
   function findSite(pred, n = 3000) {
     let best = null, bs = -Infinity;
@@ -448,7 +591,7 @@ export function generateWorld(rng, seed) {
   const addSpecial = (type, name, site, w, d, extra = {}) => {
     if (!site) return null;
     const door = { x: site.x + Math.floor(w / 2), z: site.z + d };
-    if (!walkable(get(door.x, door.z)) || get(door.x, door.z) === T.BLD) return null;
+    if (!walkable(get(door.x, door.z)) || get(door.x, door.z) === T.BLD || !onMain(door.x, door.z)) return null;
     const b = addBuilding(type, name, site.x, site.z, w, d, door, { face: 'S', special: true, kingdom: kingdomOf[idx(site.x, site.z)], ...extra });
     specials.push(b.id);
     return b;
@@ -523,15 +666,71 @@ export function generateWorld(rng, seed) {
     addSpecial('ruins', ['古代都市の遺跡', '忘れられた神殿'][k], site, 3, 3);
   }
 
+  // 開拓地：それぞれの国で、村から少し離れた手つかずの土地に開拓者の小屋と小さな畑を置く（道はまだない）
+  const camps = [];
+  KINGDOMS.forEach((K, ki) => {
+    const vills = settlements.filter((q) => q.kingdom === ki && q.type !== 'capital');
+    if (!vills.length) return;
+    const site = findSite((x, z) => {
+      if (kingdomOf[idx(x, z)] !== ki || !onMain(x, z)) return null;
+      if (!okBox(x - 1, z - 1, 7, 5, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE])) return null;
+      if (!farFromTowns(x, z, 9) || specials.some((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) < 12)) return null;
+      const dv = Math.min(...vills.map((v) => Math.hypot(v.x - x, v.z - z)));
+      if (dv > 34) return null;
+      let river = 0, road = 0;
+      for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) { const t = get(x + dx, z + dz); if (t === T.RIVER) river++; if (t === T.ROAD) road++; }
+      if (road) return null;
+      return Math.min(river, 3) * 2 - Math.abs(dv - 22) * 0.2 + rng.next();
+    }, 3000);
+    if (!site) return;
+    const home = vills.slice().sort((a, b) => Math.hypot(a.x - site.x, a.z - site.z) - Math.hypot(b.x - site.x, b.z - site.z))[0];
+    const b = addSpecial('camp', `${home.name.replace(/村$/, '')}開拓地の小屋`, site, 2, 2, { kingdom: ki, home: home.id, camp: true });
+    if (!b) return;
+    camps.push(b.id);
+    // 切り開いたばかりの小さな畑（小屋の東）
+    const fx = site.x + 3, fz = site.z;
+    if (free(fx, fz, fx + 2, fz + 1, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE])) for (let z = fz; z < fz + 2; z++) for (let x = fx; x < fx + 3; x++) { set(x, z, T.FIELD); hgt[idx(x, z)] = hgt[idx(site.x, site.z)]; fields.push({ x, z, s: home.id, camp: b.id }); }
+  });
+
+  // --- 道の網を仕上げる：町・特別な場所・砦を、すべて王都から道でたどれるようにする ---
+  const roadNet = new Uint8Array(N);
+  const ROADISH = (t) => t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK;
+  const growNet = (i0) => {
+    if (roadNet[i0] || !ROADISH(tiles[i0])) return;
+    const st = [i0]; roadNet[i0] = 1;
+    while (st.length) {
+      const i = st.pop(); const x = i % W, z = (i / W) | 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, nz = z + dz; if (!inb(nx, nz)) continue; const j = idx(nx, nz); if (!roadNet[j] && ROADISH(tiles[j])) { roadNet[j] = 1; st.push(j); } }
+    }
+  };
+  growNet(idx(settlements[0].x, settlements[0].z));
+  const connect = (x, z) => {
+    if (roadNet[idx(x, z)]) return true;
+    const path = roadPath({ x, z }, null, (i) => roadNet[i] === 1);
+    if (!path.length) return false;
+    layRoad(path);
+    for (const i of path) growNet(i);
+    growNet(idx(x, z));
+    return true;
+  };
+  for (const s of settlements) if (!roadNet[idx(s.x, s.z)]) { connect(s.x, s.z); growNet(idx(s.x, s.z)); }
+  for (const s of settlements) for (const g of s.gates || []) if (!roadNet[idx(g.x, g.z)]) connect(g.x, g.z);
+  const unlinked = [];
+  for (const id of specials) {
+    const b = buildings[id];
+    if (b.camp) continue; // 開拓地への道は、これから道普請が造る
+    if (!connect(b.door.x, b.door.z)) unlinked.push(b.name);
+  }
+
   return {
     W, H, tiles: Array.from(tiles), hgt: Array.from(hgt), kingdomOf: Array.from(kingdomOf), bldAt: Array.from(bldAt),
-    buildings, settlements, specials, demon, demonR, fields, pastures, rivers: rivers.length,
+    buildings, settlements, specials, demon, demonR, fields, pastures, rivers: rivers.length, forts, camps, unlinked,
     placeHouse: null,
   };
 }
 
 // 通りに面した場所に建物を置く（扉の前は小道にして、ほかの建物がふさがないようにする）
-export function tryPlace(w, s, streets, type, name, bw, bd, opt, rng) {
+export function tryPlace(w, s, streets, type, name, bw, bd, opt, rng, minOut = null) {
   const { tiles, hgt, bldAt, buildings } = w;
   const inb = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
   const get = (x, z) => (inb(x, z) ? tiles[z * W + x] : T.DEEP);
@@ -550,6 +749,7 @@ export function tryPlace(w, s, streets, type, name, bw, bd, opt, rng) {
       else { x0 = doorX + 1; z0 = doorZ - Math.floor(fd / 2); }
       if (!land.includes(get(doorX, doorZ))) continue;
       if (Math.max(Math.abs(x0 - s.x), Math.abs(z0 - s.z), Math.abs(x0 + fw - 1 - s.x), Math.abs(z0 + fd - 1 - s.z)) > R) continue;
+      if (minOut != null && !(x0 > s.x + minOut || x0 + fw - 1 < s.x - minOut || z0 > s.z + minOut || z0 + fd - 1 < s.z - minOut)) continue;
       let ok = true;
       for (let z = z0; z < z0 + fd && ok; z++) for (let x = x0; x < x0 + fw; x++) if (!land.includes(get(x, z))) { ok = false; break; }
       if (!ok) continue;

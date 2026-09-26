@@ -342,7 +342,9 @@ function quad(P, o, view, fr) {
     else { leg(backX + lw, farC, false, lg[3], true); leg(frontX + lw, farC, false, lg[2], false); }
     const tx = x0, ty = bt + 1, tc = o.tailCol || col, tl = o.tailLen || 0;
     const sw = Q.tail ?? (fr === 1 ? 0 : fr === 0 ? 1 : -1); // 尾の揺れ
-    switch (o.tail) {
+    const flatTail = lie && !['short', 'up', 'cotton', 'curly', 'squirrel'].includes(o.tail);
+    if (flatTail) { P.line(tx - 1, ty + 1, tx - 4 - tl, G, tc); P.line(tx - 4 - tl, G, tx - 6 - tl - (o.tail === 'horse' || o.tail === 'long' ? 2 : 0), G, tc); } // 寝そべると尾は地面へ
+    else switch (o.tail) {
       case 'thin': P.line(tx, ty, tx - 2, ty + 3 + sw, tc); break;
       case 'short': P.rect(tx - 1, ty - 1, 1, 2, tc); break;
       case 'up': P.rect(tx - 1, ty - 2, 1, 2, tc); break;
@@ -418,6 +420,7 @@ function quad(P, o, view, fr) {
   };
   const tail = () => {
     const tc = o.tailCol || col, ty = bt + 1, tl = o.tailLen || 0, sw = Q.tail ?? (fr === 1 ? 0 : fr === 0 ? 1 : -1);
+    if (lie && !['short', 'up', 'cotton', 'curly', 'squirrel'].includes(o.tail)) { P.line(CX, ty, CX + 3, G, tc); P.px(CX + 4, G, tc); return; }
     switch (o.tail) {
       case 'thin': P.line(CX, ty, CX + sw, ty + 4, tc); break;
       case 'short': case 'up': P.rect(CX - 1, bt - 1, 2, 2, tc); break;
@@ -2298,8 +2301,8 @@ function crumble(P, t, bs, An) {
   const e = t * t * (3 - 2 * t);
   const out = new Array(P.w * P.h).fill(null);
   for (const k of blocks) {
-    const jit = Math.round((hash01(k.bx, k.by) - 0.5) * 3);
-    const nx = Math.max(1, Math.min(P.w - bs - 1, k.bx + Math.round((k.bx + bs / 2 - CX) * 0.45) + jit));
+    const jit = Math.round((hash01(k.bx, k.by) - 0.5) * 8);
+    const nx = Math.max(1, Math.min(P.w - bs - 1, k.bx + Math.round((k.bx + bs / 2 - CX) * 1.2) + jit));
     const low = new Array(bs).fill(-1), high = new Array(bs).fill(99);
     for (const [i, j] of k.px) { if (j > low[i]) low[i] = j; if (j < high[i]) high[i] = j; }
     let ny = 999; for (let i = 0; i < bs; i++) if (low[i] >= 0) ny = Math.min(ny, top[nx + i] - 1 - low[i]);
@@ -2338,7 +2341,7 @@ function glyph(P, rows, x, y, c, oc = OUT) {
   for (let j = -1; j <= rows.length; j++) for (let i = -1; i <= rows[0].length; i++) if (!on(i, j) && (on(i + 1, j) || on(i - 1, j) || on(i, j + 1) || on(i, j - 1))) P.px(x + i, y + j, oc);
   for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[0].length; i++) if (on(i, j)) P.px(x + i, y + j, c);
 }
-const G_Z = ['###', '.#.', '###'], G_ZZ = ['####', '..#.', '.#..', '####'], G_BANG = ['#', '#', '#', '.', '#'];
+const G_Z = ['####', '..#.', '.#..', '####'], G_ZZ = ['#####', '...#.', '..#..', '.#...', '#####'], G_BANG = ['#', '#', '#', '.', '#'];
 const G_STAR = ['.#.', '###', '.#.'], G_NOTE = ['.##', '.#.', '##.'];
 function headTop(An) { return [An.head ? Math.round(An.head[0] + An.head[2] / 2) : CX, An.top != null ? An.top : GROUND - 20]; }
 function star(P, x, y, r, c1 = '#ffffff', c2 = '#ffe070') {
@@ -2465,6 +2468,7 @@ const FX = {
     const sx = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.3 : 0.7)) : b[0] + b[2] + 1, sy = b[1] - 2;
     P.line(sx, sy, sx + 3, sy + 3 - (k & 1), '#b8bcc4'); P.line(sx + 3, sy, sx, sy + 3, '#d8dce4'); P.px(sx - 1, sy - 1, '#8a3a2a');
   },
+  bucket(P, An, view, face, k) { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; const x = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.45 : 0.55)) - 2 : CX + 3; P.rect(x, GROUND - 3, 5, 4, '#8a6a40'); P.rect(x, GROUND - 2, 5, 1, '#5a4a3a'); P.rect(x + 1, GROUND - 3, 3, 1, '#f8f8f0'); },
   milk(P, An, view, face, k) { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; const x = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.45 : 0.55)) : CX + 4; const y = b[1] + b[3]; P.px(x, y + 1 + (k % 3), '#ffffff'); if (k % 3 === 1) P.px(x, y + 3, '#f0f0f0'); },
   letter(P, An, view, face, k) { const [x, y] = An.hand || headTop(An); P.rect(x - 1, y - 3, 4, 3, '#f0e8d0'); P.px(x, y - 2, '#c02030'); },
   rock(P, An, view, face, k) { const [hx, ty] = headTop(An); P.ell(hx, ty - 3, 5, 3.5, '#8a847a'); P.ell(hx - 1, ty - 4, 3, 2, '#a8a498'); P.px(hx + 2, ty - 2, '#6a645a'); },
@@ -2490,7 +2494,6 @@ const UNDER = {
     U.px(CX, top + 1, '#ff2030');
   },
   nest(U, An, view, face, k) { U.ell(CX, GROUND - 1, 7, 2.5, '#a8804a'); for (let x = CX - 6; x <= CX + 6; x += 2) U.px(x, GROUND - 2 - ((x >> 1) & 1), '#c8a060'); U.ell(CX - 5, GROUND - 2, 1.4, 1.6, '#f8f0e0'); U.ell(CX + 5, GROUND - 2, 1.4, 1.6, '#f4e8d0'); },
-  bucket(U, An, view, face, k) { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; const x = view === 'S' ? b[0] + Math.round(b[2] * (face > 0 ? 0.45 : 0.55)) - 2 : CX + 3; U.rect(x, GROUND - 3, 5, 4, '#8a6a40'); U.rect(x, GROUND - 2, 5, 1, '#5a4a3a'); U.rect(x + 1, GROUND - 3, 3, 1, '#f8f8f0'); },
   plow(U, An, view, face, k) { // すき（牛の後ろ）
     if (view !== 'S') { const b = An.body || [CX - 6, GROUND - 10, 12, 7]; U.rect(b[0] - 3, b[1] - 1, b[2] + 6, 2, '#7a5230'); return; }
     const b = An.body; const bx = face > 0 ? b[0] : b[0] + b[2] - 1, by = b[1] + Math.round(b[3] / 2);
@@ -2508,7 +2511,7 @@ const UNDER = {
   web(U, An, view, face, k) { const cx = CX, cy = GROUND - 16, r = 5 + Math.min(k, 3) * 3; for (let a = 0; a < 8; a++) { const t = a * Math.PI / 4; U.line(cx, cy, cx + Math.round(Math.cos(t) * r * 1.3), cy + Math.round(Math.sin(t) * r), '#d8d8e4'); } for (let ring = 3; ring <= r; ring += 3) for (let a = 0; a < 8; a++) { const t1 = a * Math.PI / 4, t2 = (a + 1) * Math.PI / 4; U.line(cx + Math.round(Math.cos(t1) * ring * 1.3), cy + Math.round(Math.sin(t1) * ring), cx + Math.round(Math.cos(t2) * ring * 1.3), cy + Math.round(Math.sin(t2) * ring), '#c8c8d8'); } },
   puddle(U, An, view, face, k, col = '#4fc3e8') { const w = 8 + k * 3; U.ell(CX, GROUND, w, 1.6, col); U.rect(CX - Math.round(w / 2), GROUND - 1, 2, 1, lt(col, 0.2)); },
   circle(U, An, view, face, k, color = '#80f0a0') { for (let a = 0; a < 40; a++) { const t = a * Math.PI / 20 + k * 0.2; const x = CX + Math.round(Math.cos(t) * 12), y = GROUND - 1 + Math.round(Math.sin(t) * 2.5); U.px(x, y, a % 5 === 0 ? '#ffffff' : color); } for (let a = 0; a < 5; a++) { const t = a * Math.PI * 2 / 5 + k * 0.2; U.px(CX + Math.round(Math.cos(t) * 7), GROUND - 1 + Math.round(Math.sin(t) * 1.4), '#ffffff'); } },
-  branch(U, An, view, face, k) { const [hx] = headTop(An); const y = (An.body ? An.body[1] : 40) - 2; U.rect(hx - 8, y, 16, 2, '#6a4a2a'); U.px(hx + 6, y - 1, '#4a8a3a'); U.px(hx - 7, y - 1, '#4a8a3a'); },
+  branch(U, An, view, face, k) { const bb = An.bb || [CX - 4, 40, CX + 4, 50]; const hx = Math.round((bb[0] + bb[2]) / 2), y = bb[1] - 2; U.rect(hx - 8, y, 16, 2, '#6a4a2a'); U.px(hx + 6, y - 1, '#4a8a3a'); U.px(hx - 7, y - 1, '#4a8a3a'); },
   mud(U, An, view, face, k) { U.ell(CX, GROUND, 9, 1.4, '#6a4a2a'); U.px(CX - 4, GROUND - 1, '#8a6a40'); },
   sled(U, An, view, face, k) { if (view !== 'S') return; const b = An.body; const bx = face > 0 ? b[0] : b[0] + b[2] - 1; const sx = bx - face * 7; U.line(bx, b[1] + 3, sx, GROUND - 3, '#7a5230'); U.rect(Math.min(sx, sx - face * 9), GROUND - 5, 10, 4, '#a0342a'); U.rect(Math.min(sx, sx - face * 9) - 1, GROUND, 12, 1, '#c8a040'); U.px(face > 0 ? sx - 10 : sx + 10, GROUND - 1, '#c8a040'); },
 };
@@ -2615,7 +2618,7 @@ function quadWork(x) {
     case 'sled': return walk([['sled']], [], 200);
     case 'saddle': return walk([], [], 130, { hdy: -1 });
     case 'load': return walk([], [['sparkle', '#e8d8b0']], 240, { hdy: 1 });
-    case 'milk': return { loop: true, frames: [f(1, { tail: 1 }, { under: [['bucket']], fx: [['milk']], d: 260 }), f(1, { tail: 0 }, { under: [['bucket']], fx: [['milk']], d: 260 }), f(1, { tail: -1 }, { under: [['bucket']], fx: [['milk']], d: 260 }), f(1, { tail: 0, eyes: 'closed' }, { under: [['bucket']], d: 200 })] };
+    case 'milk': return { loop: true, frames: [f(1, { tail: 1 }, { fx: [['bucket'], ['milk']], d: 260 }), f(1, { tail: 0 }, { fx: [['bucket'], ['milk']], d: 260 }), f(1, { tail: -1 }, { fx: [['bucket'], ['milk']], d: 260 }), f(1, { tail: 0, eyes: 'closed' }, { fx: [['bucket']], d: 200 })] };
     case 'shear': return { loop: true, frames: [f(1, { hdy: 1 }, { fx: [['wool']], d: 260 }), f(1, { hdy: 1, eyes: 'closed' }, { fx: [['wool']], d: 260 }), f(1, { hdy: 1 }, { fx: [['wool']], d: 260 })] };
     case 'root': return { loop: true, frames: [f(1, { hg: 1, mouth: true }, { under: [['mud']], fx: [['dirt']], d: 200 }), f(1, { hg: 0.9, tail: 1 }, { under: [['mud']], d: 200 }), f(1, { hg: 1, mouth: true }, { under: [['mud']], fx: [['dirt']], pre: [['fwd', 1]], d: 200 }), f(1, { hg: 0.9, tail: -1 }, { under: [['mud']], d: 200 })] };
     case 'browse': return { loop: true, frames: [f(1, { hdy: -3, mouth: true }, { fx: [['leaves']], d: 300 }), f(1, { hdy: -4 }, { fx: [['leaves']], d: 260 }), f(1, { hdy: -3, mouth: true, tail: 1 }, { fx: [['leaves']], d: 300 })] };
@@ -2681,8 +2684,8 @@ function specFlyer(anim, x) {
     case 'dead': return { ground: true, air: false, loop: false, frames: [
       f(1, { ang: -0.9, eyes: 'closed' }, { pre: [['settle'], ['lift', 22]], post: [['tint', '#ffffff', 0.4]], d: 110 }),
       f(1, { ang: 0.55, eyes: 'closed' }, { pre: [['rot', 60, 'c', 'S'], ['settle'], ['lift', 11]], d: 110 }),
-      f(1, { ang: -0.15, eyes: 'closed' }, { pre: [['rot', 90, 'c', 'S'], ['settle']], fx: [['dust']], d: 170 }),
-      f(1, { ang: -0.15, eyes: 'closed' }, { pre: [['rot', 90, 'c', 'S'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
+      f(1, { ang: 0.3, eyes: 'closed' }, { pre: [['rot', 180, 'c', 'S'], ['settle']], fx: [['dust']], d: 170 }),
+      f(1, { ang: 0.3, eyes: 'closed' }, { pre: [['rot', 180, 'c', 'S'], ['settle']], post: [['gray', 0.35]], d: HOLD })] };
     case 'graze': case 'work': case 'eat':
       if (anim === 'eat' && (raptor || sp === 'crow' || sp === 'seagull')) return { loop: true, frames: [f(1, { ...P1, hg: 0.9, mouth: true }, { fx: [['meat']], d: 200 }), f(1, { ...P1, hg: 1 }, { fx: [['meat']], d: 180 }), f(1, { ...P1, hg: 0.5, mouth: true }, { fx: [['meat']], d: 240 })] };
       if (anim === 'work' && raptor) return specFlyer('guard', x);
@@ -3075,6 +3078,7 @@ function drawLayer(list, tbl, P0, An, view, face, k) {
 }
 function compose(base, An, view, face, k, frame) {
   let out = base;
+  An.bb = base.bbox();
   if (frame.under && frame.under.length) {
     const U = new Pix(SW, SH);
     for (const [name, ...args] of frame.under) { const fn = UNDER[name]; if (fn) fn(U, An, view, face, k, ...(name === 'puddle' && !args.length ? [An.col] : args)); }
