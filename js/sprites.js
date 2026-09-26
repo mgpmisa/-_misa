@@ -321,7 +321,7 @@ export function drawPerson(p, opts = {}) {
   const brows = browsR < 0.3;
   const eyepatch = eyepatchR < (outfit === 'sailor' || outfit === 'thief' ? 0.2 : outfit === 'adventurer' ? 0.08 : 0);
   const glasses = outfit === 'scholar' || (glassesR < 0.06 && age > 30);
-  const pantsJobs = ['knight', 'soldier', 'guard', 'thief', 'adventurer', 'hunter', 'sailor', 'fisher', 'miner', 'woodcutter', 'smith', 'prisoner', 'jailer'];
+  const pantsJobs = ['knight', 'soldier', 'guard', 'thief', 'adventurer', 'hunter', 'sailor', 'fisher', 'miner', 'woodcutter', 'smith', 'prisoner', 'jailer', 'general', 'royalguard', 'warrior', 'archer', 'paladin', 'pirate', 'smuggler', 'banditchief', 'pickpocket', 'diver', 'charcoal', 'mason', 'stablehand', 'messenger', 'watchman', 'captain', 'shipwright'];
   const skirt = f && (!pantsJobs.includes(outfit) ? skirtR < 0.85 : skirtR < 0.15);
   const dirt = outfit === 'miner' || outfit === 'beggar' || (outfit === 'smith' && dirtR < 0.6);
   const cane = stage === 'elder' && caneR < 0.45;
@@ -330,7 +330,9 @@ export function drawPerson(p, opts = {}) {
 
   // ---- 服装の設定
   let top = shirt, bottom = pants, sleeve = null, hat = casualHat, hatC = hatCol, long = null, barefoot = false, item = null;
-  let overlay = null, capeC = null, hood = null, helmet = null, mask = false, stripes = null, apron = null, shield = null, tabard = false;
+  let overlay = null, capeC = null, hood = null, helmet = null, mask = false, stripes = null, apron = null, shield = null, tabard = false, forcePatch = false, plumeGold = false;
+  let accentOverride = null, forceGlasses = false, forceSkirt = false, dirtForce = false, scarfForce = null;
+  const skinTop = () => skin;
   switch (outfit) {
     case 'king': top = rich('#b0282a'); long = top; capeC = rich('#8a1a22'); hat = 'crown'; item = itemRoll < 0.5 ? 'scepter' : null; overlay = 'ermine'; break;
     case 'royal': top = rich(pickBy(['#3a4ab0', '#2a7a5a', '#8a2a6a', '#b04a6a', '#d8d0e8'], o1)); long = f ? top : null; bottom = rich('#e8e0d0');
@@ -367,9 +369,73 @@ export function drawPerson(p, opts = {}) {
     case 'prisoner': stripes = ['#2a2a2a', '#e8e4d8']; bottom = null; barefoot = o2 < 0.5; overlay = 'shackle'; hat = null; break;
     case 'royalkid': top = rich(pickBy(['#3a4ab0', '#8a2a6a', '#d8d0e8', '#2a7a5a'], o1)); hat = 'circlet'; overlay = 'goldtrim'; long = f ? top : null; break;
     case 'noblekid': top = rich(pickBy(['#5a2a8a', '#2a3a8a', '#1a4a6a'], o1)); overlay = 'goldbtn'; break;
+    // ---- 宮廷
+    case 'chancellor': top = rich('#2a2a4a'); long = top; overlay = 'goldtrim'; hat = 'beret'; hatC = rich('#1a1a2a'); item = 'scroll'; break;
+    case 'treasurer': top = rich('#2a5a3a'); long = f ? top : null; bottom = rich('#2a2a2a'); overlay = 'goldbtn'; hat = o2 < 0.5 ? 'beret' : null; hatC = rich('#1a3a2a'); item = 'purse'; break;
+    case 'general': top = STEEL; bottom = '#9aa0aa'; helmet = 'open'; overlay = 'plate'; tabard = true; capeC = rich('#a01a22'); item = 'sword'; plumeGold = true; hat = null; break;
+    case 'royalguard': top = STEEL; bottom = '#9aa0aa'; helmet = 'closed'; overlay = 'plate'; tabard = true; accentOverride = rich('#2a3a9a'); capeC = rich('#2a3a8a'); item = 'spear'; hat = null; break;
+    case 'courtmage': top = rich(pickBy(['#4a2a8a', '#2a3a8a', '#6a1a4a'], o1)); long = top; hat = 'wizard'; hatC = top; item = 'staff'; overlay = 'goldtrim'; break;
+    case 'butler': top = '#f0f0f0'; overlay = 'butler'; bottom = '#2a2a30'; hat = null; if (f) { top = rich('#2a2a34'); long = top; apron = '#f4f4f4'; hat = 'katyusha'; overlay = null; } break;
+    case 'maid': top = rich('#2a2a34'); long = f ? top : null; apron = '#f4f4f4'; hat = f ? 'katyusha' : null; break;
+    case 'cook': top = '#f0ece0'; hat = 'chef'; apron = '#ffffff'; item = 'ladle'; break;
+    case 'gardener': top = rich('#5a7a3a'); apron = rich('#6a8a4a'); hat = o2 < 0.5 ? 'straw' : 'cap'; hatC = rich('#4a6a2a'); item = 'shears'; break;
+    case 'jester': top = rich('#d03030'); overlay = 'split'; hat = 'jester'; hatC = rich('#e8c030'); break;
+    // ---- 町
+    case 'doctor': top = '#f0f0ec'; long = top; bottom = rich('#2a2a3a'); overlay = 'coat'; item = 'bag'; hat = null; break;
+    case 'herbalist': top = rich('#4a7a3a'); apron = rich('#8a6a3a'); item = 'herbs'; hat = o2 < 0.5 ? 'kerchief' : null; hatC = rich('#6a8a3a'); break;
+    case 'midwife': top = rich('#8a6a5a'); apron = '#f4f4f0'; hat = 'kerchief'; hatC = '#f4f4f0'; break;
+    case 'teacher': overlay = 'vest'; item = 'book'; break;
+    case 'scribe': top = rich('#5a4a3a'); long = top; item = 'scroll'; hat = o2 < 0.4 ? 'beret' : null; break;
+    case 'changer': overlay = 'vest'; hat = 'beret'; hatC = rich('#3a2a1a'); item = 'purse'; break;
+    case 'butcher': top = rich('#d8d0c0'); apron = '#f4f0ec'; overlay = 'blood'; item = 'cleaver'; break;
+    case 'brewer': apron = rich('#6a4a2a'); item = 'mug'; hat = o2 < 0.4 ? 'knit' : null; break;
+    case 'cobbler': apron = rich('#4a3222'); item = 'hammer'; break;
+    case 'potter': apron = rich('#a06a4a'); sleeve = 'bare'; item = 'pot'; overlay = 'clay'; break;
+    case 'weaver': overlay = 'tape'; top = rich(pickBy(CLOTH, o1)); item = 'yarn'; hat = o2 < 0.4 ? 'kerchief' : null; break;
+    case 'jeweler': overlay = 'vest'; item = 'gem'; hat = o2 < 0.5 ? 'beret' : null; break;
+    case 'alchemist': top = rich(pickBy(['#3a5a3a', '#5a3a2a', '#3a3a5a'], o1)); long = top; apron = rich('#6a5a3a'); item = 'flask'; forceGlasses = true; break;
+    case 'fortune': hood = rich(pickBy(['#6a2a8a', '#3a2a6a', '#8a2a4a'], o1)); top = rich(pickBy(['#4a1a6a', '#2a1a4a'], o2)); long = top; overlay = 'stars'; item = 'orb'; break;
+    case 'painter': top = rich('#e8e0d0'); overlay = 'paint'; hat = 'beret'; hatC = rich(pickBy(['#8a2a2a', '#2a2a6a', '#1a1a1a'], o2)); item = 'brush'; break;
+    case 'musician': top = rich(pickBy(['#3a5ab0', '#8a3a8a', '#c09a2a'], o1)); overlay = 'goldbtn'; hat = o2 < 0.5 ? 'feathercap' : null; hatC = rich('#3a2a4a'); item = 'lute'; break;
+    case 'dancer': top = rich(pickBy(['#e04080', '#e0a020', '#20a0a0', '#c02040'], o1)); overlay = 'dancer'; hat = 'headband'; accentOverride = GOLD; forceSkirt = true; barefoot = o2 < 0.5; break;
+    case 'stablehand': overlay = 'vestopen'; hat = 'cap'; hatC = rich('#6a4a2a'); item = 'pitchfork'; break;
+    case 'messenger': top = rich(accent); overlay = 'bag'; hat = 'feathercap'; hatC = rich('#2a2a4a'); item = 'scroll'; break;
+    case 'watchman': top = rich('#5a4a3a'); overlay = 'leather'; helmet = 'kettle'; item = 'lantern'; hat = null; break;
+    case 'gravedigger': top = rich('#3a3a3a'); bottom = rich('#2a2a2a'); hat = o2 < 0.6 ? 'wide' : null; hatC = rich('#2a2a2a'); item = 'shovel'; break;
+    case 'laundress': sleeve = 'bare'; apron = '#f0f0ec'; hat = 'kerchief'; item = 'basket'; break;
+    case 'nanny': apron = '#f8f4f0'; hat = 'bonnet'; top = rich(pickBy(['#8a9ac8', '#c89aa8', '#9ac8a8'], o1)); break;
+    case 'barber': apron = '#f4f4f4'; item = 'shears'; break;
+    case 'storyteller': capeC = rich(pickBy(['#5a3a6a', '#3a4a5a', '#6a4a2a'], o1)); hat = 'wide'; hatC = rich('#4a3a2a'); item = 'staffplain'; break;
+    case 'nun': top = '#1e1e28'; long = top; hat = 'nunveil'; item = o2 < 0.4 ? 'holybook' : null; overlay = 'nunbib'; break;
+    // ---- 村
+    case 'shepherd': capeC = rich(pickBy(['#8a7a5a', '#6a5a4a'], o1)); hat = o2 < 0.5 ? 'wide' : 'kerchief'; hatC = rich('#6a5a3a'); item = 'crook'; break;
+    case 'beekeeper': top = '#e8e0c8'; bottom = rich('#d8d0b8'); hat = 'beekeeper'; item = o2 < 0.5 ? 'smoker' : null; break;
+    case 'miller': top = rich('#e0d8c8'); apron = '#f0ece0'; hat = 'cap'; hatC = '#e8e4d8'; item = 'sack'; overlay = 'flour'; break;
+    case 'charcoal': top = rich('#3a3430'); bottom = rich('#2a2420'); dirtForce = true; item = 'shovel'; hat = o2 < 0.4 ? 'kerchief' : null; hatC = rich('#3a3a3a'); break;
+    case 'mason': top = rich('#9a948a'); apron = rich('#7a7468'); item = 'pick'; hat = 'headband'; break;
+    case 'gatherer': top = rich('#6a7a4a'); hat = 'kerchief'; hatC = rich('#c8a060'); item = 'basket'; break;
+    // ---- 港
+    case 'captain': top = rich('#1e2a5a'); long = top; overlay = 'goldbtn'; hat = 'tricorne'; item = 'sword'; break;
+    case 'shipwright': apron = rich('#8a6a4a'); hat = 'bandana'; hatC = rich(pickBy(['#3a5ab0', '#c03a3a'], o2)); item = 'saw'; break;
+    case 'keeper': top = rich('#2a3a5a'); hat = 'cap'; hatC = rich('#1a2a4a'); item = 'lantern'; scarfForce = rich('#c03a3a'); break;
+    case 'diver': sleeve = 'bare'; top = skinTop(); bottom = rich('#2a4a6a'); hat = 'headband'; accentOverride = '#f0f0f0'; item = 'pearl'; barefoot = true; break;
+    case 'pirate': stripes = ['#b02a2a', '#f0e8e0']; hat = 'bandana'; hatC = rich('#b02a2a'); forcePatch = o2 < 0.6; item = 'sword'; break;
+    case 'smuggler': top = rich('#3a3a2a'); hood = rich('#4a3a2a'); overlay = 'bag'; item = 'sack'; break;
+    // ---- 冒険者
+    case 'warrior': top = rich('#6a4a2a'); overlay = 'leather'; hat = 'headband'; item = 'bigaxe'; sleeve = o2 < 0.5 ? 'bare' : null; capeC = o3 < 0.3 ? rich('#6a2a1a') : null; break;
+    case 'archer': top = rich(pickBy(['#3a6a3a', '#5a6a2a'], o1)); hood = o2 < 0.5 ? rich('#2f5a2f') : null; hat = hood ? null : 'feathercap'; hatC = rich('#3a5a2a'); overlay = 'quiver'; item = 'bow'; break;
+    case 'cleric': top = '#f4f2ea'; long = top; overlay = 'stole'; hat = 'skullcap'; item = 'mace'; break;
+    case 'sage': top = rich(pickBy(['#e8e8f0', '#3a6aa8', '#e0d8b8'], o1)); long = top; overlay = 'goldtrim'; hood = o2 < 0.4 ? rich('#d8d8e8') : null; item = 'staff'; break;
+    case 'paladin': top = STEEL; bottom = '#9aa0aa'; helmet = o1 < 0.4 ? 'closed' : 'open'; overlay = 'plate'; tabard = true; accentOverride = '#f4f2ea'; shield = '#f4f2ea'; item = 'sword'; plumeGold = true; capeC = o3 < 0.5 ? '#f0ece0' : null; break;
+    case 'guildmaster': top = rich('#5a3a2a'); overlay = 'leather'; capeC = rich('#3a2a4a'); hat = 'feather'; hatC = rich('#3a2a1a'); item = 'sword'; forcePatch = o2 < 0.4; break;
+    // ---- 悪党
+    case 'banditchief': top = rich('#3a2a22'); bottom = rich('#2a1e18'); hat = 'bandana'; hatC = rich('#8a1a1a'); capeC = rich('#4a1a1a'); item = 'bigaxe'; overlay = 'fur'; break;
+    case 'pickpocket': top = rich('#4a4a3a'); hat = 'cap'; hatC = rich('#3a3a2a'); item = 'dagger'; break;
+    case 'swindler': top = rich(pickBy(['#8a2a6a', '#2a6a5a', '#8a6a2a'], o1)); overlay = 'vest'; hat = 'tophat'; item = 'purse'; break;
     case 'kid': hat = o1 < 0.12 ? (o2 < 0.5 ? 'cap' : 'knit') : null; break;
     default: break;
   }
+  const acc = accentOverride || accent;
   if (stage === 'baby') { hat = outfit === 'royalkid' ? 'circlet' : (o1 < 0.3 ? 'bonnet' : null); item = null; capeC = null; }
   if (stage === 'elder' && cane && !item) item = 'cane';
   const southWrap = south && !helmet && !hood && !['crown', 'tiara', 'wizard', 'chef', 'circlet', 'katyusha'].includes(hat);
@@ -902,6 +968,8 @@ function quad(P, o, view, fr) {
       case 'bushy': thick(P, tx - 1, ty + 1, tx - 4 - tl, ty + 1 + sw, 1.3, tc); if (o.tailTip) P.ell(tx - 4.5 - tl, ty + 1.5 + sw, 1.3, 1.3, o.tailTip); break; // 狼の尾は水平
       case 'curly': P.px(tx - 1, ty, tc); P.px(tx - 2, ty - 1, tc); P.px(tx - 3, ty, tc); P.px(tx - 2, ty + 1, tc); break;
       case 'cotton': P.ell(tx - 0.5, ty + 1, 1.6, 1.6, o.tailCol || '#f8f8f8'); break;
+      case 'cat': P.line(tx - 1, ty, tx - 3, ty - 2, tc); P.line(tx - 3, ty - 2, tx - 3 + sw, ty - 5, tc); break;
+      case 'rat': P.line(tx - 1, ty + 1, tx - 5, ty + 2, tc); P.line(tx - 5, ty + 2, tx - 7, ty + 1 + sw, tc); break;
       case 'long': P.line(tx - 1, ty, tx - 4, ty + 3, tc); P.line(tx - 4, ty + 3, tx - 6 - tl, ty - 1 + sw, tc); P.line(tx - 1, ty + 1, tx - 4, ty + 4, tc); break;
       case 'squirrel': thick(P, tx - 2, ty + 2, tx - 3 - (sw > 0 ? 1 : 0), ty - 4 - tl, 2, tc); P.ell(tx - 1.5 - (sw > 0 ? 1 : 0), ty - 5 - tl, 2, 1.6, tc); break;
     }
@@ -930,7 +998,7 @@ function quad(P, o, view, fr) {
   }
   // 正面・背中
   const B = view === 'B';
-  const Wg = o.girth || Math.max(6, Math.round(BH * 0.9) + (lw > 1 ? 2 : 1)) + (o.girthAdd || 0);
+  const Wg = o.girth || Math.max(6, Math.round(BH * 1.25) + (lw > 1 ? 3 : 2)) + (o.girthAdd || 0);
   const x0 = CX - Math.floor(Wg / 2);
   const hwF = Math.min(Math.max(hw, hh + 1) + (o.headWAdd || 0), Wg + 4), hhF = hh + (o.snoutL > 1 && !B ? 1 : 0);
   const hx = CX - Math.floor(hwF / 2);
@@ -966,6 +1034,8 @@ function quad(P, o, view, fr) {
       case 'bushy': thick(P, CX - 0.5, ty, CX - 0.5 + sw, ty + 3, 1.6, tc); if (o.tailTip) P.ell(CX - 0.5 + sw, ty + 4, 1.4, 1.2, o.tailTip); break;
       case 'curly': P.rect(CX - 1, ty, 2, 1, tc); P.px(CX, ty - 1, tc); break;
       case 'cotton': P.ell(CX, ty + 1, 1.8, 1.6, o.tailCol || '#f8f8f8'); break;
+      case 'cat': P.rect(CX, bt - 4, 1, 5, tc); P.px(CX + 1 + sw, bt - 5, tc); break;
+      case 'rat': P.line(CX, ty + 2, CX + 2 * sw, G, tc); break;
       case 'long': P.line(CX, ty, CX + 2 * sw, ty + 5, tc); P.line(CX + 2 * sw, ty + 5, CX + 3 * sw + 1, ty + 1, tc); break;
       case 'squirrel': thick(P, CX - 0.5, ty + 1, CX - 0.5 + sw, ty - 5 - tl, 2, tc); break;
     }
@@ -1073,7 +1143,7 @@ function paintQuad(P, R, sp, def, lv, view, fr) {
       const uni = sp === 'unicorn';
       if (!uni) col = T(pickU(['#8a5a34', '#6a3a1a', '#3a2a22', '#c8a060', '#a8a8a8', '#e8e4dc', '#b06a30', '#5a4a40'], u[0]), 0.02, 0.08, 0.06);
       const mane = uni ? (u[1] < 0.35 ? 'rainbow' : col2) : (u[1] < 0.7 ? dk(col, 0.22) : T(pickU(['#f0e8d0', '#1a1410', '#8a6a4a'], u[2])));
-      o = { L: 16 + dL, BH: 7, legH: 9 + dLeg, legW: 2, col, neckUp: 5, neckW: 3, neckFwd: 1, headW: 3, headH: 3, headBack: 1, snoutL: 3, snoutH: 2, snoutDrop: 1, ear: 'point', tail: 'horse', tailCol: mane === 'rainbow' ? '#e8a8f0' : mane, tailLen: Math.floor(u[3] * 3), hoof: uni ? GOLD : '#2a2018', round: 2, socks: u[4] < 0.4 ? pickU([[0], [1], [0, 1]], u[5]) : null, girth: 7, headWAdd: 0 };
+      o = { L: 16 + dL, BH: 7, legH: 9 + dLeg, legW: 2, col, neckUp: 5, neckW: 3, neckFwd: 1, headW: 3, headH: 3, headBack: 1, snoutL: 3, snoutH: 2, snoutDrop: 1, ear: 'point', tail: 'horse', tailCol: mane === 'rainbow' ? '#e8a8f0' : mane, tailLen: Math.floor(u[3] * 3), hoof: uni ? GOLD : '#2a2018', round: 2, socks: u[4] < 0.4 ? pickU([[0], [1], [0, 1]], u[5]) : null, girth: 10, headWAdd: 1 };
       g = quad(P, o, view, fr);
       const mc = (i) => mane === 'rainbow' ? ['#f08080', '#f0c060', '#f0f080', '#80e0a0', '#80b0f0', '#c090f0'][i % 6] : mane;
       if (S) { let k = 0; for (let y = g.hy; y <= g.bt + 1; y++) { let xl = -1; for (let x = g.x0 + g.L - 8; x <= g.hx + g.hw; x++) if (P.get(x, y)) { xl = x; break; } if (xl >= 0) { P.px(xl, y, mc(k)); P.px(xl - 1, y, mc(k)); k++; } } P.px(g.hx + 2, g.hy, mc(0)); }
@@ -1202,7 +1272,7 @@ function paintQuad(P, R, sp, def, lv, view, fr) {
     }
     case 'camel': {
       const two = u[0] < 0.3;
-      o = { L: 15 + dL, BH: 6, legH: 11 + dLeg, legW: 1, col, neckUp: 4, neckW: 3, neckFwd: 4, headW: 3, headH: 3, headBack: 0, snoutL: 2, snoutH: 2, ear: 'side', tail: 'thin', round: 2, hump: two ? [4, 10] : [7], hoof: dk(col, 0.25), girth: 7, nod: true };
+      o = { L: 15 + dL, BH: 6, legH: 11 + dLeg, legW: 1, col, neckUp: 4, neckW: 3, neckFwd: 4, headW: 3, headH: 3, headBack: 0, snoutL: 2, snoutH: 2, ear: 'side', tail: 'thin', round: 2, hump: two ? [4, 10] : [7], hoof: dk(col, 0.25), girth: 10, nod: true };
       g = quad(P, o, view, fr);
       if (!two && S) P.ell(g.x0 + 7, g.bt - 2, 2, 1.6, col);
       if (!S) { P.ell(CX, g.bt - 2, 3, 2.2, col); if (two && B) P.ell(CX, g.bt - 1, 3, 1.5, dk(col, 0.05)); }
@@ -1241,7 +1311,7 @@ function paintQuad(P, R, sp, def, lv, view, fr) {
     case 'cat': {
       col = T(pickU(['#e0a060', '#3a3a3a', '#f4f0e8', '#8a8a90', '#c87a3a', '#6a5040'], u[0]));
       const tabby = u[1] < 0.45, calico = u[2] < 0.2;
-      o = { L: 8 + (dL > 0 ? 1 : 0), BH: 4, legH: 3, legW: 1, col, neckUp: 1, neckW: 2, headW: 4, headH: 4, headBack: 1, snoutL: 0, ear: 'point', bigEar: false, tail: 'long', tailLen: 1, belly: u[3] < 0.5 ? col2 : null, round: 2, girth: 6, tornEar };
+      o = { L: 8 + (dL > 0 ? 1 : 0), BH: 4, legH: 3, legW: 1, col, neckUp: 1, neckW: 2, headW: 4, headH: 4, headBack: 1, snoutL: 0, ear: 'point', bigEar: false, tail: 'cat', tailLen: 1, belly: u[3] < 0.5 ? col2 : null, round: 2, girth: 6, tornEar };
       g = quad(P, o, view, fr);
       if (tabby) { const [bx, by, bw] = g.bodyBox; for (let x = bx + 1; x < bx + bw - 1; x += 2) P.overRect(x, by, 1, 2, dk(col, 0.15)); P.overRect(g.hx + 1, g.hy, 2, 1, dk(col, 0.15)); }
       if (calico) { bodyBlotch(P, g, spots.slice(0, 2), col, '#e08a3a'); bodyBlotch(P, g, spots.slice(2, 3), col, '#2a2a2a'); }
@@ -1251,7 +1321,7 @@ function paintQuad(P, R, sp, def, lv, view, fr) {
       break;
     }
     case 'donkey': {
-      o = { L: 14 + dL, BH: 7, legH: 7 + dLeg, legW: 2, col, neckUp: 4, neckW: 3, neckFwd: 1, headW: 3, headH: 4, headBack: 1, snoutL: 3, snoutH: 2, snoutDrop: 1, snoutCol: col2, ear: 'long', earLen: 4, tail: 'tuft', tailLen: -1, tuftCol: dk(col, 0.3), round: 2, girth: 7, belly: col2 };
+      o = { L: 14 + dL, BH: 7, legH: 7 + dLeg, legW: 2, col, neckUp: 4, neckW: 3, neckFwd: 1, headW: 3, headH: 4, headBack: 1, snoutL: 3, snoutH: 2, snoutDrop: 1, snoutCol: col2, ear: 'long', earLen: 4, tail: 'tuft', tailLen: -1, tuftCol: dk(col, 0.3), round: 2, girth: 10, belly: col2 };
       g = quad(P, o, view, fr);
       if (S) { for (let y = g.hy + 1; y < g.bt; y++) P.over(g.hx - 1, y, dk(col, 0.25)); P.rect(g.x0 + 5, g.bt, 7, 1, dk(col, 0.15)); } // たてがみと背の線
       else P.rect(CX - 1, g.bt, 2, g.BH - 2, dk(col, 0.15));
@@ -1259,7 +1329,7 @@ function paintQuad(P, R, sp, def, lv, view, fr) {
       break;
     }
     case 'rat': {
-      o = { L: 5, BH: 3, legH: 1, legW: 1, col, neck: 0, headW: 3, headH: 3, headBack: 1, headDrop: 0, snoutL: 2, snoutH: 1, snoutCol: col, muzzleW: 2, ear: 'round', earCol: col2, tail: 'long', tailCol: col2, tailLen: 1, round: 1, girth: 4 };
+      o = { L: 5, BH: 3, legH: 1, legW: 1, col, neck: 0, headW: 3, headH: 3, headBack: 1, headDrop: 0, snoutL: 2, snoutH: 1, snoutCol: col, muzzleW: 2, ear: 'round', earCol: col2, tail: 'rat', tailCol: col2, tailLen: 1, round: 1, girth: 4 };
       g = quad(P, o, view, fr);
       if (u[1] < 0.3) bodyBlotch(P, g, spots.slice(0, 1), col, lt(col, 0.2));
       nose(g, '#e08080');
@@ -1629,7 +1699,7 @@ function rig(P, o, view, fr) {
     box: [cx - tw / 2, hT, cx + tw / 2, G],
     sym(k, y, w, h, c, reg = 'h', tag) {
       if (!c) return;
-      if (tag === 'face' && B) return; if (tag === 'front' && !F) return; if (tag === 'back' && !B) return; if (tag === 'noside' && S) return; if (tag === 'side' && !S) return;
+      if ((tag === 'face' || tag === 'noback') && B) return; if (tag === 'front' && !F) return; if (tag === 'back' && !B) return; if (tag === 'noside' && S) return; if (tag === 'side' && !S) return;
       if (!S) { P.rect(cx + k, y, w, h, c); P.rect(cx - k - w, y, w, h, c); return; }
       if (reg === 'h') P.rect(hL + k, y, w, h, c);
       else { const x = sL + Math.round(k * (sw - 1) / Math.max(1, tw / 2 - 1)); P.rect(x, y, Math.max(1, Math.round(w * sw / tw)), h, c); }
@@ -1738,8 +1808,8 @@ function paintBiped(P, R, sp, def, lv, view, fr) {
       if (tier === 2) capeOf(P, g, cloth, 3, 'after');
       g.sym(0, g.legTop - 1, dims.torsoW / 2, 2, cloth, 't');
       if (!S) P.rect(g.cx - 1, g.legTop + 1, 2, 1, cloth);
-      if (tier >= 1) { g.sym(dims.torsoW / 2 - 1, g.tT, 2, 2, tier === 2 ? GOLD : '#8a8e96', 't'); g.sym(0, g.tT + 1, 1, dims.torsoH - 2, tier === 2 ? '#c9a23a' : dk(leather, 0.1), 't', 'noside'); }
-      if (tier === 2) g.sym(0, g.tT + 2, 4, 3, '#d8b040', 't', 'noside');
+      if (tier >= 1) { g.sym(dims.torsoW / 2 - 1, g.tT, 2, 2, tier === 2 ? GOLD : '#8a8e96', 't'); g.sym(0, g.tT + 1, 1, dims.torsoH - 2, tier === 2 ? '#c9a23a' : dk(leather, 0.1), 't', 'front'); }
+      if (tier === 2) g.sym(0, g.tT + 2, 4, 3, '#d8b040', 't', 'front');
       if (tier === 2 && !B) g.sym(0, g.tT - 1, 5, 2, '#f0ece0', 't');
       const ey = g.hT + 3;
       // 耳は真横へ（横向きでは後ろへ）
@@ -1756,7 +1826,7 @@ function paintBiped(P, R, sp, def, lv, view, fr) {
       if (hair === 'mohawk') P.rect(g.cx - 1, g.hT - 2, 2, 3, '#2a1a1a');
       if (hair === 'band') { const bc = T(pickU(['#c03a3a', '#3a5ab0', '#e0c040'], u[10])); P.rect(g.hL, g.hT + 1, dims.headW, 1, bc); }
       if (paint) g.sym(2, ey + 1, 1, 2, paint, 'h', 'face');
-      if (bones) g.sym(1, g.tT + 1, 1, 1, '#e8e4d0', 't', 'noside');
+      if (bones) g.sym(1, g.tT + 1, 1, 1, '#e8e4d0', 't', 'front');
       if (helm) { P.rect(g.hL, g.hT - 1, dims.headW, 2, '#7a7e86'); P.rect(g.cx - 1, g.hT - 2, 2, 1, '#7a7e86'); }
       if (tier === 2) { P.rect(g.cx - 4, g.hT - 3, 8, 2, GOLD); for (let i = 0; i < 4; i++) P.px(g.cx - 4 + i * 2 + (i > 1 ? 1 : 0), g.hT - 4, GOLD); if (!B) P.rect(g.cx - 1, g.hT - 2, 2, 1, '#d0303a'); }
       g.finish();
@@ -1781,7 +1851,7 @@ function paintBiped(P, R, sp, def, lv, view, fr) {
       g = rig(P, { ...dims, skin, torsoCol: leather, legCol: dk(leather, 0.1), footCol: '#2a2020', headSink: 2 }, view, fr);
       if (king) capeOf(P, g, T('#6a1a1a'), 3, 'after');
       if (!S) { P.rect(g.cx + dims.torsoW / 2 - 1, g.tT - 1, dims.armW + 2, 3, metal); if (!onePad) P.rect(g.cx - dims.torsoW / 2 - dims.armW - 1, g.tT - 1, dims.armW + 2, 3, metal); }
-      if (king) { g.sym(0, g.tT + 2, 5, 5, '#b8bcc4', 't'); g.sym(0, g.tT + 2, 5, 1, GOLD, 't'); g.sym(0, g.tT + 6, 5, 1, GOLD, 't'); }
+      if (king) { g.sym(0, g.tT + 2, 5, 5, '#b8bcc4', 't', 'noback'); g.sym(0, g.tT + 2, 5, 1, GOLD, 't', 'noback'); g.sym(0, g.tT + 6, 5, 1, GOLD, 't', 'noback'); }
       g.sym(0, g.legTop - 1, dims.torsoW / 2, 1, '#2a1a10', 't');
       const ey = g.hT + 3;
       g.sym(dims.headW / 2, ey + 1, 1, 3, skin, 'h', 'noside'); // 横に張った顎
@@ -1941,7 +2011,7 @@ function paintBiped(P, R, sp, def, lv, view, fr) {
         if (!S) { P.rect(g.cx - dims.torsoW / 2 - dims.armW, g.tT - 1, dims.armW + 2, 3, lt(armor, 0.08)); P.rect(g.cx + dims.torsoW / 2 - 2, g.tT - 1, dims.armW + 2, 3, lt(armor, 0.08)); }
         g.sym(dims.torsoW / 2 + dims.armW - 1, g.tT - 2, 1, 1, trim, 't', 'noside');
         if (tier >= 2) g.sym(dims.torsoW / 2 + dims.armW, g.tT - 3, 1, 1, trim, 't', 'noside');
-        g.sym(0, g.tT + 1, 1, dims.torsoH - 2, trim, 't', 'noside');
+        g.sym(0, g.tT + 1, 1, dims.torsoH - 2, trim, 't', 'front');
         g.sym(0, g.legTop - 1, dims.torsoW / 2, 1, trim, 't');
         if (tier >= 2) { g.sym(0, g.tT + 3, 2, 3, accent, 't', 'front'); }
         if (S) P.rect(g.sL - 1, g.tT - 1, dims.armW + 2, 3, lt(armor, 0.08));
@@ -2052,7 +2122,7 @@ function paintBiped(P, R, sp, def, lv, view, fr) {
   const role = R.role;
   if (g && g.sym && g.tT != null && role) {
     // 魔王の側近：金の襟と赤い飾り帯／群れの長：牙の首飾り／番兵・宝の番人：肩の金具
-    if (role === 'aide') { g.sym(0, g.tT, (g.tw || 8) / 2, 1, GOLD, 't'); g.sym(0, g.tT + 2, 1, 3, '#c02030', 't', 'noside'); }
+    if (role === 'aide') { g.sym(0, g.tT, (g.tw || 8) / 2, 1, GOLD, 't'); g.sym(0, g.tT + 2, 1, 3, '#c02030', 't', 'front'); }
     if (role === 'leader') { g.sym(1, g.tT + 1, 1, 1, '#f0ead0', 't', 'noside'); g.sym(3, g.tT, 1, 1, '#f0ead0', 't', 'noside'); }
     if (role === 'castleguard' || role === 'treasure') g.sym((g.tw || 8) / 2 - 1, g.tT, 2, 1, '#b8bcc4', 't');
   }
@@ -2079,7 +2149,7 @@ function paintSpider(P, R, sp, def, lv, view, fr) {
   const ec = pickU(['#ff3030', '#ff8020', '#f0f040', '#40ff80'], u[2]);
   const hair = T(pickU(['#1a1020', '#e8e8f0', '#4a1a3a', '#6a2a1a'], u[3]));
   const crown = u[4] < 0.5;
-  const legC = dk(col, 0.04), farC = shadow(col, 1.6);
+  const legC = lt(col, 0.1), farC = shadow(col, 0.6);
   const wave = (i) => ((i + fr) % 2 === 0 ? -1 : 0) * (fr === 1 ? 0 : 1); // 後ろから前へ流れる脚の波
   const patternAt = (cx, cy, r, flip) => {
     const m = (x) => (flip ? 2 * cx - x : x);
@@ -2406,7 +2476,7 @@ function paintLizard(P, R, sp, def, lv, view, fr) {
   const L = 16 + Math.floor(u[2] * 4) - 1, bh = 4, tl = 16 + Math.floor(u[3] * 4);
   const yb = G - 2, bt = yb - bh + 1;
   if (S) {
-    const x0 = CX - Math.floor(L / 2) - 3;
+    const x0 = CX - Math.round((L + 10 - tl) / 2);
     const leg = (x, c, o) => { P.rect(x, yb, 2, 2, c); P.px(x + 2 + o, G, c); P.px(x - 1 + o, G, c); };
     leg(x0 + 3, dk(col, 0.15), -step); leg(x0 + L - 4, dk(col, 0.15), step);
     for (let i = 0; i < tl; i++) { const t = i / tl; const h = Math.max(1, Math.round((1 - t) * 3.5)); const y = bt + 1 + Math.round(Math.sin(t * 3 + fr * 0.5) * 1.2); P.rect(x0 - i, y, 1, h, col); if (i % 2 === 0) P.px(x0 - i, y - 1, dk(col, 0.1)); }
