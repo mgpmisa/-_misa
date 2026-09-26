@@ -611,7 +611,7 @@ export function logisticsHourly(sim) {
     S.logi.lastDep = S.logi.lastDep || {};
     for (const s of S.world.settlements) {
       if (S.convoys.length >= MAX_CONVOYS - 2) break;           // 定期船の分を空けておく
-      if (S.towns[s.id].occupied || S.t - (S.logi.lastDep[s.id] ?? -1e9) < 8 * 60 || !sim.rng.chance(0.25)) continue;
+      if (S.towns[s.id].occupied || S.t - (S.logi.lastDep[s.id] ?? -1e9) < 6 * 60 || !sim.rng.chance(0.35)) continue;
       const tr = bestLandTrade(sim, s);
       if (!tr) continue;
       const drv = pickCarter(sim, s);
@@ -624,12 +624,12 @@ export function logisticsHourly(sim) {
 // その町から近くの町へ、いちばん値が開いている品
 function bestLandTrade(sim, s) {
   const here = sim.market(s.id);
-  let best = null, bv = 1.3;
+  let best = null, bv = 1.2;
   for (const d of sim.S.world.settlements) {
     if (d.id === s.id || sim.S.towns[d.id].occupied || Math.hypot(d.x - s.x, d.z - s.z) > 60) continue;
     const there = sim.market(d.id);
     for (const g of Object.keys(GOODS)) {
-      if (here.stock[g] < Math.max(4, GOODS[g].target * 0.5)) continue;
+      if (here.stock[g] < Math.max(4, GOODS[g].target * 0.4)) continue;
       const r = there.price[g] / here.price[g];
       if (r > bv) { bv = r; best = { good: g, dest: d.id, place: { x: d.x, z: d.z } }; }
     }

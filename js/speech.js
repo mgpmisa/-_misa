@@ -214,7 +214,7 @@ function topicNeed(api, A, B, v) {
 }
 
 function topicWeather(api, A, B, v) {
-  const R = api.rng, w = api.weather(), season = api.season();
+  const R = api.rng, w = api.weather(A), season = api.season();
   const s = api.townOf(A);
   const hot = s.kingdom === 2;
   const opts = {

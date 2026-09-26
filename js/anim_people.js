@@ -1236,7 +1236,7 @@ function makePainter(p, opts = {}) {
     return { P, hands, fx, G };
   };
 
-  return { frame, stage, kid, outfit, item, legH, f, south, headH };
+  return { frame, stage, kid, outfit, item, legH, f, south, headH, orb, accent };
 }
 
 // ================================================================ 共通の定数と部品
@@ -1893,3 +1893,228 @@ export const JOB_MOTION = {
 };
 export const WORK_MOTIONS = Object.keys(WORK);
 export const ANIM_NAMES = ['idle', 'talk', 'attack', 'hurt', 'dying', 'death', 'dead', 'work', 'eat', 'drink', 'sleep', 'sit', 'pray', 'cry', 'cheer', 'wave', 'play', 'flee', 'beg'];
+
+// ================================================================ シートの組み立て
+function ctxOf(p, pt) {
+  const wk = weaponOf(p, pt.item);
+  const c = { stage: pt.stage, kid: pt.kid, baby: pt.stage === 'baby', elder: pt.stage === 'elder', f: pt.f, outfit: pt.outfit, item: pt.item, wk, orb: pt.orb };
+  c.fighter = wk.motion !== 'punch';
+  c.talk = talkStyle(p, c);
+  c.motion = JOB_MOTION[p.job] || JOB_MOTION[pt.outfit] || 'handwork';
+  return c;
+}
+// アニメ名 → 定義（durs, loop, pose）
+function resolveDef(anim, c) {
+  let name = anim, sub = null;
+  if (anim.startsWith('work:')) { name = 'work'; sub = anim.slice(5); }
+  if (name === 'attack') return { ...ATTACK[c.wk.motion], loop: true, motion: c.wk.motion };
+  if (name === 'work') {
+    const m = sub || (c.kid ? 'play' : c.motion);
+    if (!sub && c.kid) return { ...LIFE.play, motion: 'play' };
+    let d = WORK[m] || LIFE[m] || WORK.handwork;
+    if (d.attack) {
+      const am = d.attack === true ? (c.wk.motion === 'punch' ? 'punch' : c.wk.motion) : d.attack;
+      const cc = am === 'shoot' ? c : c;
+      d = { ...slow(ATTACK[am], d.mult), motion: am, ctx: cc };
+    }
+    return { ...d, loop: true, motion: m };
+  }
+  return LIFE[name] || LIFE.idle;
+}
+function tint(P, spec) {
+  if (spec.white) P.mapColors((col) => mix(col, '#ffffff', spec.white));
+  if (spec.gray) P.mapColors((col) => mix(gray(col), '#6a6a78', spec.gray));
+}
+// 1コマ：{P（輪郭済み・fx 前）, r（fx の情報）}
+function renderCell(pt, spec, view, c) {
+  if (spec.lie) return renderLie(pt, spec);
+  if (c.elder && view === 'S' && spec.lean == null) spec = { ...spec, lean: 1 };
+  const r = pt.frame(view, spec);
+  r.jump = spec.jump || 0;
+  tint(r.P, spec);
+  r.P.outline();
+  return { P: r.P, r };
+}
+function renderLie(pt, spec) {
+  const r = pt.frame('F', { dy: spec.dy, face: spec.face, item: false });
+  tint(r.P, spec);
+  r.P.outline();
+  const Q = rotated(r.P); const b = Q.bbox();
+  const w = b[2] - b[0] + 1, h = b[3] - b[1] + 1;
+  const P = new Pix(CW, CH);
+  const dx = Math.round(CW / 2 - w / 2), dy = GROUND - h + 1;
+  P.blit(Q, b[0], b[1], w, h, dx, dy);
+  return { P, lie: { x0: dx, x1: dx + w - 1, top: dy, zzz: spec.zzz || 0 } };
+}
+function finishCell(cell, flip) {
+  const P = new Pix(cell.P.w, cell.P.h); P.d = cell.P.d.slice();
+  if (flip) P.flipX();
+  if (cell.lie) {
+    const L = cell.lie;
+    if (L.zzz) { // 頭の側（右端、反転したら左端）の上に Zzz
+      const hx = flip ? CW - 1 - L.x1 + 1 : L.x1 - 4;
+      const base = { G: {}, hands: {}, fx: [] };
+      const zx = hx, zy = L.top - 4;
+      if (L.zzz >= 1) glyph(P, 'z', zx, zy, '#e8f0ff');
+      if (L.zzz >= 2) glyph(P, 'Z', zx + (flip ? -4 : 3), zy - 5, '#e8f0ff');
+      if (L.zzz >= 3) glyph(P, 'Z', zx + (flip ? -2 : 1), zy - 10, '#e8f0ff');
+      void base;
+    }
+  } else if (cell.r) drawFx(P, cell.r, flip);
+  return P;
+}
+const SPIN = ['F', 'L', 'B', 'R'], SPIN_START = { 0: 0, 1: 1, 3: 2, 2: 3 };
+function buildAnim(pt, def, c) {
+  const n = def.durs.length;
+  const mult = ['hurt', 'death', 'dead'].includes(def.name) ? 1 : c.elder ? 1.35 : c.kid ? 0.85 : 1;
+  const cc = def.ctx || c;
+  const cells = [[], [], [], []];
+  const VIEW = ['F', 'S', 'S', 'B'];
+  for (const dir of [0, 1, 3, 2]) {
+    for (let k = 0; k < n; k++) {
+      let spec = { ...(def.pose(VIEW[dir], k, cc) || {}) };
+      let view = VIEW[dir], flip = dir === 2;
+      if (spec.view === 'spin') {
+        const s = SPIN[(SPIN_START[dir] + k) % 4];
+        view = s === 'F' ? 'F' : s === 'B' ? 'B' : 'S'; flip = s === 'R';
+        if (view !== VIEW[dir]) spec = { ...(def.pose(view, k, cc) || {}) };
+        delete spec.view;
+        cells[dir][k] = finishCell(renderCell(pt, spec, view, cc), flip);
+        continue;
+      }
+      if (spec.lie) flip = dir === 0 || dir === 1;
+      if (dir === 2 && !spec.lie) { cells[2][k] = finishCell(cells[1][k]._cell, true); continue; }
+      const cell = renderCell(pt, spec, view, cc);
+      const P = finishCell(cell, flip); P._cell = cell;
+      cells[dir][k] = P;
+    }
+  }
+  // 全コマ共通の枠：体の中心線で左右対称、下端は接地行
+  const mid = CW / 2;
+  let x0 = CW, y0 = CH, x1 = -1;
+  for (const row of cells) for (const P of row) { const b = P.bbox(); if (!b) continue; x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); }
+  const half = Math.ceil(Math.max(mid - x0, x1 + 1 - mid));
+  const fx = Math.floor(mid - half), fw = half * 2, fh = GROUND - y0 + 1;
+  const Sh = new Pix(fw * n, fh * 4);
+  for (let dir = 0; dir < 4; dir++) for (let k = 0; k < n; k++) Sh.blit(cells[dir][k], fx, y0, fw, fh, k * fw, dir * fh);
+  const durs = def.durs.map((d) => Math.round(d * mult));
+  const loop = def.loop !== false;
+  const meta = { frameW: fw, frameH: fh, cols: n, rows: 4, frames: n, durs, loop, fps: Math.round(10000 / (durs.reduce((a, b) => a + b, 0) / n)) / 10, anchorY: 0, worldH: fh * PIXEL_SCALE, worldW: fw * PIXEL_SCALE, anchor: 'bottom', grounded: true, kind: 'person' };
+  const canvas = Sh.toCanvas(meta);
+  return { canvas, ...meta };
+}
+
+// ================================================================ 公開の関数とキャッシュ
+const MAX_SHEETS = 360, MAX_PAINTERS = 160;
+const sheetCache = new Map(), painterCache = new Map();
+let genCount = 0, genMs = 0;
+function lru(map, key, make, max) {
+  let v = map.get(key);
+  if (v) { map.delete(key); map.set(key, v); return v; }
+  v = make();
+  map.set(key, v);
+  if (map.size > max) map.delete(map.keys().next().value);
+  return v;
+}
+function lookKey(p, opts) { return `${p.id}|${Math.floor(opts.age ?? 30)}|${p.job}|${p.rank}|${p.jail != null}|${p.south ? 1 : 0}|${p.sex}`; }
+function painterOf(p, opts) { return lru(painterCache, lookKey(p, opts), () => makePainter(p, opts), MAX_PAINTERS); }
+
+// 人のアニメーションシートを返す（遅延生成＋キャッシュ）
+export function drawPersonAnim(p, opts = {}, anim = 'idle') {
+  const pt = painterOf(p, opts);
+  const c = ctxOf(p, pt);
+  const key = `${lookKey(p, opts)}|${anim}|${c.wk.tool}`;
+  return lru(sheetCache, key, () => {
+    const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const def = { ...resolveDef(anim, c), name: anim };
+    const out = buildAnim(pt, def, c);
+    out.anim = anim; out.motion = def.motion || null;
+    genCount++; genMs += (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+    return out;
+  }, MAX_SHEETS);
+}
+// コマ番号：経過時間 t（秒）から。loop=false は最後のコマで止まる
+export function animFrameAt(sheet, t) {
+  let ms = Math.max(0, t * 1000);
+  const tot = sheet.durs.reduce((a, b) => a + b, 0);
+  if (sheet.loop) ms %= tot; else if (ms >= tot) return sheet.frames - 1;
+  for (let i = 0; i < sheet.durs.length; i++) { if (ms < sheet.durs[i]) return i; ms -= sheet.durs[i]; }
+  return sheet.frames - 1;
+}
+export function animDuration(sheet) { return sheet.durs.reduce((a, b) => a + b, 0) / 1000; }
+export function personAnimCacheStats() {
+  let px = 0; for (const s of sheetCache.values()) px += s.canvas.width * s.canvas.height;
+  return { sheets: sheetCache.size, painters: painterCache.size, pixels: px, bytes: px * 4, generated: genCount, msTotal: Math.round(genMs), msAvg: genCount ? +(genMs / genCount).toFixed(2) : 0 };
+}
+export function clearPersonAnimCache() { sheetCache.clear(); painterCache.clear(); }
+export function forgetPersonAnim(id) { for (const k of [...sheetCache.keys()]) if (k.startsWith(id + '|')) sheetCache.delete(k); for (const k of [...painterCache.keys()]) if (k.startsWith(id + '|')) painterCache.delete(k); }
+
+// ================================================================ 住人の状態 → アニメ
+// moving：いま歩いているか（描画側で位置の変化から判定）。'walk' は歩行シート（sprites.js）を使うという意味。
+export function personAnimState(sim, p, moving = false) {
+  if (p.deathYear != null) return 'dead';
+  const age = sim?.ageOf ? sim.ageOf(p) : 30;
+  const kid = age < 13;
+  const a = p.action;
+  if (p.fight) return moving ? 'walk' : 'attack';
+  if (moving) {
+    if (a?.type === 'flee' || (p.needs && p.needs.survival < 8)) return 'flee';
+    if (kid && a && ['play', 'festival'].includes(a.type)) return 'play';
+    return 'walk';
+  }
+  if (p.maxhp && p.hp < p.maxhp * 0.2) return 'dying';
+  if (p.talk) return 'talk';
+  if (p.jail != null) return (p.mood ?? 50) < 25 ? 'cry' : 'sit';
+  if (!a || a.phase !== 'do') return 'idle';
+  switch (a.type) {
+    case 'sleep': case 'nap': case 'sickbed': return 'sleep';
+    case 'eat': case 'askfood': return 'eat';
+    case 'tavern': return kid ? 'idle' : 'drink';
+    case 'pray': case 'grave': return 'pray';
+    case 'funeral': return p.id % 3 === 0 ? 'cry' : 'pray';
+    case 'wedding': case 'festival': return p.job === 'dancer' ? 'work:dance' : kid ? 'play' : 'cheer';
+    case 'play': return 'play';
+    case 'beg': return 'beg';
+    case 'flee': return 'flee';
+    case 'perform': return 'work:strum';
+    case 'storytell': case 'grandkids': return 'work:tell';
+    case 'work': return kid && !p.job ? 'play' : 'work';
+    case 'train': return 'work:train';
+    case 'school': return kid ? 'work:read' : 'work:lecture';
+    case 'rest': case 'home': return age >= 50 ? 'sit' : 'idle';
+    case 'plaza': return age >= 60 ? 'sit' : 'idle';
+    case 'gather': case 'collect': return 'work:gather';
+    case 'fishing': return 'work:fish';
+    case 'garden': return 'work:hoe';
+    case 'laundry': return 'work:wash';
+    case 'water': case 'help': return 'work:lift';
+    case 'cook': return 'work:stir';
+    case 'preserve': return 'work:knead';
+    case 'nurse': case 'housecall': return 'work:heal';
+    case 'childcare': return 'work:cradle';
+    case 'patrol': case 'defend': return 'work:guard';
+    case 'court': return 'wave';
+    case 'steal': case 'rob': return 'work:sneak';
+    case 'jail': return 'sit';
+  }
+  if ((p.mood ?? 50) < 12) return 'cry';
+  return 'idle';
+}
+
+// ================================================================ 試験用：姿勢なしのコマで歩行シートを組む（drawPerson と一致するか確かめる）
+export function __walkSheet(p, opts = {}) {
+  const pt = makePainter(p, opts);
+  const frame = (view, f) => pt.frame(view, { legs: ['w0', 'stand', 'w2'][f] }).P;
+  const views = ['F', 'S', 'S', 'B'];
+  const frames = [[], [], [], []];
+  for (const dir of [0, 1, 3]) for (let f = 0; f < 3; f++) { const P = frame(views[dir], f); P.outline(); frames[dir].push(P); }
+  for (let f = 0; f < 3; f++) { const src = frames[1][f]; const P = new Pix(src.w, src.h); P.d = src.d.slice(); P.flipX(); frames[2].push(P); }
+  const W = frames[0][0].w, mid = W / 2;
+  let x0 = W, y0 = CH, x1 = -1;
+  for (const row of frames) for (const P of row) { const b = P.bbox(); if (!b) continue; x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1]); x1 = Math.max(x1, b[2]); }
+  const half = Math.ceil(Math.max(mid - x0, x1 + 1 - mid));
+  const fx = Math.floor(mid - half), fw = half * 2, fh = GROUND - y0 + 1;
+  const S = new Pix(fw * 3, fh * 4);
+  for (let dir = 0; dir < 4; dir++) for (let f = 0; f < 3; f++) S.blit(frames[dir][f], fx, y0, fw, fh, f * fw, dir * fh);
+  return S.toCanvas({ frameW: fw, frameH: fh, cols: 3, rows: 4 });
+}

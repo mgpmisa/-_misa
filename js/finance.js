@@ -129,7 +129,7 @@ function seekLoans(sim) {
     const recent = (k, d, own) => mems.some((q) => q.memories?.some((m) => m.k === k && m.src === 'self' && sim.today - m.t <= d && (!own || S.people[m.about?.[0]]?.hh === hh.id)));
     let need = 0, why = null;
     // 食べ物代：家計が底をつきかけ、食べ物も少ない
-    if (hh.money < 25 && hh.food < mems.length * 2 && (head.purse || 0) < 10 && !has('food') && R.chance(0.3)) { need = 10 + mems.length * 5; why = 'food'; }
+    if (hh.money < 18 && hh.food < mems.length * 2 && (head.purse || 0) < 10 && !has('food') && R.chance(0.15)) { need = 10 + mems.length * 5; why = 'food'; }
     // 弔いの費用：身内を亡くしたばかり
     else if (recent('death', 1, true) && hh.money < 70 && !has('funeral') && R.chance(0.35)) { need = R.int(20, 40); why = 'funeral'; }
     // 婚礼の費用：婚約したばかり
@@ -360,7 +360,7 @@ export function financeCandidates(sim, p, add) {
   const l = sim._finDue.get(p.id);
   if (!l || l.state !== 'open' || l.visit === sim.today) return;
   const h = sim.hour();
-  if (h < 9 || h >= 19) return;
+  if (!((h >= 6 && h < 8) || (h >= 17.5 && h < 20.5))) return; // 家にいそうな朝夕に訪ねる
   const b = alive(sim, l.to);
   const hh = b && sim.hh(b);
   if (!b || !hh || hh.house == null || b.s !== p.s) return;

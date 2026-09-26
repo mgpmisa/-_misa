@@ -186,7 +186,9 @@ function epidemicDaily(sim) {
       const near = S.world.settlements.filter((q) => q.id !== s.id && !S.towns[q.id]?.occupied && Math.hypot(q.x - s.x, q.z - s.z) < 45 && !h.epi.some((x) => x.sid === q.id));
       if (near.length) { const q = R.pick(near); const e2 = startEpidemic(sim, q, true); if (e2) { e2.until = sim.today + R.int(7, 11); e2.rate *= 0.7; sim.news(`流行り病が${s.name}から${q.name}にも広がった`, 2, { x: q.x, z: q.z }); } }
     }
-    if (sim.today >= e.until) {
+    // 決めた日を過ぎ、町に重い流行り病の人がいなくなったらおさまる（最長10日延びる）
+    const still = sim.today < e.until + 10 && sim.living().some((q) => q.s === e.sid && q.ail?.kind === 'flu' && q.ail.sev >= 35);
+    if (sim.today >= e.until && !still) {
       h.epi.splice(h.epi.indexOf(e), 1);
       const line = e.dead ? `${s.name}の流行り病がようやくおさまった。${e.dead}人が命を落とした` : `${s.name}の流行り病がおさまった。幸い、亡くなった人はいなかった`;
       sim.news(line, 2, { x: s.x, z: s.z });
@@ -218,6 +220,7 @@ export function onDeath(sim, dead, cause, killer) {
     if (!lv) continue;
     if (aff != null) lv += clamp(aff, -50, 100) * 0.1;
     lv = clamp(lv * (0.8 + q.pers.N * 0.4), 0, 100);
+    if (lv < 30) continue; // 遠い親戚は記憶に残るだけ（die の remember で足りる）
     if (term === '父' || term === '母') { if (sim.ageOf(q) < 20) lv = Math.min(100, lv + 12); }
     if (!q.grief || q.grief.lv < lv) q.grief = { who: dead.id, lv: Math.round(lv), day: sim.today };
     else q.grief.lv = Math.min(100, q.grief.lv + lv * 0.3);
@@ -244,7 +247,7 @@ function griefDaily(sim) {
     if (g) {
       const hh = sim.hh(p);
       const support = hh ? hh.members.length - 1 : 0;
-      g.lv -= 1.8 + p.values.faith * 1.5 + Math.min(2, support * 0.5) + (sim.today - g.day > 10 ? 1 : 0);
+      g.lv -= 2.5 + p.values.faith * 2 + Math.min(2, support * 0.5) + (sim.today - g.day > 8 ? 1.5 : 0);
       if (g.lv < 5) delete p.grief;
     }
     // 命日
@@ -442,7 +445,7 @@ export function healthDecide(sim, p, cands, add) {
   if (p.ail) {
     const s = p.ail.sev;
     for (const c of cands) {
-      if (c.type === 'work' || c.type === 'train' || c.type === 'quest') c.score -= s / 12;
+      if (c.type === 'work' || c.type === 'train' || c.type === 'quest') c.score -= s / 15;
       else if (['tavern', 'stroll', 'play', 'plaza', 'court', 'visit'].includes(c.type)) c.score -= s / 18;
       else if (c.type === 'rest') c.score += s / 10;
     }
@@ -451,7 +454,7 @@ export function healthDecide(sim, p, cands, add) {
   const g = p.grief;
   if (g && g.lv > 10) {
     for (const c of cands) {
-      if (c.type === 'work') c.score -= g.lv / 35;
+      if (c.type === 'work') c.score -= g.lv / 60;
       else if (['tavern', 'play', 'plaza', 'court', 'festival'].includes(c.type)) c.score -= g.lv / 28;
       else if (c.type === 'pray') c.score += g.lv / 40;
     }
@@ -496,7 +499,7 @@ export function healthSpeedMul(p) {
 export function healthWorkMul(p) {
   let m = 1;
   if (p.ail) m *= 1 - p.ail.sev / 150;
-  if (p.grief) m *= 1 - p.grief.lv / 250;
+  if (p.grief) m *= 1 - p.grief.lv / 400;
   if (p.scars?.some((s) => s.k === 'arm')) m *= 0.9;
   return Math.max(0.3, m);
 }

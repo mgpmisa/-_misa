@@ -888,8 +888,12 @@ export function monsterThink(sim, c, def, all, humans) {
   }
   // ドラゴン：宝を守り、縄張りに入った者に怒る
   if (c.sp === 'dragon' || (c.sp === 'wyvern' && c.named)) {
-    const intr = humans.find((h) => h.inside == null && Math.hypot(h.pos.x - home.x, h.pos.z - home.z) < 12);
+    const mask = townMask(sim);
+    const intr = humans.find((h) => h.inside == null && Math.hypot(h.pos.x - home.x, h.pos.z - home.z) < 8 && !mask[Math.round(h.pos.z) * W + Math.round(h.pos.x)]);
     if (intr) {
+      // まず咆哮で警告し、それでも立ち去らない者に襲いかかる
+      if (!c.warnAt || S.t - c.warnAt > 60) { c.warnAt = S.t; monsterSay(sim, c, 'alarm', true); c.goal = null; if (intr.needs) intr.needs.survival = Math.max(0, intr.needs.survival - 40); return true; }
+      if (S.t - c.warnAt < 8) return true;
       if (S.t > (c.enraged || 0)) {
         c.enraged = S.t + 60 * 12;
         sim.news(`${who(c)}が縄張りを侵され、怒り狂っている！`, 2, c.pos);
@@ -908,7 +912,7 @@ export function monsterThink(sim, c, def, all, humans) {
   if (eats(c) && c.hunger < 30) {
     let prey = null, bd = 10;
     for (const o of all) {
-      if (o === c || o.hp <= 0 || o.dormant || !PREY_SP.has(o.sp) || o.owner != null) continue;
+      if (o === c || o.hp <= 0 || o.dormant || !PREY_SP.has(o.sp) || o.owner != null || o.atk > c.atk * 0.7 || o.maxhp > c.hp) continue;
       const d = Math.hypot(o.pos.x - c.pos.x, o.pos.z - c.pos.z);
       if (d < bd) { bd = d; prey = o; }
     }

@@ -17,6 +17,8 @@ import { initProperty, propertyDaily, inherit, transferEstate, spendable, pay, e
 import { partiesDaily } from './guild.js';
 import { rumorBirth, rumorRelay, rumorHeardText, rumorCorrect } from './rumor.js';
 import { calendarDaily, calendarHalfDay } from './calendar.js';
+import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, harvestMul, roadsClosed, weatherMoodDelta, legacyWeatherAt } from './weather.js';
+import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -103,7 +105,7 @@ export class Sim {
   hour() { return (this.S.t % 1440) / 60; }
   isRestDay() { return this.dayIndex % 7 === 6; }
   isFestival() { return this.dayOfYear() === DAYS_PER_SEASON * 3 - 1; }
-  weather() { return this.S.weather; }
+  weather(p) { return p?.pos ? legacyWeatherAt(this, p.pos.x, p.pos.z) : this.S.weather; }
   chronicle() { return this.S.chronicle; }
   dateLabel() {
     const h = Math.floor(this.hour()), m = Math.floor(this.S.t % 60);
@@ -501,7 +503,8 @@ export class Sim {
     const R = this.rng, h = this.hour(), age = this.ageOf(p), hh = this.hh(p), n = p.needs;
     const rest = this.isRestDay() || calendarHalfDay(this, p.s);
     const cands = [];
-    const add = (score, type, place, dur, extra = {}) => { if (score > -50) cands.push({ score: score + R.range(0, 1.2) + (p.q[type] || 0) * 1.5, type, place, dur, ...extra }); };
+    const wm = weatherMood(this, p);
+    const add = (score, type, place, dur, extra = {}) => { if (score > -50) cands.push({ score: score + R.range(0, 1.2) + (p.q[type] || 0) * 1.5 + weatherBias(wm, type), type, place, dur, ...extra }); };
     const s = this.townOf(p);
     const job = p.job;
 
@@ -530,10 +533,9 @@ export class Sim {
       const home = this.placeFor(p, s.occupied ? 'castle' : 'home');
       add(10 + (35 - n.survival) / 5, 'flee', home, 60);
     }
-    const sleepStart = p.sleepType === 'short' ? 23.5 : p.sleepType === 'long' ? 20.5 : 21.5;
-    const sleepEnd = p.sleepType === 'short' ? 4.5 : p.sleepType === 'long' ? 7.5 : 5.8;
-    const bedtime = age < 13 ? h >= 20 || h < 6.5 : h >= sleepStart || h < sleepEnd;
-    if (bedtime) add(6 + (100 - n.sleep) / 20 - (job === 'thief' ? 4 : 0), 'sleep', this.placeFor(p, 'home'), 0, { untilHour: age < 13 ? 6.5 : sleepEnd + (1 - p.pers.C) * 1.2 });
+    const sp = sleepPlan(this, p, h, age);
+    const bedtime = sp.bedtime;
+    if (bedtime) add(6 + (100 - n.sleep) / 20 - (job === 'thief' ? 4 : 0) + sp.bias, 'sleep', this.placeFor(p, 'home'), 0, { untilHour: sp.untilHour });
     else if (n.sleep < 15) add(4.5, 'sleep', this.placeFor(p, 'home'), 120);
 
     const mealTime = (h >= 6 && h < 8.5) || (h >= 11.5 && h < 13.5) || (h >= 18 && h < 20);
@@ -610,6 +612,7 @@ export class Sim {
     if (['soldier', 'knight', 'adventurer'].includes(job) && h >= 7 && h < 18 && workAge) add(2 + p.values.ambition * 2 + (100 - n.esteem) / 40, 'train', this.placeFor(p, job === 'adventurer' ? 'guild' : 'barracks'), R.int(60, 120));
     add(1.2 + (1 - p.pers.E) + (100 - n.sloth) / 18 + (p.hp < p.maxhp * 0.7 ? 2 : 0), 'rest', this.placeFor(p, 'home'), R.int(30, 80));
 
+    choreOptions(this, p, add);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -809,6 +812,7 @@ export class Sim {
       case 'buygear': this.buyGear(p); a.until = this.S.t + 10; break;
       case 'hunt': huntBounty(this, p, this.S.people[a.friend]); a.until = this.S.t + 5; break;
     }
+    choreArrive(this, p, a);
   }
 
   doShop(p) {
@@ -870,8 +874,8 @@ export class Sim {
     const toolMul = tool ? 0.7 + 0.35 * tool.q : 0.6;
     if (tool) { tool.dur -= 0.004 * hr; if (tool.dur <= 0) { p.inv.splice(p.inv.indexOf(tool), 1); p.eq.tool = null; this.remember(p, `長年使った${itemName(tool)}がとうとう壊れた`, { emo: -0.3, imp: 0.3 }); } }
     const si = this.seasonIdx();
-    const sm = [0.5, 0.9, 2.4, 0.08][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * (this.S.weather === 'rain' ? 0.9 : 1);
-    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr;
+    const sm = [0.5, 0.9, 2.4, 0.08][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
+    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p);
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
     switch (p.job) {
@@ -1221,6 +1225,7 @@ export class Sim {
       }
       case 'storytell': this.tellStories(p, this.nearby(p, 5)); n.esteem += 3 * hr; break;
     }
+    choreDo(this, p, dt);
     for (const k of NEED_KEYS) n[k] = clamp(n[k], 0, 100);
     const wakeEarly = a.type === 'sleep' && n.sleep >= 99 && this.hour() > 4 && this.hour() < 12;
     if (S.t >= a.until || wakeEarly) {
@@ -1369,7 +1374,7 @@ export class Sim {
           const b = arr[j];
           if (b.talk || this.ageOf(b) < 3) continue;
           const rel = this.rel(a, b);
-          const place = ['tavern', 'plaza', 'festival', 'wedding'].includes(a.action.type) ? 2.6 : a.action.phase === 'walk' ? 0.7 : a.action.type === 'work' ? 0.35 : 1;
+          const place = ['tavern', 'plaza', 'festival', 'wedding', 'water', 'laundry'].includes(a.action.type) ? 2.6 : a.action.phase === 'walk' ? 0.7 : a.action.type === 'work' ? 0.35 : 1;
           const visit = (a.action.friend === b.id || b.action.friend === a.id) ? 6 : 1;
           let pr = 0.035 * dt * (0.35 + a.pers.E + b.pers.E * 0.5) * (1 + (100 - a.needs.esteem) / 80) * (0.3 + rel.f / 100) * place * visit;
           if (a.talkedToday[b.id]) pr *= 0.25;
@@ -1517,7 +1522,7 @@ export class Sim {
       let memF = 0;
       for (const m of p.memories) { const age = this.today - m.t; if (age >= 0 && age < 6) memF += m.emo * m.imp * 12 * (1 - age / 6); }
       memF = clamp(memF, -30, 30) * (0.7 + p.pers.N * 0.6);
-      let mood = needAvg * 0.65 + 25 + moneyF + memF + (this.hh(p)?.comfort || 0) * 1.5 + (p.jail != null ? -15 : 0);
+      let mood = needAvg * 0.65 + 25 + moneyF + memF + (this.hh(p)?.comfort || 0) * 1.5 + (p.jail != null ? -15 : 0) + weatherMoodDelta(this, p);
       if (mood < 50) mood -= (p.pers.N - 0.5) * 20;
       p.mood = clamp(p.mood * 0.6 + mood * 0.4, 0, 100);
       if (!p.talk && this.isWatched(p) && this.rng.chance(0.35)) p.thought = innerThought(this, p);
@@ -1536,6 +1541,8 @@ export class Sim {
     crimeHourly(this);
     politicsHourly(this);
     demonHourly(this);
+    weatherHourly(this);
+    choreHourly(this);
   }
 
   newDay() {
@@ -1543,8 +1550,7 @@ export class Sim {
     const doy = this.dayOfYear();
     for (const p of this.living()) { p.talkedToday = {}; p.workedToday = 0; }
     const si = this.seasonIdx();
-    const w = R.next();
-    S.weather = si === 3 ? (w < 0.35 ? 'snow' : w < 0.6 ? 'cloudy' : 'sunny') : (w < [0.3, 0.2, 0.28, 0][si] ? 'rain' : w < 0.5 ? 'cloudy' : 'sunny');
+    weatherDaily(this);
     if (doy === 0) this.newYear();
     // 町の蓄え：裕福な家から集め、困っている家に施す
     for (const hh of Object.values(S.households)) {
@@ -1590,7 +1596,7 @@ export class Sim {
       if (age === 14 && !p.job) {
         const par = [this.person(p.fatherId), this.person(p.motherId)].find((q) => q && q.job && JOBS[q.job].goods);
         p.job = par ? par.job : this.townOf(p).type === 'port' ? 'fisher' : 'farmer';
-        p.skill[p.job] = 0.1;
+        p.skill[p.job] = apprenticeSkill(p);
         p.rank = p.rank === 'royal' || p.rank === 'noble' ? p.rank : JOBS[p.job].rank;
         this.remember(p, `14歳になり、${JOBS[p.job].name}の見習いを始めた`, { emo: 0.5, imp: 0.8 });
         if (!p.inv) p.inv = [];
@@ -1636,6 +1642,7 @@ export class Sim {
     guildDaily(this);
     partiesDaily(this);
     propertyDaily(this);
+    choreDaily(this);
     creatureDaily(this);
     justiceDaily(this);
     politicsDaily(this);

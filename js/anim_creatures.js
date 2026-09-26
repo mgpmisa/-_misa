@@ -2121,7 +2121,7 @@ function paintLizard(P, R, sp, def, lv, view, fr) {
     if (pat === 'band') for (let x = x0 + 2; x < x0 + L; x += 4) P.overRect(x, bt, 1, 2, dk(col, 0.15));
     if (pat === 'spots') for (let i = 0; i < 3; i++) P.overRect(x0 + 1 + Math.floor(u[4 + i] * (L - 3)), bt + 1, 2, 1, lt(col, 0.1));
     P.shade();
-    leg(x0 + 4, col, step); leg(x0 + L - 3, col, -step);
+    leg(x0 + 4, col, st); leg(x0 + L - 3, col, -st);
     for (let x = x0 + L + 1; x < x0 + L + 10; x += 2) if (u[7] > 0.15 || x !== x0 + L + 5) P.px(x, bt + 3 - (jaw && x > x0 + L + 4 ? 1 : 0), '#f0ead8');
     P.px(x0 + L + 1, bt, Q.eyes ? dk(col, 0.2) : eyeC); P.px(x0 + L + 2, bt, Q.eyes ? dk(col, 0.2) : '#1a1a10');
     if (!jaw) P.px(x0 + L + 9, bt + 2, '#1a1a10');

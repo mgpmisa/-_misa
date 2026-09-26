@@ -5,6 +5,8 @@ import { innerThought } from './speech.js';
 import * as SPR from './sprites.js';
 import { ITEMS, itemName, itemValue } from './items.js';
 import { InteriorView } from './interior.js';
+import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
+import { calendarLabel } from './calendar.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
@@ -31,6 +33,7 @@ const PREF_LABEL = {
   sleep: '眠ること', eat: '食事', shop: '買い物', tavern: '酒場', plaza: '広場でのんびり', stroll: '散歩', pray: '祈り', play: '遊び', rest: '家で休むこと', home: '家で過ごすこと',
   festival: '祭り', visit: '人を訪ねること', train: '鍛錬', work: '仕事', guild: 'ギルド通い', quest: '冒険', school: '勉強', storytell: '昔話', perform: '歌', court: '恋', trade: '商い', beg: '物乞い', steal: '盗み', buygear: '装備選び',
 };
+Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
 
@@ -335,9 +338,13 @@ export class UI {
   // ---------- 毎フレーム ----------
   update() {
     const d = this.sim.dateLabel();
-    const extra = this.sim.isFestival() ? '・収穫祭' : this.sim.isRestDay() ? '・安息日' : '';
+    const selP = this.selected != null ? this.sim.entity(this.selected) : null;
+    const v = this.r.viewInfo();
+    const sid = selP?.s ?? this.sim.S.world.settlements.reduce((b, t) => (Math.hypot(t.x - v.x, t.z - v.z) < Math.hypot(b.x - v.x, b.z - v.z) ? t : b)).id;
+    const cal = calendarLabel(this.sim, sid);
+    const extra = this.sim.isFestival() ? '・収穫祭' : cal ? '・' + cal : this.sim.isRestDay() ? '・安息日' : '';
     const D = this.sim.S.demon;
-    $('clock').textContent = `${d.era} ${d.season}の${d.day}日目 ${d.time}　${WEATHER[this.sim.S.weather]}${extra}　人口${this.sim.living().length}人${D?.active ? '　⚠魔王復活中' : ''}`;
+    $('clock').textContent = `${d.era} ${d.season}の${d.day}日目 ${d.time}　${this.sim.S.wxHere ? `${this.sim.S.wxHere.name} ${this.sim.S.wxHere.temp}℃` : WEATHER[this.sim.S.weather]}${extra}　人口${this.sim.living().length}人${D?.active ? '　⚠魔王復活中' : ''}`;
     this.updateOverlay();
     const now = performance.now();
     if (now - this.lastPanel > 1000) { this.lastPanel = now; this.refreshPanel(false); this.renderInspector(false); this.drawMinimap(); }
