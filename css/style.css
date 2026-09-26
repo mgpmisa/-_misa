@@ -197,3 +197,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 #dangerToggle { position: absolute; left: -26px; top: 28px; width: 24px; height: 24px; background: var(--wood); color: var(--parch); border: 2px solid var(--line); cursor: pointer; padding: 0; font-size: 11px; }
 #dangerToggle.on { background: #8a1a1a; color: #fff; }
+
+.sub-h { margin: 6px 0; font-weight: normal; color: var(--moss); font-size: 13px; }
+.quests li { grid-template-columns: auto 1fr auto; }
+.quests .q-done, .quests .q-failed { opacity: .55; }

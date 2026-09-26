@@ -2,6 +2,7 @@
 import { clamp } from './rng.js';
 import { JOBS, SPECIES } from './data.js';
 import { killCreature } from './creatures.js';
+import { equipBonus, countItem, takeItem } from './items.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 
@@ -12,10 +13,11 @@ export function humanStats(sim, p) {
   const child = age < 14 ? 0.4 : age > 70 ? 0.6 : 1;
   const steel = sim.S.kingdoms && sim.hasTech?.(p, 'steel') ? 2 : 0;
   const maxhp = Math.round((40 + lv * 8 + combat * 6) * child);
+  const eb = equipBonus(p);
   return {
     maxhp,
-    atk: Math.round((3 + combat * 3 + lv * 1.6 + (p.weapon ? 5 + steel : 0) + (p.holy ? 20 : 0)) * child),
-    def: Math.round((1 + lv * 0.8 + (p.job === 'knight' ? 3 : 0)) * child),
+    atk: Math.round((3 + combat * 2 + lv * 1.6 + eb.atk + (eb.atk ? steel : 0)) * child),
+    def: Math.round((1 + lv * 0.8 + eb.def) * child),
     hp: p.hp == null ? maxhp : Math.min(p.hp, maxhp),
   };
 }
@@ -31,7 +33,8 @@ export function startFight(sim, a, b, lethal = true) {
   if (isHuman(b) && b.deathYear != null) return;
   a.fight = { target: b.id, cd: 0, lethal };
   if (!b.fight) b.fight = { target: a.id, cd: 0.5, lethal };
-  for (const e of [a, b]) if (isHuman(e)) { e.talk = null; if (e.inside != null) { const bl = sim.building(e.inside); e.pos = { ...bl.door }; e.inside = null; } }
+  const dungeon = a.inDungeon || b.inDungeon;
+  for (const e of [a, b]) if (isHuman(e)) { e.talk = null; if (e.inside != null && !dungeon) { const bl = sim.building(e.inside); e.pos = { ...bl.door }; e.inside = null; } }
   const watched = (isHuman(a) && sim.isWatched(a)) || (isHuman(b) && sim.isWatched(b));
   if (watched) sim.events.push({ type: 'fight', a: a.id, b: b.id });
 }
@@ -56,9 +59,11 @@ export function stepCombat(sim, dt) {
     if (e.fight.cd > 0) continue;
     e.fight.cd = 1;
     const R = sim.rng;
+    // 危なくなったら回復薬を飲む
+    if (isHuman(e) && e.hp < e.maxhp * 0.35 && countItem(e, 'potion') > 0) { takeItem(e, 'potion', 1); e.hp = Math.min(e.maxhp, e.hp + 45); sim.events.push({ type: 'heal', id: e.id }); continue; }
     let dmg = Math.max(1, Math.round(e.atk * R.range(0.7, 1.3) - (t.def || 0) * 0.5));
     // 魔王の耐性
-    if (t.sp === 'demonlord' && isHuman(e)) dmg = Math.round(dmg * (e.holy ? 1.6 : 0.6));
+    if (t.sp === 'demonlord' && isHuman(e)) dmg = Math.round(dmg * (e.eq?.weapon?.id === 'holysword' ? (sim.S.demon?.resist?.includes('holy') ? 1.1 : 1.6) : 0.6));
     if (isHuman(t) && sim.hasTech(t, 'barrier') && !isHuman(e) && sim.townOf(t) && Math.hypot(t.pos.x - sim.townOf(t).x, t.pos.z - sim.townOf(t).z) < sim.townOf(t).r) dmg = Math.max(1, Math.round(dmg * 0.7));
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp - dmg <= 0) dmg = Math.max(0, t.hp - 1);
     t.hp -= dmg;

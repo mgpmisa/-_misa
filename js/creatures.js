@@ -4,6 +4,7 @@ import { T, W, H, walkable, tileAt, biomeOf, isWater } from './world.js';
 import { findPath } from './path.js';
 import { clamp } from './rng.js';
 import { startFight } from './society.js';
+import { DROPS, addItem, makeItem } from './items.js';
 
 // 生息数の目安
 const POP = {
@@ -28,6 +29,8 @@ export function makeCreature(sim, sp, x, z, extra = {}) {
     owner: extra.owner ?? null, range: extra.range ?? 10, kills: 0, lair: extra.lair ?? null, dormant: extra.dormant || false,
   };
   c.role = extra.role || defaultRole(sim, c);
+  const lairB = c.lair != null ? sim.S.world.buildings[c.lair] : null;
+  if (lairB && ['cave', 'pyramid', 'ruins'].includes(lairB.type) && ['guardian', 'leader', 'treasure'].includes(c.role)) { c.inDungeon = true; c.pos = { x: lairB.door.x, z: lairB.door.z }; }
   // 町の中に生まれてしまったら、町の外へ出す
   if (!allowedInTown(c) && townMask(sim)[Math.round(z) * W + Math.round(x)]) {
     const s = sim.S.world.settlements.reduce((b, q) => (Math.hypot(q.x - x, q.z - z) < Math.hypot(b.x - x, b.z - z) ? q : b));
@@ -187,6 +190,7 @@ export function stepCreatures(sim, dt) {
   for (const c of all) {
     if (c.dormant || c.hp <= 0) continue;
     const def = SPECIES[c.sp];
+    if (c.inDungeon && !c.fight) { if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * hr); continue; }
     c.hunger = clamp(c.hunger - (PREDATOR.has(c.sp) ? 1.6 : 1) * hr, 0, 100);
     if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * hr);
     if (c.fight) continue;
@@ -418,6 +422,7 @@ export function killCreature(sim, c, killer) {
     const p = killer;
     p.xp = (p.xp || 0) + Math.round(def.hp / 3 + c.lv * 5); sim.levelCheck(p);
     const hh = sim.hh(p);
+    for (const d of DROPS[c.sp] || []) if (sim.rng.chance(d === 'scale' || d === 'horn' || d === 'demoncore' ? 0.9 : 0.6)) addItem(p, d === 'gemx' ? makeItem('magicstone') : makeItem(d));
     if (!def.monster) {
       const meat = Math.max(1, Math.round(def.size * 3));
       if (['livestock', 'wild'].includes(def.kind)) sim.sell(p, 'meat', meat);
@@ -511,7 +516,7 @@ export function creatureDaily(sim) {
   }
   // 魔物の群れが村を襲う（巣ごとに数えて、群れが大きくなると動く）
   const byLair = {};
-  for (const c of all) if (c.hostile && c.lair != null && SPECIES[c.sp].kind === 'hostile' && !c.raid && !c.named) (byLair[c.lair] = byLair[c.lair] || []).push(c);
+  for (const c of all) if (c.hostile && c.lair != null && SPECIES[c.sp].kind === 'hostile' && !c.raid && !c.named && !c.inDungeon) (byLair[c.lair] = byLair[c.lair] || []).push(c);
   for (const [lair, group] of Object.entries(byLair)) {
     const b = sim.building(+lair);
     const strength = group.reduce((s, c) => s + c.atk, 0);

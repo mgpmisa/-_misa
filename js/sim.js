@@ -12,6 +12,8 @@ import { initPolitics, politicsDaily, politicsHourly, demonHourly, addSaying } f
 import { saveWorld, loadWorld, clearWorld } from './store.js';
 import { computeDanger, tooDangerous, defendTowns, spotThreats, dangerAt } from './danger.js';
 import { around } from './creatures.js';
+import { ITEMS, makeItem, addItem, autoEquip, starterKit, countItem, takeItem, itemName, itemValue, TREASURE_ITEMS } from './items.js';
+import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
 const mortY = (a) => { for (const [x, p] of MORT_Y) if (a <= x) return p; return 0.3; };
@@ -277,6 +279,8 @@ export class Sim {
       p.traits = traitLabels(p);
       p.lv = 1 + Math.floor(clamp((JOBS[p.job]?.combat || 0) * 2 + R.range(0, 3) + (this.ageOf(p) > 30 ? 1 : 0), 0, 9));
       if (p.job) p.skill[p.job] = clamp(0.2 + Math.min(this.ageOf(p) - 14, 30) / 40 + R.range(-0.1, 0.1), 0.05, 0.95);
+      p.inv = []; p.eq = {};
+      if (this.ageOf(p) >= 14) starterKit(p, R);
       Object.assign(p, humanStats(this, p));
       p.hp = p.maxhp;
       if (this.ageOf(p) >= 68 && p.job && !['king', 'royal', 'noble'].includes(p.job)) { p.formerJob = p.job; p.job = null; }
@@ -539,10 +543,17 @@ export class Sim {
     if ((job === 'guard' || job === 'knight') && (h >= 20 || h < 2) && R.chance(0.3)) add(4, 'work', this.placeFor(p, 'patrol'), 60);
     if (job === 'bard' && h >= 17 && h < 23) add(5 + (100 - n.esteem) / 25, 'perform', this.placeFor(p, 'tavern'), 80);
     // 仕事の種類ごとの目的
-    if ((['adventurer', 'knight', 'wizard', 'warrior', 'archer', 'cleric', 'sage', 'paladin'].includes(job) || (JOBS[job]?.rank === 'adventurer')) && workAge && h >= 7 && h < 18) {
+    if (isAdventurer(p) && workAge && h >= 7 && h < 19 && p.hp > p.maxhp * 0.5) {
+      const qp = questPlace(this, p);
+      if (qp) add(7 + p.values.courage * 2 + p.values.ambition * 2, qp.type, qp.place, qp.type === 'gather' ? 60 : 90, { quest: qp.quest, friend: qp.target });
+      else if ((this.S.quests || []).some((q) => q.state === 'open' && q.s === p.s)) add(4 + p.values.ambition * 2 + (100 - n.esteem) / 30, 'guild', this.placeFor(p, 'guild'), 20);
+      else { const quest = this.findQuest(p); if (quest) add(2 + p.values.courage * 2, 'quest', quest, 120, { quest }); }
+    } else if (['knight', 'wizard', 'courtmage'].includes(job) && workAge && h >= 7 && h < 18 && p.hp > p.maxhp * 0.6) {
       const quest = this.findQuest(p);
-      if (quest) add(4 + p.values.courage * 3 + (100 - n.esteem) / 25 + p.values.ambition * 2 - (p.hp < p.maxhp * 0.6 ? 6 : 0), 'quest', quest, 120, { quest });
+      if (quest) add(2 + p.values.courage * 3 + p.values.ambition, 'quest', quest, 120, { quest });
     }
+    // 装備を買いそろえる（戦う職業）・道具を買う（働く職業）
+    if (age >= 14 && h >= 8 && h < 18 && this.wantsGear(p)) add(4, 'buygear', this.placeFor(p, 'smithy'), 15);
     if ((job === 'merchant') && workAge && h >= 6 && h < 12 && R.chance(0.25)) {
       const trade = this.findTrade(p);
       if (trade) add(5 + p.values.ambition * 2, 'trade', trade.place, 60, { trade });
@@ -555,7 +566,7 @@ export class Sim {
     const crime = tryCrime(this, p);
     if (crime) add(crime.score, crime.type, crime.place, crime.dur, crime);
     // 生活
-    if (age >= 14 && h >= 8 && h < 19 && ((hh.food < hh.members.length * 2 && hh.money > this.price('bread', p.s) * 2 && hh.house != null) || (p.tool < 0.12 && workAge && hh.money > this.price('tools', p.s) + 10))) add(3, 'shop', this.placeFor(p, 'market'), 25);
+    if (age >= 14 && h >= 8 && h < 19 && ((hh.food < hh.members.length * 2 && hh.money > this.price('bread', p.s) * 2 && hh.house != null) )) add(3, 'shop', this.placeFor(p, 'market'), 25);
     if (age >= 16 && h >= 17 && h < 23 && hh.money > 25) add(-(hh.money < 70 ? 1.5 : 0) + (100 - n.pleasure) / 22 + p.pers.E * 1.4 + (rest ? 0.5 : 0), 'tavern', this.placeFor(p, 'tavern'), R.int(50, 120));
     if (h >= 8 && h < 20) add((100 - n.pleasure) / 40 + (100 - n.esteem) / 45 + p.pers.E * 1.2 + (rest ? 1.2 : 0), 'plaza', this.placeFor(p, 'plaza'), R.int(30, 80));
     if (h >= 9 && h < 20) {
@@ -770,6 +781,10 @@ export class Sim {
       }
       case 'quest': break;
       case 'steal': case 'rob': case 'revenge': crimeArrive(this, p); break;
+      case 'guild': takeQuest(this, p); a.until = this.S.t + 5; break;
+      case 'report': reportQuest(this, p); a.until = this.S.t + 10; break;
+      case 'buygear': this.buyGear(p); a.until = this.S.t + 10; break;
+      case 'hunt': huntBounty(this, p, this.S.people[a.friend]); a.until = this.S.t + 5; break;
     }
   }
 
@@ -789,13 +804,8 @@ export class Sim {
       const g = ['bread', 'fish', 'wheat'].find((x) => m.stock[x] >= 1 && hh.money >= m.price[x]);
       if (g && this.buy(p, g, 1)) p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
     }
-    if (p.tool < 0.12 && p.job && hh.money > m.price.tools + 10 && this.buy(p, 'tools', 1)) {
-      p.tool = 1;
-      this.remember(p, '市場で新しい道具を買った', { emo: 0.3, imp: 0.25 });
-    }
-    if (['knight', 'soldier', 'adventurer', 'guard'].includes(p.job) && !p.weapon && hh.money > m.price.weapons + 20 && this.buy(p, 'weapons', 1)) {
-      p.weapon = true; Object.assign(p, humanStats(this, p));
-      this.remember(p, '新しい剣を手に入れた', { emo: 0.6, imp: 0.5 });
+    if (isAdventurer(p) || JOBS[p.job]?.combat) {
+      while (countItem(p, 'potion') < 2 && m.stock.medicine >= 1 && hh.money > m.price.medicine + 15 && this.buy(p, 'medicine', 1)) addItem(p, makeItem('potion'));
     }
     if (hh.money > 380 && m.stock.furniture >= 1 && this.rng.chance(0.12) && this.buy(p, 'furniture', 1)) {
       hh.comfort += 1;
@@ -833,8 +843,9 @@ export class Sim {
       this.gossip(p, `${JOBS[p.job].name}の名人と呼ばれるようになった`, 0.5, this.living().filter((q) => q.s === p.s), { congrat: '名人と呼ばれてるんだってね' });
       p.fame += 10;
     }
-    const toolMul = p.tool > 0.05 ? 1 : 0.6;
-    p.tool = Math.max(0, p.tool - 0.0035 * hr);
+    const tool = p.eq?.tool;
+    const toolMul = tool ? 0.7 + 0.35 * tool.q : 0.6;
+    if (tool) { tool.dur -= 0.004 * hr; if (tool.dur <= 0) { p.inv.splice(p.inv.indexOf(tool), 1); p.eq.tool = null; this.remember(p, `長年使った${itemName(tool)}がとうとう壊れた`, { emo: -0.3, imp: 0.3 }); } }
     const si = this.seasonIdx();
     const sm = [0.5, 0.9, 2.4, 0.08][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * (this.S.weather === 'rain' ? 0.9 : 1);
     const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr;
@@ -876,15 +887,7 @@ export class Sim {
         if (m.stock.wheat >= need && m.stock.bread < GOODS.bread.target * 1.6) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; this.sell(p, 'bread', need * 1.8); }
         break;
       }
-      case 'smith': {
-        const need = 0.6 * eff;
-        if (m.stock.ore >= need * 0.5 && m.stock.wood >= need) {
-          m.stock.wood -= need; m.stock.ore -= need * 0.5; hh.money -= need * (m.price.wood + m.price.ore * 0.5) * 0.9;
-          if (m.stock.weapons < GOODS.weapons.target * 1.5 && this.rng.chance(0.4)) this.sell(p, 'weapons', need * 0.12 * (this.hasTech(p, 'steel') ? 1.4 : 1));
-          else this.sell(p, 'tools', need * 0.22);
-        } else hh.money += 2 * hr;
-        break;
-      }
+      case 'smith': { this.forge(p, dt, eff); break; }
       case 'carpenter': {
         const need = 1 * eff;
         if (m.stock.wood >= need && m.stock.furniture < GOODS.furniture.target * 2) { m.stock.wood -= need; hh.money -= need * m.price.wood * 0.9; this.sell(p, 'furniture', need * 0.1); }
@@ -1021,6 +1024,69 @@ export class Sim {
     if (this.isWatched(p)) this.events.push({ type: 'say', id: p.id, text: `昔むかし、${ev.y}年のこと……${ev.text}。` });
   }
 
+  // 鍛冶：鉱石から鉄を作り、素材から品物を打って店に並べる
+  forge(p, dt, eff) {
+    const hh = this.hh(p), m = this.market(p.s), R = this.rng, town = this.S.towns[p.s];
+    town.mats = town.mats || {}; town.shop = town.shop || [];
+    if (m.stock.ore >= 1 && (town.mats.iron || 0) < 12) { m.stock.ore -= 0.8 * eff; hh.money -= 0.8 * eff * m.price.ore * 0.9; town.mats.iron = (town.mats.iron || 0) + 0.4 * eff; }
+    p.forgeT = (p.forgeT || 0) + dt;
+    if (p.forgeT < 90 || town.shop.length >= 14) { hh.money += 1 * dt / 60; return; }
+    p.forgeT = 0;
+    const skill = p.skill.smith || 0.3;
+    const wantTools = town.shop.filter((x) => ITEMS[x.id].type === 'tool').length < 4;
+    const recipes = Object.entries(ITEMS).filter(([id, d]) => d.mat && ['weapon', 'armor', 'shield', 'tool'].includes(d.type) && !d.rare && Object.entries(d.mat).every(([k, n]) => k === 'wood' ? m.stock.wood >= n : k === 'cloth' ? m.stock.cloth >= n : (town.mats[k] || 0) >= n) && (wantTools ? d.type === 'tool' : true) && (d.value < 120 || skill > 0.6));
+    if (!recipes.length) return;
+    const [id, d] = R.pick(recipes);
+    for (const [k, n] of Object.entries(d.mat)) { if (k === 'wood') m.stock.wood -= n; else if (k === 'cloth') m.stock.cloth -= n; else town.mats[k] -= n; }
+    const q = Math.max(0.5, Math.min(1.8, 0.55 + skill * 0.8 + R.gauss(0, 0.12) + (this.hasTech(p, 'steel') ? 0.1 : 0)));
+    const it = makeItem(id, q, { maker: p.id });
+    town.shop.push(it);
+    p.skill.smith = Math.min(1, skill + 0.01);
+    if (q >= 1.55) {
+      p.deeds.push(`伝説の${d.name}を打ち上げた`); p.fame += 20; p.needs.esteem = 100;
+      this.remember(p, `生涯最高の${d.name}を打ち上げた`, { emo: 1, imp: 1, k: 'craft' });
+      this.news(`${this.townOf(p).name}の鍛冶屋${p.given}が伝説級の${d.name}を打ち上げた`, 2, p.pos);
+    }
+  }
+
+  wantsGear(p) {
+    const town = this.S.towns[p.s];
+    const hh = this.hh(p);
+    if (!town?.shop?.length || !hh) return false;
+    const J = JOBS[p.job];
+    if (J && J.combat) return town.shop.some((it) => this.isUpgrade(p, it) && itemValue(it) * 1.2 < hh.money - 20);
+    const toolFor = Object.keys(ITEMS).find((k) => ITEMS[k].type === 'tool' && ITEMS[k].jobs.includes(p.job));
+    return toolFor && !p.eq?.tool && town.shop.some((it) => it.id === toolFor) && hh.money > 25;
+  }
+  isUpgrade(p, it) {
+    const d = ITEMS[it.id];
+    if (!['weapon', 'armor', 'shield', 'accessory'].includes(d.type)) return false;
+    const cur = p.eq?.[d.type];
+    const sc = (x) => ((ITEMS[x.id].atk || 0) + (ITEMS[x.id].def || 0)) * x.q;
+    return !cur || sc(it) > sc(cur) * 1.2;
+  }
+  buyGear(p) {
+    const town = this.S.towns[p.s], hh = this.hh(p);
+    if (!town.shop) return;
+    const J = JOBS[p.job];
+    let cands = J?.combat ? town.shop.filter((it) => this.isUpgrade(p, it)) : town.shop.filter((it) => ITEMS[it.id].type === 'tool' && ITEMS[it.id].jobs.includes(p.job));
+    cands = cands.filter((it) => itemValue(it) * 1.2 <= hh.money - 10).sort((a, b) => itemValue(b) - itemValue(a));
+    const it = cands[0];
+    if (!it) return;
+    const price = Math.round(itemValue(it) * 1.2);
+    hh.money -= price;
+    town.shop.splice(town.shop.indexOf(it), 1);
+    const smith = this.S.people[it.maker];
+    if (smith && smith.deathYear == null && this.hh(smith)) this.hh(smith).money += price;
+    // 古い装備は下取りに出す
+    const old = p.eq?.[ITEMS[it.id].type];
+    addItem(p, it); autoEquip(p);
+    if (old && old !== p.eq[ITEMS[it.id].type]) { p.inv.splice(p.inv.indexOf(old), 1); hh.money += Math.round(itemValue(old) * 0.4); }
+    Object.assign(p, humanStats(this, p));
+    this.remember(p, `鍛冶場で${itemName(it)}を${price}銅貨で買った`, { emo: 0.5, imp: 0.4, k: 'gear' });
+    p.needs.esteem = Math.min(100, p.needs.esteem + 10);
+  }
+
   levelCheck(p) {
     const need = 20 * p.lv * p.lv;
     if ((p.xp || 0) >= need) {
@@ -1115,6 +1181,15 @@ export class Sim {
       case 'train': p.xp = (p.xp || 0) + 1.2 * hr * (0.5 + p.pers.C); n.esteem += 2 * hr; this.levelCheck(p); break;
       case 'quest': this.doQuest(p); break;
       case 'jail': n.pleasure -= 2 * hr; break;
+      case 'gather': {
+        if (this.rng.chance(0.05 * dt)) {
+          const q = questOf(this, p);
+          const item = q?.type === 'gather' && q.item === 'herb' ? 'herb' : 'herb';
+          addItem(p, makeItem(item));
+          if (this.rng.chance(0.03)) addItem(p, makeItem('magicstone'));
+        }
+        break;
+      }
       case 'school': {
         p.skill.study = Math.min(1, (p.skill.study || 0) + 0.002 * hr);
         n.sloth -= 4 * hr;
@@ -1165,6 +1240,14 @@ export class Sim {
     } else if (typeof q.target === 'string' && q.target.startsWith('b')) {
       // ダンジョン探索：中の魔物と戦い、宝を見つける
       const b = this.building(+q.target.slice(1));
+      if (b.type !== 'hideout' && !p.inside && Math.hypot(p.pos.x - b.door.x, p.pos.z - b.door.z) < 2) { p.inside = b.id; }
+      const guards = Object.values(this.S.creatures).filter((c) => c.lair === b.id && c.inDungeon && c.hp > 0);
+      if (guards.length && !a.explored) {
+        if (!p.fight) startFight(this, p, guards.sort((x, y) => x.maxhp - y.maxhp)[0]);
+        a.until = Math.max(a.until, this.S.t + 10);
+        if (p.hp < p.maxhp * 0.3) { p.inside = null; p.pos = { ...b.door }; p.fight = null; this.remember(p, `${b.name}の奥で深手を負い、引き返した`, { emo: -0.6, imp: 0.6, k: 'quest' }); this.learnDanger(p, b.x, b.z, 2); a.until = this.S.t; a.explored = true; }
+        return;
+      }
       if (!a.explored && this.S.t > a.until - 20) {
         a.explored = true;
         const danger = { cave: 14, pyramid: 20, ruins: 10, hideout: 12 }[b.type] || 10;
@@ -1177,8 +1260,9 @@ export class Sim {
           this.hh(p).money += gold;
           p.needs.esteem = Math.min(100, p.needs.esteem + 30);
           let txt = `${b.name}を探索して${gold}銅貨ぶんの戦利品を持ち帰った`;
-          if (b.type !== 'hideout' && R.chance(0.04 + (b.type === 'pyramid' ? 0.08 : 0))) {
-            const item = R.pick(['古代の金貨', '竜の鱗', '魔石', 'ファラオの黄金仮面', '聖銀の短剣', '星読みの水晶', '古文書', '人魚の涙', '精霊の羽根', '王家の紋章入り指輪']);
+          if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) addItem(p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk']))); if (R.chance(0.3)) addItem(p, makeItem(R.pick(['sword', 'axe', 'shield', 'ring', 'amulet', 'chainmail']), R.range(0.7, 1.4))); autoEquip(p); Object.assign(p, humanStats(this, p)); }
+          if (b.type !== 'hideout' && R.chance(0.06 + (b.type === 'pyramid' ? 0.08 : 0))) {
+            const item = R.pick(TREASURE_ITEMS);
             (p.treasures = p.treasures || []).push(item);
             txt = `${b.name}の奥で「${item}」を見つけた`;
             p.fame += 15;
@@ -1192,6 +1276,9 @@ export class Sim {
           }
           this.remember(p, txt, { emo: 0.7, imp: 0.6, k: 'quest', where: { x: b.door.x, z: b.door.z } });
           if (b.bounty) { this.hh(p).money += b.bounty; b.bounty = 0; }
+          const qq = questOf(this, p);
+          if (qq && qq.target === 'b' + b.id) completeQuest(this, qq);
+          p.inside = null; p.pos = { ...b.door };
         } else {
           p.hp = Math.max(1, p.hp - R.int(10, 30));
           this.learnDanger(p, b.x, b.z, 3);
@@ -1461,6 +1548,8 @@ export class Sim {
         p.skill[p.job] = 0.1;
         p.rank = p.rank === 'royal' || p.rank === 'noble' ? p.rank : JOBS[p.job].rank;
         this.remember(p, `14歳になり、${JOBS[p.job].name}の見習いを始めた`, { emo: 0.5, imp: 0.8 });
+        if (!p.inv) p.inv = [];
+        p.eq = p.eq || {}; starterKit(p, R);
         this.gossip(p, `${JOBS[p.job].name}の見習いを始めた`, 0.4, this.living().filter((q) => this.rel(q, p).f > 50), { congrat: '見習いを始めたんだってね', silent: true });
       }
       if (age === 68 && p.job && !['king', 'royal', 'noble'].includes(p.job)) {
@@ -1499,6 +1588,7 @@ export class Sim {
       if (m.history.length > 60) m.history.shift();
     }
     this.immigration();
+    guildDaily(this);
     creatureDaily(this);
     justiceDaily(this);
     politicsDaily(this);
@@ -1533,6 +1623,7 @@ export class Sim {
         p.needs = { survival: 80, sleep: 80, hunger: 70, lust: 70, sloth: 70, pleasure: 70, esteem: 60 };
         p.mood = 55; p.memories = []; p.rel = {}; p.gk = {}; p.talkedToday = {}; p.recent = []; p.tool = 0.8; p.workedToday = 0; p.pregnant = 0; p.cooldown = 0; p.q = {}; p.skill = { [p.job]: 0.4 }; p.danger = {}; p.fame = 0; p.lv = 1 + R.int(0, 2);
         p.style = speechStyle(p, this.ageOf(p)); p.traits = traitLabels(p);
+        p.inv = []; p.eq = {}; starterKit(p, R);
         Object.assign(p, humanStats(this, p)); p.hp = p.maxhp;
         p.pos = house ? { ...house.door } : { x: s.x, z: s.z }; p.inside = null; p.path = []; p.action = null;
         this.remember(p, `${origin}から${s.name}に移り住んできた`, { emo: 0.4, imp: 0.95, k: 'arrival' });
@@ -1665,7 +1756,7 @@ export class Sim {
     delete c.notes; delete c.anc2;
     c.needs = { survival: 90, sleep: 80, hunger: 80, lust: 100, sloth: 80, pleasure: 80, esteem: 80 };
     c.mood = 70; c.memories = []; c.rel = {}; c.gk = {}; c.talkedToday = {}; c.recent = []; c.tool = 0; c.workedToday = 0; c.pregnant = 0; c.cooldown = 0; c.q = {}; c.skill = {}; c.danger = {}; c.fame = 0; c.lv = 1;
-    c.style = 'child'; c.traits = traitLabels(c);
+    c.style = 'child'; c.traits = traitLabels(c); c.inv = []; c.eq = {};
     c.rank = ['king', 'royal'].includes(w.rank) || (h && ['king', 'royal'].includes(h.rank)) ? 'royal' : w.rank === 'noble' ? 'noble' : ['homeless', 'prisoner', 'outlaw'].includes(w.rank) ? 'commoner' : w.rank || 'commoner';
     Object.assign(c, humanStats(this, c)); c.hp = c.maxhp;
     c.hh = w.hh; this.hh(w).members.push(c.id);

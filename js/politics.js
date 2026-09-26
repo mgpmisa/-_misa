@@ -4,6 +4,7 @@ import { KINGDOMS, TECHS, SPECIES, JOBS, DEMON_REALM } from './data.js';
 import { makeCreature, applyStats } from './creatures.js';
 import { startFight, humanStats } from './society.js';
 import { T, W, H } from './world.js';
+import { addItem, makeItem, autoEquip } from './items.js';
 
 const FIGHTERS = new Set(['knight', 'soldier', 'adventurer', 'wizard', 'general', 'royalguard', 'courtmage', 'warrior', 'archer', 'cleric', 'sage', 'paladin', 'guildmaster', 'watchman']);
 const ARMY = new Set(['knight', 'soldier', 'general']);
@@ -364,7 +365,7 @@ function priority(sim, k, t) {
 function forgeHolySword(sim, k) {
   const best = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && FIGHTERS.has(p.job)).sort((a, b) => b.lv - a.lv)[0];
   if (!best) return;
-  best.holy = true; Object.assign(best, humanStats(sim, best));
+  best.holy = true; addItem(best, makeItem('holysword', 1.2)); autoEquip(best); Object.assign(best, humanStats(sim, best));
   best.deeds.push('聖剣を授かった');
   sim.remember(best, `${k.name}の${'王'}から聖剣を授かった`, { emo: 0.9, imp: 1 });
   sim.news(`聖剣が鍛え上げられ、${sim.fullName(best)}に授けられた`, 3, best.pos);
@@ -462,7 +463,8 @@ function callHeroes(sim, k) {
     p.mission = { type: 'crusade', x: castle.door.x, z: castle.door.z + 2, until: S.t + 1440 * 30 };
     p.action = null; p.party = party.id;
     sim.hh(p).money += bounty / members.length;
-    if (k.techs.includes('holy') && p === hero) p.holy = true;
+    if (k.techs.includes('holy') && p === hero && !p.holy) { p.holy = true; addItem(p, makeItem('holysword', 1.2)); autoEquip(p); }
+    for (let i = 0; i < 3; i++) addItem(p, makeItem('potion'));
     Object.assign(p, humanStats(sim, p));
     sim.remember(p, `${title(king)}${king.given}さまから${S.demon.name}討伐の命を受けた`, { emo: 0.4, imp: 1, k: 'hero' });
   }

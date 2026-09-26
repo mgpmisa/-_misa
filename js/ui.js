@@ -3,6 +3,8 @@ import { JOBS, GOODS, DAYS_PER_YEAR, DAYS_PER_SEASON, SEASONS, ERA, RANKS, SPECI
 import { W, H, T, TILE_NAME, biomeOf } from './world.js';
 import { innerThought } from './speech.js';
 import * as SPR from './sprites.js';
+import { ITEMS, itemName, itemValue } from './items.js';
+import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const $ = (id) => document.getElementById(id);
@@ -11,7 +13,7 @@ const ACTION_LABEL = {
   sleep: '眠っている', eat: '食事をしている', shop: '市場で買い物をしている', tavern: '酒場で一杯やっている', plaza: '広場でくつろいでいる',
   stroll: '散歩している', pray: '祈っている', play: '遊んでいる', rest: '家で休んでいる', home: '家で過ごしている', festival: '祭りを楽しんでいる',
   wedding: '婚礼に出ている', funeral: '弔いに参列している', askfood: '食べ物を分けてもらっている', beg: '物乞いをしている', train: '鍛錬している',
-  quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
+  guild: 'ギルドで依頼を探している', report: 'ギルドに依頼の報告をしている', buygear: '鍛冶場で装備を選んでいる', gather: '素材を集めている', hunt: '賞金首を追っている', quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
   march: '前線で戦っている', crusade: '魔王討伐の旅をしている', defend: '町を守っている', flee: '逃げている', court: '想い人に会いに来ている', trade: '商いをしている', travel: '旅をしている', visit: '知り合いの家を訪ねている',
 };
 const ACTION_GO = {
@@ -20,6 +22,10 @@ const ACTION_GO = {
   wedding: '婚礼に向かっている', funeral: '弔いに向かっている', askfood: '食べ物を分けてもらいに行くところ', visit: '知り合いの家へ向かっている', work: '仕事場へ向かっている',
   quest: '冒険に向かっている', school: '学校へ向かっている', storytell: '広場へ向かっている', deliver: '知らせを届けに走っている', train: '鍛錬に向かっている', beg: '広場へ向かっている', steal: '闇にまぎれて移動している', rob: '獲物に忍び寄っている', revenge: '恨みの相手を探している',
   march: '前線へ行軍している', crusade: '魔王城を目指して旅している', defend: '町を守りに駆けつけている', flee: '必死に逃げている', court: '想い人のもとへ向かっている', trade: '隣町へ商いに向かっている', travel: '旅をしている', perform: '酒場へ向かっている',
+};
+const PREF_LABEL = {
+  sleep: '眠ること', eat: '食事', shop: '買い物', tavern: '酒場', plaza: '広場でのんびり', stroll: '散歩', pray: '祈り', play: '遊び', rest: '家で休むこと', home: '家で過ごすこと',
+  festival: '祭り', visit: '人を訪ねること', train: '鍛錬', work: '仕事', guild: 'ギルド通い', quest: '冒険', school: '勉強', storytell: '昔話', perform: '歌', court: '恋', trade: '商い', beg: '物乞い', steal: '盗み', buygear: '装備選び',
 };
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -340,6 +346,7 @@ export class UI {
     else if (this.tab === 'nations') this.renderNations();
     else if (this.tab === 'bestiary') this.renderBestiary();
     else if (this.tab === 'graves' && force) this.renderGraves();
+    else if (this.tab === 'guild') this.renderGuild();
     else if (this.tab === 'log' && force) this.renderLogAll();
   }
 
@@ -402,6 +409,20 @@ export class UI {
     $('bestiary').innerHTML = rows.join('');
   }
 
+  renderGuild() {
+    const S = this.sim.S;
+    const qs = (S.quests || []).slice().sort((a, b) => ({ open: 0, taken: 1, report: 2, done: 3, failed: 4 }[a.state] - { open: 0, taken: 1, report: 2, done: 3, failed: 4 }[b.state]) || b.posted - a.posted);
+    const st = { open: '募集中', taken: '進行中', report: '報告待ち', done: '達成', failed: '期限切れ' };
+    let h = `<h4 class="sub-h">依頼掲示板</h4><ul class="plist quests">`;
+    h += qs.slice(0, 40).map((q) => `<li class="q-${q.state}"><span class="kind">${RANKS_ADV[q.rank]}</span><span>${esc(q.title)}<br><span class="sub">${QUEST_TYPE_NAME[q.type]}・${esc(this.sim.town(q.s).name)}のギルド・報酬${q.reward}銅貨${q.takenBy.length ? `・${q.takenBy.map((id) => S.people[id]).filter(Boolean).map((p) => `<span class="link" data-pid="${p.id}">${esc(p.given)}</span>`).join('、')}` : ''}</span></span><span class="sub">${st[q.state]}</span></li>`).join('') || '<li>依頼はまだない</li>';
+    h += '</ul>';
+    const advs = this.sim.living().filter((p) => isAdventurer(p)).sort((a, b) => (b.qp || 0) - (a.qp || 0) || b.lv - a.lv).slice(0, 20);
+    h += `<h4 class="sub-h">冒険者ランキング</h4><ul class="plist">${advs.map((p) => `<li data-pid="${p.id}"><span class="kind">${RANKS_ADV[advRank(p)]}</span><span>${esc(this.sim.fullName(p))}<br><span class="sub">${esc(JOBS[p.job].name)}・Lv${p.lv}・達成${p.qp || 0}点${p.party ? `・パーティ「${esc(S.advParties?.[p.party]?.name || '')}」` : ''}</span></span><span class="sub">${esc(this.actionText(p, true))}</span></li>`).join('')}</ul>`;
+    const parties = Object.values(S.advParties || {}).filter((pt) => pt.members.some((id) => S.people[id]?.deathYear == null));
+    if (parties.length) h += `<h4 class="sub-h">冒険者パーティ</h4><ul class="plist">${parties.map((pt) => `<li><span class="kind">隊</span><span>「${esc(pt.name)}」<br><span class="sub">${pt.members.map((id) => S.people[id]).filter((x) => x && x.deathYear == null).map((x) => `<span class="link" data-pid="${x.id}">${esc(x.given)}${x.id === pt.leader ? '（リーダー）' : ''}</span>`).join('、')}・達成${pt.done || 0}件</span></span></li>`).join('')}</ul>`;
+    $('guildBoard').innerHTML = h;
+  }
+
   renderGraves() {
     const S = this.sim.S;
     const list = S.graves.slice().reverse().map((id) => S.people[id]).filter(Boolean);
@@ -449,7 +470,7 @@ export class UI {
     if (a.phase === 'walk') return short ? '移動中' : ACTION_GO[a.type] || '歩いている';
     if (a.type === 'work') return short ? '仕事中' : `${JOBS[p.job]?.name ?? ''}の仕事をしている`;
     const t = ACTION_LABEL[a.type] || '過ごしている';
-    return short ? t.replace(/(をしている|している|ている)$/, '中').slice(0, 8) : t;
+    return short ? t.slice(0, 10) : t;
   }
 
   // ---------- 詳細パネル ----------
@@ -519,14 +540,27 @@ export class UI {
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
       h += `<div class="section"><h4>7つの欲求（満たされ具合）</h4><div class="bars">${bar('気分', p.mood)}${Object.entries(DESIRES).map(([k, n]) => bar(n, p.needs[k])).join('')}</div>
         <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd><dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
-        ${p.treasures?.length ? `<dt>宝物</dt><dd>${p.treasures.map(esc).join('、')}</dd>` : ''}${p.holy ? '<dt>装備</dt><dd>聖剣</dd>' : ''}</dl></div>`;
+        </dl></div>`;
+      // 装備と所持品
+      const eq = p.eq || {};
+      const slotName = { weapon: '武器', armor: '防具', shield: '盾', accessory: '装身具', tool: '道具' };
+      const inv = (p.inv || []).filter((it) => !Object.values(eq).includes(it));
+      const worth = (p.inv || []).reduce((s2, it) => s2 + itemValue(it), 0);
+      h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}</dd>` : '').join('')}
+        <dt>持ち物</dt><dd>${inv.map((it) => esc(itemName(it))).join('、') || 'なし'}</dd>${p.treasures?.length ? `<dt>宝物</dt><dd>${p.treasures.map(esc).join('、')}</dd>` : ''}
+        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd></dl></div>`;
+      if (isAdventurer(p)) {
+        const q = (S.quests || []).find((x) => x.id === p.quest);
+        const pt = p.party ? S.advParties?.[p.party] : null;
+        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${pt ? `<dt>パーティ</dt><dd>「${esc(pt.name)}」${pt.members.map((id) => S.people[id]).filter((x) => x && x.id !== p.id && x.deathYear == null).map((x) => this.pLink(x)).join('、')}</dd>` : ''}</dl></div>`;
+      }
       // 学んだこと
       const likes = Object.entries(p.q || {}).sort((a, b) => b[1] - a[1]);
       const skills = Object.entries(p.skill || {}).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
       const dangers = Object.entries(p.danger || {}).filter(([, v]) => v > 1.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
       h += `<div class="section"><h4>経験から学んだこと</h4><dl class="kv">
-        <dt>好きな過ごし方</dt><dd>${likes.filter(([, v]) => v > 0.05).slice(0, 3).map(([k]) => esc(ACTION_LABEL[k]?.replace(/ている$|をしている$/, '') || k)).join('、') || 'まだ手探り'}</dd>
-        <dt>苦手な過ごし方</dt><dd>${likes.filter(([, v]) => v < -0.05).slice(-2).map(([k]) => esc(ACTION_LABEL[k]?.replace(/ている$|をしている$/, '') || k)).join('、') || '特になし'}</dd>
+        <dt>好きな過ごし方</dt><dd>${likes.filter(([, v]) => v > 0.05).slice(0, 3).map(([k]) => esc(PREF_LABEL[k] || k)).join('、') || 'まだ手探り'}</dd>
+        <dt>苦手な過ごし方</dt><dd>${likes.filter(([, v]) => v < -0.05).slice(-2).map(([k]) => esc(PREF_LABEL[k] || k)).join('、') || '特になし'}</dd>
         <dt>腕前</dt><dd>${skills.map(([k, v]) => `${esc(JOBS[k]?.name || k)} ${Math.round(v * 100)}`).join('、') || '—'}</dd>
         <dt>危ない場所</dt><dd>${dangers.map(([k]) => { const x = Math.floor(+k / 100) * 8 + 4, z = (+k % 100) * 8 + 4; return `<span class="link" data-goto="${x},${z}">${esc(sim.placeName(x, z))}</span>`; }).join('、') || '知らない'}</dd></dl></div>`;
     }
@@ -608,6 +642,14 @@ export class UI {
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     const hh = b.hh != null ? S.households[b.hh] : null;
     if (hh) h += `<div class="section"><h4>暮らしている家族</h4><dl class="kv"><dt>蓄え</dt><dd>${Math.round(hh.money)}銅貨</dd><dt>食糧</dt><dd>${Math.floor(hh.food)}食分</dd></dl><ul class="rels" style="margin-top:6px">${hh.members.map((id) => S.people[id]).filter(Boolean).map((q) => `<li><span>${this.pLink(q, `${q.given}・${q.family}`)}</span><span class="dead">${sim.ageOf(q)}歳</span></li>`).join('')}</ul></div>`;
+    if (b.type === 'smithy' && b.settlement != null) {
+      const shop = S.towns[b.settlement].shop || [];
+      h += `<div class="section"><h4>店に並ぶ品</h4><ul class="rels">${shop.map((it) => `<li><span>${esc(itemName(it))}</span><span class="dead">${Math.round(itemValue(it) * 1.2)}銅貨</span></li>`).join('') || '<li>品切れ</li>'}</ul></div>`;
+    }
+    if (b.type === 'guild' && b.settlement != null) {
+      const qs = (S.quests || []).filter((q) => q.s === b.settlement && ['open', 'taken', 'report'].includes(q.state));
+      h += `<div class="section"><h4>依頼掲示板</h4><ul class="rels">${qs.map((q) => `<li><span>［${RANKS_ADV[q.rank]}］${esc(q.title)}</span><span class="dead">${q.reward}銅貨</span></li>`).join('') || '<li>いまは依頼がない</li>'}</ul></div>`;
+    }
     const inside = sim.living().filter((q) => q.inside === b.id);
     if (inside.length) h += `<div class="section"><h4>いま中にいる人</h4>${inside.map((q) => this.pLink(q)).join('、')}</div>`;
     const bandits = sim.living().filter((q) => q.hideout === b.id);
