@@ -4,6 +4,7 @@
 // 状態は S.convoys（隊商の一覧）と S.logi（通算の数字）。古いセーブで欠けていても ensureLogistics で作る。
 import { W, H, T, MinHeap, walkable, MOVE_COST } from './world.js';
 import { tariffConvoy } from './taxes.js';
+import { paidAtGate } from './diplomacy.js';
 import { GOODS, JOBS } from './data.js';
 import { dangerAt } from './danger.js';
 import { around } from './creatures.js';
@@ -534,7 +535,7 @@ function arriveConvoy(sim, c) {
   const to = sim.town(c.to);
   const txt = goodsText(c.goods);
   const earn = sellGoods(sim, c, c.to);
-  const toll = tariffConvoy(sim, c, earn); // 他国の町なら関税。密輸人は関所を避ける
+  const toll = paidAtGate(sim, c) ? 0 : tariffConvoy(sim, c, earn);   // 関所で払った（条約で免除された）荷は、町の関税をとらない // 他国の町なら関税。密輸人は関所を避ける
   const profit = earn - c.cost - toll;
   S.logi.arrived++;
   const own = S.people[c.owner];

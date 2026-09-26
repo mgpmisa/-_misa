@@ -379,7 +379,7 @@ function armySize(sim, kid) {
   return n;
 }
 
-function declareWar(sim, a, b) {
+export function declareWar(sim, a, b) {
   const S = sim.S, R = sim.rng;
   const ex = expansionWarReason(sim, a, b);
   const reason = ex?.reason || R.pick(['国境の鉱山をめぐって', '交易路の通行税をめぐって', '食糧不足の打開のため', '王家の名誉をかけて', '国境の森の領有をめぐって']);

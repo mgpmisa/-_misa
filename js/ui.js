@@ -23,6 +23,7 @@ import { GEAR_LABEL, GEAR_GO, GEAR_PREF, gearHtml, gearItemNote } from './gear.j
 import { convoyOf, convoyLabel } from './logistics.js';
 import { taxNationHTML } from './taxes.js';
 import { expansionNationHTML, drawTerritory } from './expansion.js';
+import { diplomacyNationHTML } from './diplomacy.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -51,6 +52,7 @@ const PREF_LABEL = {
   festival: '祭り', visit: '人を訪ねること', train: '鍛錬', work: '仕事', guild: 'ギルド通い', quest: '冒険', school: '勉強', storytell: '昔話', perform: '歌', court: '恋', trade: '商い', beg: '物乞い', steal: '盗み', buygear: '装備選び',
 };
 Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来ている' }); Object.assign(ACTION_GO, { collect: '借金を取り立てに向かっている' }); Object.assign(PREF_LABEL, { collect: '取り立て' });
+Object.assign(ACTION_LABEL, { roadbuild: '街道の普請' }); Object.assign(ACTION_GO, { roadbuild: '街道の普請へ向かう' });
 Object.assign(ACTION_LABEL, RESCUE_ACTION_LABEL); Object.assign(ACTION_GO, RESCUE_ACTION_GO); Object.assign(PREF_LABEL, RESCUE_PREF_LABEL);
 Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
 Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
@@ -424,6 +426,7 @@ export class UI {
         <dt>人口</dt><dd>${pop}人・町${towns.length}つ・兵${army}人</dd>
         <dt>国庫</dt><dd>${Math.round(k.treasury)}銅貨</dd>
         ${expansionNationHTML(this.sim, k, esc) || ''}
+        ${diplomacyNationHTML(this.sim, k, esc) || ''}
         ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
         ${bankNationHTML(this.sim, k, esc) || ''}
         ${laborNationHTML(this.sim, k, esc) || ''}

@@ -31,6 +31,7 @@ import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, 
 import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade } from './logistics.js';
 import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
+import { diplomacyDaily, diplomacyHourly, diplomacyStep } from './diplomacy.js';
 import { monstersDaily, monstersHourly } from './monsters.js';
 import { elderDaily } from './elder.js';
 import { bankDaily, priceLevel, hhDeposit } from './bank.js';
@@ -1277,6 +1278,7 @@ export class Sim {
     stepCombat(this, dt);
     rescueStep(this, dt);
     this.checkEncounters(people, dt);
+    diplomacyStep(this, dt);
     stepConvoys(this, dt);
   }
 
@@ -1680,6 +1682,7 @@ export class Sim {
     politicsHourly(this);
     taxesHourly(this);
     expansionHourly(this);
+    diplomacyHourly(this);
     demonHourly(this);
     monstersHourly(this);
     weatherHourly(this);
@@ -1807,6 +1810,7 @@ export class Sim {
     taxesDaily(this);
     gearDaily(this);
     expansionDaily(this);
+    diplomacyDaily(this);
     for (const p of this.living()) this.trimMemories(p);
     this.save();
   }
