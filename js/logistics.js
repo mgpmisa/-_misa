@@ -182,6 +182,7 @@ function unboard(sim, p, c) {
   if (p._spot > 1e6) p._spot = 0;
   if (p.action?.convoy === c.id) { p.action.until = sim.S.t; p.action.convoy = null; }
 }
+const routeKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
 const riders = (c) => [c.owner, ...c.guards, ...c.crew].filter((id) => id != null);
 
 // お金の出どころ：ふつうは持ち主の家計。町の市場組合が出す荷車（fund）は町の資金
@@ -238,7 +239,19 @@ export function startTradeConvoy(sim, p, tr) {
     sim.remember(p, `${dest.name}へ向けて、${GOODS[g].name}${qty}を船に積んで港を出た`, { emo: 0.3, imp: 0.4, k: 'trade' });
     sim.pushLog(`${who(p)}の船が${GOODS[g].name}${qty}を積んで${here.name}の港を出た（行き先は${dest.name}）。`, 'event', [p.id, ...c.crew], c.pos);
   } else {
+    // 最近この道で荷を奪われた（噂を聞いた）なら、護衛なしでは出ない
+    const bad = S.logi.bad?.[routeKey(p.s, tr.dest)];
+    const scared = bad != null && sim.today - bad <= 3;
+    if (scared) risk.risk += 4;
     if (risk.risk >= 3.5) hireEscort(sim, p, c, risk);
+    if (scared && !c.guards.length) {
+      from.stock[g] += qty; hh.money += cost;
+      S.convoys.splice(S.convoys.indexOf(c), 1); S.logi.departed--;
+      p.action = null; if (p._spot > 1e6) p._spot = 0; p._tradeCd = S.t + 720;
+      sim.remember(p, `${dest.name}への道に盗賊が出ると聞き、護衛も見つからないので荷を出すのを見合わせた`, { emo: -0.3, imp: 0.4, k: 'trade' });
+      S.logi.cancelled = (S.logi.cancelled || 0) + 1;
+      return true;
+    }
     sim.remember(p, `${GOODS[g].name}${qty}を荷車に積み、${c.guards.length ? '護衛を連れて' : ''}${dest.name}へ向けて出発した`, { emo: 0.2, imp: 0.35, k: 'trade' });
     if (R.chance(0.35) || c.guards.length) sim.pushLog(`${who(p)}の荷車が${GOODS[g].name}${qty}を積んで${here.name}を出た（${dest.name}行き${c.guards.length ? '・護衛' + c.guards.map((id) => S.people[id].given).join('と') : ''}）。`, 'event', [p.id, ...c.guards], c.pos);
   }
@@ -264,8 +277,6 @@ function hireEscort(sim, p, c, risk) {
   const cands = sim.living().filter((q) => (isAdventurer(q) || SELLSWORD.has(q.job)) && q.s === p.s && !q.quest && q.jail == null && !q.fight && q.hp > q.maxhp * 0.6 && sim.isAdult(q) && q.action?.type !== 'sleep' && !RIDE.has(q.action?.type) && advRank(q) + 1 >= rank)
     .sort((a, b) => (b.lv || 1) - (a.lv || 1) + (sim.rel(p, b).a - sim.rel(p, a).a) / 50);
   const q = makeEscortQuest(sim, { s: p.s, dest: c.to, convoy: c.id, rank, reward, giver: p.id, title: `${dest.name}まで荷車を護衛してほしい（${who(p)}）` });
-  const g = sim.townBuilding(sim.townOf(p), 'guild');
-  sim.pushLog(`【依頼】${q.title}（報酬${reward}銅貨・${RANKS_ADV[rank]}ランク以上）`, 'event', [p.id], g ? g.door : c.pos);
   const hired = cands.slice(0, want);
   if (!hired.length) {
     q.state = 'failed'; q.closed = sim.today;
@@ -273,10 +284,12 @@ function hireEscort(sim, p, c, risk) {
     return;
   }
   q.state = 'taken'; q.taken = sim.today; q.takenBy = hired.map((m) => m.id);
+  sim.pushLog(`【依頼】${q.title}（報酬${reward}銅貨）を${hired.map((m) => m.given).join('と')}が引き受けた。`, 'event', [p.id, ...q.takenBy], c.pos);
   c.quest = q.id;
   S.logi.escorts++;
   for (const m of hired) {
     board(sim, m, c, 'escort'); c.guards.push(m.id);
+    m.quest = q.id;   // 引き受け中の依頼（ギルドが「放り出した」と見なさないように）
     sim.remember(m, `${who(p)}の荷車の護衛を引き受け、${dest.name}へ向かった`, { emo: 0.3, imp: 0.45, about: [p.id], k: 'quest' });
   }
 }
@@ -324,7 +337,7 @@ export function stepConvoys(sim, dt) {
     for (const list of [c.guards, c.crew]) for (let j = list.length - 1; j >= 0; j--) {
       const p = S.people[list[j]];
       if (p && p.fight) { fighting = true; continue; }
-      if (!p || p.deathYear != null || p.action?.convoy !== c.id) { if (p && p._spot > 1e6) p._spot = 0; list.splice(j, 1); }
+      if (!p || p.deathYear != null || p.action?.convoy !== c.id) { if (p && p._spot > 1e6) p._spot = 0; if (p && c.quest != null && p.quest === c.quest) p.quest = null; list.splice(j, 1); }
     }
     const own = c.owner != null ? S.people[c.owner] : null;
     if (own && own.fight) fighting = true;
@@ -420,6 +433,7 @@ function robbed(sim, c, band, hide, where) {
   for (const [g, n] of Object.entries(c.goods)) { const q = Math.ceil(n * frac); lost[g] = q; c.goods[g] = n - q; }
   const val = goodsValue(lost);
   S.logi.robbed++; S.logi.lostValue += val;
+  S.logi.bad = S.logi.bad || {}; S.logi.bad[routeKey(c.from, c.to)] = sim.today;   // この道は危ないと町に知れ渡る
   const bhh = band[0] && sim.hh(band[0]);
   if (bhh) bhh.money += val * 0.4;          // 奪った荷は闇で売りさばく
   if (band[0]) markWanted(sim, band[0], '追いはぎ', 15);
@@ -578,6 +592,7 @@ function payEscort(sim, c) {
     g.qp = (g.qp || 0) + 1 + q.rank;
     const before = g.advRank || 0; g.advRank = advRank(g);
     g.fame = (g.fame || 0) + 1 + q.rank;
+    if (g.quest === q.id) g.quest = null;
     sim.remember(g, `「${q.title}」をやり遂げ、${share}銅貨の報酬を受け取った`, { emo: 0.6, imp: 0.5, k: 'quest' });
     if (g.advRank > before) sim.remember(g, `冒険者ランクが${RANKS_ADV[g.advRank]}に上がった`, { emo: 0.9, imp: 0.85, k: 'quest' });
   }
@@ -586,7 +601,11 @@ function payEscort(sim, c) {
 function finish(sim, c) {
   const S = sim.S;
   for (const id of riders(c)) unboard(sim, S.people[id], c);
-  if (c.quest != null) { const q = (S.quests || []).find((x) => x.id === c.quest); if (q && q.state === 'taken') { q.state = 'failed'; q.closed = sim.today; } }
+  if (c.quest != null) {
+    const q = (S.quests || []).find((x) => x.id === c.quest);
+    if (q && q.state === 'taken') { q.state = 'failed'; q.closed = sim.today; }
+    for (const id of q?.takenBy || []) { const m = S.people[id]; if (m && m.quest === c.quest) m.quest = null; }
+  }
   c.done = true; c.state = 'done';
 }
 function abandon(sim, c, why) {

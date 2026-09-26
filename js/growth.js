@@ -14,6 +14,7 @@
 //   growthStats(sim, p)          … humanStats に掛ける補正 {hp, atk, def, spd, work, heal, talk, trade, evade}
 //   growthAttack(sim, e, t, dmg) … stepCombat の一撃ごと：回避・盾受け・会心・技能の伸び。0 を返したら外れ
 //   growthTalk(sim, a, b, eff)   … endTalk：魅力と話術で好感度の上がり方が変わる・話術が伸びる
+//   growthLevelCheck(sim, p)     … sim.levelCheck の置き換え（ゆるやかな必要経験値 xpNeed）
 //   learnAt(sim, p, kind, dt)    … 学び舎（'school' 学校, 'academy' 魔法学園, 'dojo' 道場）で学んでいる間、毎歩
 //   moveMul(p) workMul(p) healMul(p) tradeMul(p) … 歩く速さ・仕事・回復量・売値の掛け算（控えを読むだけで軽い）
 //   growthHtml(sim, p)           … 人物の詳細欄に差し込む HTML
@@ -231,10 +232,33 @@ export function gainSkill(sim, p, k, hours, rate = 1) {
   const u = Math.max(0, 1 - s / 105);
   const d = BASE_SKILL * rate * hours * u * u * learnMul(sim, p);
   sk[k] = Math.min(100, s + d);
+  // 行動した時間そのものが経験値になる（戦いと魔法は濃い経験、暮らしの技は薄い経験）
+  p.xp = (p.xp || 0) + hours * rate * (XP_RICH.has(k) ? 1.5 : 0.5);
   g.last[k] = sim.today;
   g.rec[k] = (g.rec[k] || 0) + d;
   return d;
 }
+const XP_RICH = new Set(['剣術', '槍術', '斧術', '鈍器', '弓術', '短剣', '格闘', '盾', '攻撃魔法', '回復魔法']);
+
+// ---------- レベル ----------
+// 次のレベルに必要な経験値。旧式（20×Lv×Lv：Lv5→500、Lv8→1280）はきつすぎて誰も上がらなかったので、
+// ゆるやかな曲線にする（Lv1→40、Lv2→70、Lv3→112、Lv5→222、Lv8→443、Lv10→622、Lv20→1840）
+export const xpNeed = (lv) => Math.round(15 * Math.pow(lv, 1.6) + 25);
+// sim.levelCheck の置き換え（一度に何段も上がれる。上限Lv60）
+export function growthLevelCheck(sim, p) {
+  let up = 0;
+  while ((p.xp || 0) >= xpNeed(p.lv || 1) && (p.lv || 1) < 60) { p.xp -= xpNeed(p.lv || 1); p.lv = (p.lv || 1) + 1; up++; }
+  if (!up) return;
+  Object.assign(p, humanStats(sim, p));
+  p.hp = Math.min(p.maxhp, p.hp + 20 * up);
+  if (p.needs) p.needs.esteem = Math.min(100, p.needs.esteem + 10 * up);
+  if (p.lv % 3 === 0 || p.lv >= 10) {
+    sim.remember(p, `鍛錬と経験を重ねて、また一段強くなった（Lv${p.lv}）`, { emo: 0.6, imp: 0.5, k: 'level' });
+    if (p.needs) p.needs.esteem = Math.min(100, p.needs.esteem + 20);
+  }
+  if (p.lv === 20 || p.lv === 30) { (p.deeds = p.deeds || []).push(`${sim.year()}年、Lv${p.lv}に達した`); p.fame = (p.fame || 0) + 5; }
+}
+
 export function gainStat(p, k, hours, rate = 1) {
   const g = p.gr, t = g.tr[k] || 0;
   const u = Math.max(0, 1 - t / 12);
@@ -295,7 +319,7 @@ function syncJobSkill(sim, p) {
   if (g.syncJob !== p.job) {
     p.skills[k] = Math.max(p.skills[k] || 0, cur * 100);       // 転職・弟子入りで新しく付いた腕
   } else if (g.sync != null && Math.abs(cur - g.sync) > 1e-9) {
-    if (cur > g.sync) p.skills[k] = Math.min(100, (p.skills[k] || 0) + (cur - g.sync) * 100); // 鍛冶の一打・修業など外からの伸び
+    if (cur > g.sync) p.skills[k] = Math.min(100, (p.skills[k] || 0) + Math.min(0.5, (cur - g.sync) * 30)); // 鍛冶の一打・修業など外からの伸び（3割だけ取り込み、1時間0.5まで）
     else p.skills[k] = cur * 100;                                 // 外から下げられた（転職など）
   }
   const v = Math.round(clamp((p.skills[k] || 0) / 100, 0, 1) * 10000) / 10000;
@@ -382,7 +406,7 @@ export function growthTalk(sim, a, b, eff) {
   const ta = b.gr.m?.talk || 0, tb = a.gr.m?.talk || 0;
   if (typeof eff.daA === 'number') eff.daA += eff.daA >= 0 ? ta : ta * 0.5;
   if (typeof eff.daB === 'number') eff.daB += eff.daB >= 0 ? tb : tb * 0.5;
-  for (const p of [a, b]) { gainSkill(sim, p, '話術', 0.2); gainStat(p, 'cha', 0.1); }
+  for (const p of [a, b]) { gainSkill(sim, p, '話術', 0.1); gainStat(p, 'cha', 0.05); }
 }
 
 // ---------- 1時間ごと ----------
@@ -455,6 +479,14 @@ export function growthHourly(sim) {
       }
       g.fought = null;
     }
+    // 学校と先生の授業でたまる既存の p.skill.study（0〜1）を、読み書き・学問・知力の伸びに換える
+    const study = p.skill?.study || 0;
+    if (g.study == null) g.study = study;
+    else if (study > g.study) {
+      const d = (study - g.study) * 100;
+      gainSkill(sim, p, '読み書き', d * 1.5); gainSkill(sim, p, '学問', d); gainStat(p, 'int', d * 1.2);
+      g.study = study;
+    } else g.study = study;
     syncJobSkill(sim, p);
     computeStats(sim, p);
     if (fresh) { growthStats(sim, p); Object.assign(p, humanStats(sim, p)); }
@@ -483,6 +515,7 @@ export function growthDaily(sim) {
     computeStats(sim, p);
     checkTitles(sim, p, false);
     checkAspire(sim, p);
+    growthLevelCheck(sim, p);
     growthStats(sim, p);
     Object.assign(p, humanStats(sim, p));
   }
@@ -555,6 +588,7 @@ export function growthHtml(sim, p) {
   }).join('') || '<dt>技能</dt><dd>まだ何も身についていない</dd>'}`;
   const m = g.m;
   if (m && sim.ageOf(p) >= 14) h += `<dt>戦いぶり</dt><dd>攻め×${m.atk.toFixed(2)}　守り×${m.def.toFixed(2)}　かわす${Math.round(m.evade * 100)}%</dd><dt>足の速さ</dt><dd>×${m.spd.toFixed(2)}${(g.walkH || 0) > 40 ? `（旅の経験 ${Math.round(g.walkH)}時間）` : ''}</dd>`;
+  h += `<dt>経験</dt><dd>Lv${p.lv || 1}　次まで ${Math.max(0, Math.ceil(xpNeed(p.lv || 1) - (p.xp || 0)))}</dd>`;
   if (p.aspire) h += `<dt>志</dt><dd>${esc(JOBS[p.aspire]?.name || p.aspire)}になりたい</dd>`;
   h += `</dl></div>`;
   return h;

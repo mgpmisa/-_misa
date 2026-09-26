@@ -24,6 +24,7 @@ const LABEL = {
   guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '魔法の塔', mansion: '屋敷', clinic: '診療所', school: '学校',
   stable: '厩舎', mill: '風車小屋', lighthouse: '灯台', observatory: '展望台', mine: '坑道', hideout: '盗賊のアジト', ruins: '遺跡',
   well: '井戸の底', cave: '洞窟の迷宮', pyramid: 'ピラミッドの回廊', demoncastle: '魔王城',
+  guardpost: '門の詰所', academy: '魔法学園の教室', dojo: '剣術道場', fort: '砦の中', camp: '開拓者の小屋', drillyard: '練兵場',
 };
 
 function strHash(s) {
@@ -627,7 +628,7 @@ const F = {
 // ================================================================ 建物ごとの内装
 function sizeOf(b) {
   const t = b.type;
-  const fix = { well: [6, 6], lighthouse: [8, 8], mill: [9, 9], observatory: [10, 9], mine: [16, 8], stable: [15, 9], market: [16, 10], hideout: [13, 11], ruins: [14, 12] };
+  const fix = { guardpost: [8, 7], camp: [7, 6], fort: [14, 11], dojo: [14, 10], academy: [16, 12], well: [6, 6], lighthouse: [8, 8], mill: [9, 9], observatory: [10, 9], mine: [16, 8], stable: [15, 9], market: [16, 10], hideout: [13, 11], ruins: [14, 12] };
   if (fix[t]) return fix[t];
   if (t === 'castle') return [20, 16];
   if (t === 'house') return [clamp(b.w * 3 + 2, 7, 12), clamp(b.d * 3 + 1, 6, 10)];
@@ -1081,6 +1082,88 @@ const BUILD = {
     F.shelf(K, 0, D - 3.5, 2.5, 'W', M.books, { h: 1.6 });
     K.cyl(0.6, 0, 0.6, 0.25, 0.5, M.wood); K.sphere(0.6, 0.8, 0.6, 0.28, M.blue, { seg: 8 });
     F.torch(K, 'W', 2, 1.7); F.chandelier(K, W / 2, D / 2 + 1, 2.1, { r: 0.6, chain: 0.4 });
+  },
+
+  // 門の詰所：門番と自警団の待機場所。仮眠の寝台・槍掛け・火鉢・当番の帳面
+  guardpost(K) {
+    const { M, W, D } = K;
+    F.room(K, { floor: M.plaza, wall: M.stone, trim: M.darkStone, door: Math.floor(W / 2), win: { N: [2], W: [2], E: [], S: [] } });
+    F.bed(K, 0.1, 0.2, { blanket: M.blue, poor: true }); F.bed(K, 1.2, 0.2, { blanket: M.blue, poor: true });
+    F.weaponRack(K, W - 3.2, 0.1, 3);
+    F.table(K, W / 2 - 0.6, D / 2 - 0.2, 1.4, 0.9); K.box(W / 2 - 0.4, 0.72, D / 2, 0.5, 0.02, 0.4, M.white);
+    F.stool(K, W / 2 + 0.1, D / 2 + 1.1); K.slot('work', W / 2 + 0.1, D / 2 + 1.1, { face: [0, -1] });
+    F.stool(K, W / 2 - 1.1, D / 2 + 0.3); K.slot('guard', W / 2 - 1.1, D / 2 + 0.3, { face: [1, 0] });
+    F.brazier(K, W - 1.2, D - 1.6, M.fire);
+    K.slot('guard', 1.2, D - 1.2, { face: [0, 1] }); K.slot('seat', W - 2.4, D - 1.2, { face: [1, 0] });
+    F.wallPic(K, 'N', W / 2 + 1.5, 1.2, 0.9, 0.7, M.notice);
+    F.torch(K, 'W', D - 2, 1.6);
+  },
+
+  // 魔法学園：長机が並ぶ教室、教壇の上に魔法陣、本棚と水晶
+  academy(K) {
+    const { M, W, D } = K;
+    F.room(K, { floor: M.parquet, wall: M.stone, h: 3.0, trim: M.purple, door: Math.floor(W / 2), win: { N: [], W: F.winAt(3, D), E: F.winAt(3, D), S: [] }, winTop: 2.4 });
+    F.wallPic(K, 'N', W / 2, 1.0, 4.0, 1.5, M.blackboard);
+    F.wallPic(K, 'N', 2.2, 1.2, 1.4, 1.2, M.starchart);
+    const cx = W / 2, cz = 2.2;
+    K.spin.push({ mesh: K.plane(cx, 0.03, cz, 2.4, 2.4, M.magic, { dyn: true }), speed: 0.25, axis: 'y' });
+    K.light(cx, 0.8, cz, '#b070ff', 2.6, 5, 0.4);
+    K.slot('work', cx, cz, { face: [0, 1] });
+    for (let z = 4; z < D - 1.5; z += 1.8) for (let x = 1.2; x + 2.6 < W - 0.6; x += 3.2) {
+      F.table(K, x, z, 2.6, 0.7, { h: 0.66, top: M.darkWood });
+      K.box(x + 0.3, 0.66, z + 0.15, 0.5, 0.08, 0.35, M.books); F.candle(K, x + 2.1, z + 0.35, 0.66, { noStand: true, li: 0.6 });
+      for (const dx of [0.6, 1.9]) { F.chair(K, x + dx, z + 1.1, [0, -1]); K.slot('desk', x + dx, z + 1.1, { face: [0, -1] }); }
+    }
+    F.shelf(K, 0, D - 4, 3, 'W', M.books, { h: 2.4 }); F.shelf(K, W - 0.6, D - 4, 3, 'E', M.bottles, { h: 2.2 });
+    for (const [x, z] of [[W - 1.2, 1.2], [1.0, 3.6]]) K.box(x - 0.15, 0, z - 0.15, 0.3, 0.9, 0.3, M.crystal);
+    F.chandelier(K, W / 2, D / 2 + 1, 2.6, { r: 0.8, chain: 0.4 });
+    F.torch(K, 'W', 1.5, 1.9, { fire: M.purpleFire, color: '#c080ff' }); F.torch(K, 'E', 1.5, 1.9, { fire: M.purpleFire, color: '#c080ff' });
+  },
+
+  // 剣術道場：板の間に木剣掛け、打ち込み人形、師範の座
+  dojo(K) {
+    const { M, W, D } = K;
+    F.room(K, { floor: M.planks, wall: M.timber2, trim: M.darkWood, beams: true, door: Math.floor(W / 2), win: { N: [], W: F.winAt(2, D), E: F.winAt(2, D), S: [] } });
+    F.weaponRack(K, 1, 0.1, 3); F.weaponRack(K, W - 4, 0.1, 3);
+    F.wallPic(K, 'N', W / 2, 1.1, 1.6, 1.0, M.banner('#2a2a2a'));
+    K.box(W / 2 - 1.2, 0, 0.3, 2.4, 0.2, 1.2, M.darkWood); K.solid(W / 2 - 1.2, 0.3, 2.4, 1.2);
+    K.slot('work', W / 2, 1.1, { face: [0, 1], y: 0.2 });
+    for (let i = 0; i < 2; i++) { const x = 1.4 + i * (W - 2.8); F.dummy(K, x, D / 2); }
+    // 稽古の立ち位置（向かい合う）
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) {
+      const x = W / 2 - 2.4 + c * 2.4, z = 3.2 + r * 2.4;
+      if (z > D - 1.5) continue;
+      K.slot('drill', x, z, { face: [0, r ? -1 : 1] });
+    }
+    F.bench(K, 1, D - 1.4, 3); K.slot('seat', 1.5, D - 1.3, { face: [0, -1] }); K.slot('seat', 2.5, D - 1.3, { face: [0, -1] });
+    F.torch(K, 'W', D - 2, 1.6); F.torch(K, 'E', D - 2, 1.6);
+  },
+
+  // 国境の砦：兵の詰め所。寝台・地図の机・武器庫・見張りの梯子
+  fort(K) {
+    const { M, W, D } = K;
+    F.room(K, { floor: M.plaza, wall: M.stone, trim: M.darkStone, h: 2.8, door: Math.floor(W / 2), win: { N: [3, W - 4], W: [], E: [], S: [] }, winMat: M.black });
+    for (let z = 0.3; z + 2 <= D - 1.5; z += 2.4) F.bed(K, 0.1, z, { upper: true, blanket: M.red, blanket2: M.red });
+    F.weaponRack(K, W - 0.5, 1.0, 3, 'W'); F.weaponRack(K, W / 2 - 1.5, 0.1, 3);
+    F.table(K, W / 2 - 1, D / 2 - 0.5, 2.2, 1.2); K.box(W / 2 - 0.8, 0.72, D / 2 - 0.3, 1.8, 0.02, 0.8, M.mapTex);
+    K.slot('work', W / 2, D / 2 + 1.1, { face: [0, -1] }); K.slot('guard', W - 1.5, D - 1.5, { face: [0, 1] }); K.slot('guard', 2.2, D - 1.2, { face: [0, 1] });
+    F.barrel(K, W - 0.7, D - 0.7); F.barrel(K, W - 1.5, D - 0.7); F.crate(K, W - 1.2, D - 2.0);
+    F.brazier(K, 3, D - 2.2, M.fire);
+    F.wallPic(K, 'N', W / 2, 1.2, 1.2, 1.4, M.banner('#8e2c24'));
+    F.torch(K, 'W', D - 1.2, 1.6); F.torch(K, 'E', D - 3, 1.6);
+  },
+
+  // 開拓者の小屋：土間に藁の寝床、斧と鋤、炉、切った丸太
+  camp(K) {
+    const { M, W, D } = K;
+    F.room(K, { floor: M.dirt, wall: M.planks, trim: M.darkWood, h: 2.1, door: Math.floor(W / 2), win: { N: [], W: [2], E: [], S: [] } });
+    F.bed(K, 0.1, 0.3, { poor: true, blanket: M.brown });
+    F.hearth(K, W - 3, 2);
+    K.slot('work', W - 2, 1.6, { face: [0, -1] });
+    for (let i = 0; i < 3; i++) K.cyl(1.4 + i * 0.5, 0.18, D - 0.6, 0.18, 0.9, M.wood, { rx: Math.PI / 2, centered: true });
+    F.sack(K, W - 0.6, D - 0.6); F.sack(K, W - 1.2, D - 0.5);
+    F.table(K, 2.0, 2.4, 1.2, 0.8); F.stool(K, 2.6, 3.6); K.slot('eat', 2.6, 3.6, { face: [0, -1] });
+    F.torch(K, 'W', D - 2, 1.4);
   },
 
   stable(K) {
@@ -1705,7 +1788,8 @@ export class InteriorView {
       case 'eat': return 'eat';
       case 'tavern': return 'seat';
       case 'pray': return 'pew';
-      case 'school': return 'desk';
+      case 'school': case 'academy': return 'desk';
+      case 'dojo': return 'drill';
       case 'jail': return 'cell';
       case 'work': {
         if (t === 'castle') {
@@ -1717,12 +1801,15 @@ export class InteriorView {
         if (t === 'tavern' && ['bard', 'musician', 'dancer'].includes(e.job)) return 'stage';
         if (t === 'guild' && e.job === 'adventurer') return 'wait';
         if (t === 'school' && e.job !== 'teacher') return 'desk';
+        if (t === 'academy' && e.job !== 'magister') return 'desk';
+        if ((t === 'guardpost' || t === 'fort') && ['gatekeeper', 'militia', 'soldier', 'guard', 'knight', 'watchman'].includes(e.job)) return 'guard';
+        if (t === 'dojo' && e.job !== 'swordmaster') return 'drill';
         return 'work';
       }
       default: return 'wander';
     }
   }
-  static FALLBACK = { bed: ['bed', 'lie'], eat: ['eat', 'seat', 'wander'], seat: ['seat', 'eat', 'wander'], pew: ['pew', 'seat', 'wander'], desk: ['desk', 'seat', 'wander'], work: ['work', 'wander'], stage: ['stage', 'work', 'wander'], wait: ['wait', 'seat', 'wander'], throne: ['throne', 'royal', 'boss', 'wander'], royal: ['royal', 'wander'], guard: ['guard', 'wander'], cell: ['cell', 'wander'], boss: ['boss', 'room'], room: ['room'], explore: ['explore'], wander: ['wander'] };
+  static FALLBACK = { bed: ['bed', 'lie'], eat: ['eat', 'seat', 'wander'], seat: ['seat', 'eat', 'wander'], pew: ['pew', 'seat', 'wander'], desk: ['desk', 'seat', 'wander'], drill: ['drill', 'seat', 'wander'], work: ['work', 'wander'], stage: ['stage', 'work', 'wander'], wait: ['wait', 'seat', 'wander'], throne: ['throne', 'royal', 'boss', 'wander'], royal: ['royal', 'wander'], guard: ['guard', 'wander'], cell: ['cell', 'wander'], boss: ['boss', 'room'], room: ['room'], explore: ['explore'], wander: ['wander'] };
   takeSlot(r, kind, e) {
     for (const k of InteriorView.FALLBACK[kind] || ['wander']) {
       if (k === 'wander' || k === 'lie' || k === 'room' || k === 'explore' || k === 'boss' && !this.K.slots.some((s) => s.k === 'boss')) return k === 'boss' ? 'room' : k;

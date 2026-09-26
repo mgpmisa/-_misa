@@ -137,8 +137,8 @@ export const JOBS = {
   smuggler:   { name: '密輸人',       place: 'dock',      rank: 'citizen', crook: true, svc: 'trade' },
   // 国の普請・開拓・旅の稼業（place の行き先は civic.js の civicPlace が決める）
   overseer:   { name: '普請奉行',     place: 'castle',    rank: 'citizen', svc: 'works', pay: 1.6 },
-  roadworker: { name: '道普請の人夫', place: 'roadwork',  rank: 'commoner', svc: 'roads', pay: 0.9 },
-  pioneer:    { name: '開拓者',       place: 'frontier',  rank: 'commoner', goods: 'wood', svc: 'clear' },
+  roadworker: { name: '道普請の人夫', place: 'roadwork',  rank: 'commoner', combat: 1, svc: 'roads', pay: 0.9 },
+  pioneer:    { name: '開拓者',       place: 'frontier',  rank: 'commoner', combat: 1, goods: 'wood', svc: 'clear' },
   coachman:   { name: '御者',         place: 'coach',     rank: 'commoner', svc: 'coach' },
   peddler:    { name: '行商人',       place: 'peddle',    rank: 'commoner', svc: 'peddle' },
   troupe:     { name: '旅芸人',       place: 'plaza',     rank: 'wanderer', svc: 'entertain' },

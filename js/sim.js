@@ -20,6 +20,7 @@ import { calendarDaily, calendarHalfDay } from './calendar.js';
 import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, harvestMul, roadsClosed, weatherMoodDelta, legacyWeatherAt } from './weather.js';
 import { financeDaily, financeHourly, financeCandidates, financeArrive } from './finance.js';
 import { careerDaily, careerOptions, careerDo, careerWorkPlace } from './career.js';
+import { faunaDaily, faunaHourly } from './fauna.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -1589,6 +1590,7 @@ export class Sim {
     demonHourly(this);
     weatherHourly(this);
     choreHourly(this);
+    faunaHourly(this);
     financeHourly(this);
   }
 
@@ -1693,6 +1695,7 @@ export class Sim {
     careerDaily(this);
     financeDaily(this);
     creatureDaily(this);
+    faunaDaily(this);
     justiceDaily(this);
     politicsDaily(this);
     for (const p of this.living()) this.trimMemories(p);

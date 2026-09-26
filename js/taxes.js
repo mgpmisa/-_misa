@@ -472,7 +472,7 @@ function unrestDaily(sim, k) {
     const hhs = Object.values(S.households).filter((h) => h.s === s.id && !h.bandits);
     const poor = hhs.length ? hhs.filter((h) => h.money < 15).length / hhs.length : 0;
     // 重すぎる税（水準1.5超）が続くと、それだけで毎日じわじわ不満がたまる
-    let u = t.unrest * 0.975 + poor * 3 + (t.price.bread > 5 ? 1 : 0) + Math.max(0, k.taxes.lv - 1.5) * 1.5 * (inRelief(sim, k, s.id) ? 0.5 : 1);
+    let u = t.unrest * 0.975 + poor * 1 + (t.price.bread > 5 ? 0.5 : 0) + Math.max(0, k.taxes.lv - 1.5) * 1.5 * (inRelief(sim, k, s.id) ? 0.5 : 1);
     if (feastNow) u -= s.id === k.capital ? 12 : 6;
     t.unrest = clamp(u, 0, 100);
     t.hot = t.unrest >= 85 ? (t.hot || 0) + 1 : 0;

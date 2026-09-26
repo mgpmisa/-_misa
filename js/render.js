@@ -224,6 +224,7 @@ export class Renderer {
       snowPine: L({ color: '#e8f0f0' }),
     };
     const parts = {};
+    this.treeAt = {};   // マスごとの木（開拓や道普請で切ったら消す）
     const put = (name, geo, mat) => { parts[name] = parts[name] || { geo, mat, list: [] }; return parts[name].list; };
     const G = {
       trunk: new THREE.BoxGeometry(0.16, 0.5, 0.16).translate(0, 0.25, 0),
@@ -241,7 +242,7 @@ export class Renderer {
       const t = w.tiles[z * W + x];
       const r = hsh(x, z, 7), r2 = hsh(x, z, 8);
       const y = topY(w.hgt[z * W + x]);
-      const item = { x: wx(x) + (r2 - 0.5) * 0.3, y, z: wz(z) + (r - 0.5) * 0.3, s: 0.8 + r2 * 0.45, rot: r * 6.28 };
+      const item = { x: wx(x) + (r2 - 0.5) * 0.3, y, z: wz(z) + (r - 0.5) * 0.3, s: 0.8 + r2 * 0.45, rot: r * 6.28, ti: z * W + x };
       if (inTown(x, z) && t !== T.FOREST && t !== T.DENSE) continue;
       switch (t) {
         case T.FOREST:
@@ -271,7 +272,7 @@ export class Renderer {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
     for (const p of Object.values(parts)) {
       const mesh = new THREE.InstancedMesh(p.geo, p.mat, p.list.length);
-      p.list.forEach((it, i) => { q.setFromEuler(e.set(0, it.rot, 0)); m4.compose(v.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s)); mesh.setMatrixAt(i, m4); });
+      p.list.forEach((it, i) => { q.setFromEuler(e.set(0, it.rot, 0)); m4.compose(v.set(it.x, it.y, it.z), q, sc.set(it.s, it.s, it.s)); mesh.setMatrixAt(i, m4); (this.treeAt[it.ti] = this.treeAt[it.ti] || []).push([mesh, i]); });
       mesh.castShadow = true; mesh.receiveShadow = true;
       this.scene.add(mesh);
     }
@@ -320,7 +321,25 @@ export class Renderer {
         const arch = this.box(side[0] ? 2.8 : 0.9, 0.6, side[1] ? 2.8 : 0.9); arch.translate(wx(g.x), y + 1.9, wz(g.z)); gpush(M.stone, arch);
       }
     }
+    // 村と港の門：丸太の門柱と横木（町の入口の目印）
+    for (const s of w.settlements) {
+      if (s.type === 'capital' || !s.gates) continue;
+      for (const g of s.gates) {
+        const y = topY(w.hgt[g.z * W + g.x]);
+        const side = g.dx !== 0 ? [0, 1] : [1, 0];
+        for (const k of [-1, 1]) { const t = this.box(0.16, 1.5, 0.16); t.translate(wx(g.x) + side[0] * k * 0.62, y + 0.75, wz(g.z) + side[1] * k * 0.62); gpush(M.wood, t); }
+        const bar = this.box(side[0] ? 1.6 : 0.14, 0.14, side[1] ? 1.6 : 0.14); bar.translate(wx(g.x), y + 1.42, wz(g.z)); gpush(M.wood, bar);
+        const sign = this.box(side[0] ? 0.6 : 0.06, 0.26, side[1] ? 0.6 : 0.06); sign.translate(wx(g.x), y + 1.2, wz(g.z)); gpush(M.planks, sign);
+      }
+    }
     for (const [mat, geos] of gateGeos) { const m = new THREE.Mesh(mergeGeometries(geos.map((g) => { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); return g; })), mat); m.castShadow = true; this.scene.add(m); }
+    // 橋：川の上に板を渡し、両脇に欄干
+    this.bridgeDeck = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.1, 1), M.planks, 512);
+    this.bridgeRail = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.22, 0.08), M.wood, 1024);
+    this.bridgeDeck.count = 0; this.bridgeRail.count = 0;
+    this.bridgeDeck.castShadow = this.bridgeRail.castShadow = true; this.bridgeDeck.receiveShadow = true;
+    this.scene.add(this.bridgeDeck, this.bridgeRail);
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) if (w.tiles[z * W + x] === T.BRIDGE) this.addBridge(x, z);
     // 桟橋
     const dock = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.12, 0.9), M.planks, Math.max(1, docks.length));
     docks.forEach(([x, z], i) => dock.setMatrixAt(i, m4.makeTranslation(wx(x), SEA_Y + 0.12, wz(z))));
@@ -349,6 +368,50 @@ export class Renderer {
     const head = new THREE.InstancedMesh(new THREE.BoxGeometry(0.22, 0.22, 0.22).translate(0, 1.2, 0), M.lamp, Math.max(1, lamps.length));
     lamps.forEach(([x, z], i) => { const y = topY(w.hgt[z * W + x]); pole.setMatrixAt(i, m4.makeTranslation(wx(x) + 0.3, y, wz(z) + 0.3)); head.setMatrixAt(i, m4.makeTranslation(wx(x) + 0.3, y, wz(z) + 0.3)); });
     this.scene.add(pole, head);
+  }
+
+  // 橋を1マス足す（生成時と、道普請で新しく架かったとき）
+  addBridge(x, z) {
+    const w = this.sim.S.world, m4 = new THREE.Matrix4();
+    if (!this.bridgeDeck || this.bridgeDeck.count >= 512) return;
+    const t = (a, b) => w.tiles[b * W + a];
+    const along = (tt) => tt === T.ROAD || tt === T.BRIDGE || tt === T.PLAZA;
+    const ew = along(t(x - 1, z)) || along(t(x + 1, z));
+    const ns = along(t(x, z - 1)) || along(t(x, z + 1));
+    const alongX = ew && !ns ? true : ns && !ew ? false : true;
+    const hs = [[x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]].filter(([a, b]) => { const q = t(a, b); return q !== T.RIVER && q !== T.SEA && q !== T.DEEP && q !== T.BRIDGE; }).map(([a, b]) => w.hgt[b * W + a]);
+    const h = hs.length ? Math.max(...hs) : w.hgt[z * W + x] + 1;
+    const y = topY(h) - 0.05;
+    this.bridgeDeck.setMatrixAt(this.bridgeDeck.count++, m4.makeTranslation(wx(x), y, wz(z)));
+    for (const k of [-1, 1]) {
+      if (this.bridgeRail.count >= 1024) break;
+      if (alongX) m4.makeTranslation(wx(x), y + 0.16, wz(z) + k * 0.46); else m4.makeRotationY(Math.PI / 2).setPosition(wx(x) + k * 0.46, y + 0.16, wz(z));
+      this.bridgeRail.setMatrixAt(this.bridgeRail.count++, m4);
+    }
+    this.bridgeDeck.instanceMatrix.needsUpdate = true; this.bridgeRail.instanceMatrix.needsUpdate = true;
+  }
+  // 地形のマスが変わったとき（道普請・開拓・野火のあとなど）に、上から新しい地面を重ねて描き直す
+  refreshTiles(list) {
+    const w = this.sim.S.world, m4 = new THREE.Matrix4(), col = new THREE.Color();
+    if (!this.patches) { this.patches = {}; this.patchGeo = new THREE.BoxGeometry(1, 0.06, 1); }
+    for (const i of list) {
+      const x = i % W, z = (i / W) | 0, t = w.tiles[i];
+      // その場所の木を消す
+      for (const [mesh, k] of this.treeAt?.[i] || []) { mesh.setMatrixAt(k, m4.makeScale(0, 0, 0)); mesh.instanceMatrix.needsUpdate = true; }
+      if (this.treeAt) delete this.treeAt[i];
+      if (t === T.BRIDGE) { this.addBridge(x, z); continue; }
+      const key = this.groundKey(t, x, z);
+      const mat = this.top?.[key];
+      if (!mat) continue;
+      let pm = this.patches[key];
+      if (!pm) { pm = this.patches[key] = new THREE.InstancedMesh(this.patchGeo, mat, 1024); pm.count = 0; pm.receiveShadow = true; this.scene.add(pm); }
+      if (pm.count >= 1024) continue;
+      const y = topY(w.hgt[i]) - (t === T.ROAD || t === T.PLAZA ? 0.02 : 0) + 0.005;
+      pm.setMatrixAt(pm.count, m4.makeTranslation(wx(x), y - 0.03, wz(z)));
+      const v = 0.92 + hsh(x, z, 1) * 0.12; pm.setColorAt(pm.count, col.setRGB(v, v, v));
+      pm.count++;
+      pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
+    }
   }
 
   // ---------- 建物 ----------
@@ -536,6 +599,72 @@ export class Renderer {
         for (let i = 0; i < 5; i++) add(this.cyl(0.42 - i * 0.03, 0.45 - i * 0.03, 1, 8), i % 2 ? M.red : M.white, 0, 0.5 + i, 0);
         add(this.box(0.5, 0.4, 0.5), M.lamp, 0, 5.2, 0); add(this.cone(0.45, 0.5, 8), M.red, 0, 5.65, 0);
         break;
+      case 'guardpost': {
+        // 門の詰所：石の小屋に見張りの小塔と旗
+        const wall = south ? M.sandstone : M.stone;
+        add(this.box(W_, 1.1, D_), wall, 0, 0.55, 0);
+        add(this.box(W_ + 0.1, 0.12, D_ + 0.1), M.darkStone, 0, 1.16, 0);
+        for (let i = 0; i < 4; i++) add(this.box(0.22, 0.22, 0.22), wall, (i % 2 ? 1 : -1) * (W_ / 2 - 0.12), 1.32, (i < 2 ? 1 : -1) * (D_ / 2 - 0.12));
+        add(this.box(0.7, 0.9, 0.7), wall, -W_ / 4, 1.6, -D_ / 4); add(this.cone(0.6, 0.6, 4), M.slate, -W_ / 4, 2.35, -D_ / 4, Math.PI / 4);
+        windows(W_, D_, 0.7, M.black); door(W_, D_, 0.7); banner(W_ / 4, D_ / 4, 1.2, kcol);
+        add(this.box(0.1, 0.9, 0.1), M.wood, face[0] * (W_ / 2 + 0.3) + face[1] * 0.5, 0.45, face[1] * (D_ / 2 + 0.3) + face[0] * 0.5); // 槍立て
+        break;
+      }
+      case 'drillyard': {
+        // 練兵場：柵で囲んだ砂地に、打ち込み台・的・武器掛け
+        const hw = b.w / 2 - 0.1, hd = b.d / 2 - 0.1;
+        for (const [x, z, w2, d2] of [[0, -hd, b.w - 0.2, 0.06], [0, hd, b.w - 0.2, 0.06], [-hw, 0, 0.06, b.d - 0.2], [hw, 0, 0.06, b.d - 0.2]]) { add(this.box(w2, 0.08, d2), M.wood, x, 0.35, z); add(this.box(w2, 0.08, d2), M.wood, x, 0.15, z); }
+        for (const [x, z] of [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]]) add(this.box(0.12, 0.5, 0.12), M.wood, x, 0.25, z);
+        for (let i = 0; i < 3; i++) { const x = -hw + 0.8 + i * ((b.w - 1.6) / 2); add(this.box(0.1, 0.9, 0.1), M.wood, x, 0.45, -hd + 0.5); add(this.box(0.5, 0.1, 0.1), M.wood, x, 0.7, -hd + 0.5); add(this.cyl(0.14, 0.14, 0.35, 6), M.cloth, x, 0.95, -hd + 0.5); }
+        add(this.cyl(0.35, 0.35, 0.06, 10), M.red, hw - 0.5, 0.8, hd - 0.35); add(this.cyl(0.2, 0.2, 0.07, 10), M.white, hw - 0.5, 0.8, hd - 0.33);
+        add(this.box(0.08, 0.8, 0.08), M.wood, hw - 0.5, 0.4, hd - 0.4);
+        add(this.box(1.0, 0.06, 0.2), M.wood, -hw + 0.7, 0.8, hd - 0.3); for (let i = 0; i < 4; i++) add(this.box(0.04, 0.7, 0.04), M.black, -hw + 0.35 + i * 0.22, 0.45, hd - 0.28);
+        banner(-hw + 0.1, -hd + 0.1, 0, kcol);
+        break;
+      }
+      case 'academy': {
+        // 魔法学園：石造りの学舎に、星見の塔と紫の尖り屋根
+        const wall = south ? M.sandstone : M.stone;
+        add(this.box(W_, 1.7, D_), wall, 0, 0.85, 0);
+        gable(W_, D_, 1.7, M.purple);
+        for (const k of [-1, 1]) { add(this.cyl(0.55, 0.62, 3.2, 8), wall, k * (W_ / 2 - 0.4), 1.6, -D_ / 2 + 0.4); add(this.cone(0.8, 1.6, 8), M.purple, k * (W_ / 2 - 0.4), 4.0, -D_ / 2 + 0.4); }
+        add(this.box(0.3, 0.3, 0.3), M.crystal, W_ / 2 - 0.4, 5.0, -D_ / 2 + 0.4);
+        windows(W_, D_, 1.0); door(W_, D_, 0.8);
+        add(this.box(0.9, 0.5, 0.05), M.purple, face[0] * (W_ / 2 + 0.05), 1.45, face[1] * (D_ / 2 + 0.05));
+        break;
+      }
+      case 'dojo': {
+        // 道場：板張りの大屋根と、軒先の看板
+        add(this.box(W_, 1.2, D_), south ? M.adobe : M.planks, 0, 0.6, 0);
+        add(this.box(W_ + 0.4, 0.1, D_ + 0.4), M.darkStone, 0, 1.25, 0);
+        gable(W_, D_, 1.3, south ? M.tileRoofS : M.greyRoof);
+        windows(W_, D_, 0.8); door(W_, D_, 0.75);
+        add(this.box(face[0] ? 0.06 : 0.9, 0.3, face[1] ? 0.06 : 0.9), M.wood, face[0] * (W_ / 2 + 0.08), 1.05, face[1] * (D_ / 2 + 0.08));
+        for (let i = 0; i < 2; i++) add(this.box(0.06, 0.8, 0.06), M.wood, face[0] * (W_ / 2 + 0.4) + (face[1] ? -0.6 + i * 1.2 : 0), 0.4, face[1] * (D_ / 2 + 0.4) + (face[0] ? -0.6 + i * 1.2 : 0));
+        break;
+      }
+      case 'fort': {
+        // 国境の砦：石の囲いと見張り塔、国の旗
+        const wall = south ? M.sandstone : M.stone;
+        const hw = b.w / 2 - 0.25, hd = b.d / 2 - 0.25;
+        add(this.box(b.w - 0.5, 1.2, 0.35), wall, 0, 0.6, -hd); add(this.box(0.35, 1.2, b.d - 0.5), wall, -hw, 0.6, 0); add(this.box(0.35, 1.2, b.d - 0.5), wall, hw, 0.6, 0);
+        add(this.box(b.w - 0.5, 1.2, 0.35), wall, 0, 0.6, hd);
+        for (let i = -hw; i <= hw + 0.01; i += 0.55) { add(this.box(0.22, 0.22, 0.4), wall, i, 1.31, -hd); add(this.box(0.22, 0.22, 0.4), wall, i, 1.31, hd); }
+        add(this.box(0.9, 0.95, 0.4), M.black, face[0] * hw, 0.47, face[1] * hd + (face[1] ? 0.02 * face[1] : 0));
+        add(this.cyl(0.55, 0.65, 2.8, 8), wall, -hw + 0.3, 1.4, -hd + 0.3); add(this.cone(0.8, 1.1, 8), M.slate, -hw + 0.3, 3.35, -hd + 0.3);
+        add(this.box(1.2, 0.8, 1.0), M.planks, 0.3, 0.4, 0); add(this.prism(1.4, 1.2, 0.5), M.thatch, 0.3, 0.8, 0);
+        banner(-hw + 0.3, -hd + 0.3, 3.4, kcol);
+        break;
+      }
+      case 'camp': {
+        // 開拓者の小屋：丸太小屋と切り株、薪の山
+        add(this.box(W_ * 0.8, 0.9, D_ * 0.8), M.wood, 0, 0.45, 0);
+        add(this.prism(W_ * 0.8 + 0.3, D_ * 0.8 + 0.4, 0.6), M.thatch, 0, 0.9, 0);
+        door(W_ * 0.8, D_ * 0.8, 0.6);
+        for (let i = 0; i < 3; i++) add(this.cyl(0.14, 0.16, 0.2, 6), M.wood, -W_ / 2 + 0.2 + i * 0.35, 0.1, D_ / 2 + 0.25 - (i % 2) * 0.2);
+        for (let i = 0; i < 3; i++) add(this.box(0.7, 0.12, 0.12), M.wood, W_ / 2 - 0.2, 0.08 + i * 0.12, -D_ / 2 + 0.3 + (i % 2) * 0.06);
+        break;
+      }
       default: houseLike(1.15, M.timber, M.thatch);
     }
     return parts;
