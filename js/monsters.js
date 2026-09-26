@@ -468,8 +468,9 @@ function defect(sim, g, why) {
   c.title = `叛将${g.name}`; applyStats(c);
   const band = createBand(sim, all, { fam: 'demon', leader: c, loyalty: 75, lair: null, camp: home ? { x: home.x, z: home.z } : { x: Math.round(c.pos.x), z: Math.round(c.pos.z) }, rebel: true, name: `${g.name}の叛軍` });
   if (home) relocate(sim, band, home);
-  sim.news(`${g.title}が${D.name}に背き、${all.length}体を率いて独立した！（${why}）`, 3, c.pos);
-  sim.chron(`${g.title}が${D.name}に背いて離反し、「${band.name}」を興した`);
+  const lordName = D.active ? D.name : DA.lordName || D.name;
+  sim.news(D.active ? `${g.title}が${lordName}に背き、${all.length}体を率いて独立した！（${why}）` : `${lordName}亡き後、${g.title}が${all.length}体を率いて独立した（${why}）`, 3, c.pos);
+  sim.chron(`${g.title}が${D.active ? `${lordName}に背いて離反し` : `${lordName}の死後に自立し`}、「${band.name}」を興した`);
 }
 
 // 魔王が弱っているかどうか（0〜1）
@@ -496,6 +497,7 @@ function demonArmyDaily(sim) {
     return;
   }
   if (!D.active) { DA.lordLow = 1; return; }
+  DA.lordName = D.name;
   if (!DA.wasActive) { DA.wasActive = true; DA.lastAppoint = -99; }
   DA.recentLoss *= 0.93;
   // 死んだ魔将を名簿から外す（討ち死に）
@@ -719,7 +721,7 @@ export function monsterSay(sim, c, kind, force = false) {
   if (sim.isWatched(c)) sim.events.push({ type: 'say', id: c.id, text });
   return text;
 }
-const who = (c) => (c.given ? `${c.name}の${c.given}` : c.name);
+const who = (c) => (!c.given || c.name.includes(c.given) ? c.name : `${c.name}の${c.given}`);
 
 // ---------- 個体の身元（毎日） ----------
 function ensureIdentity(sim, c) {
@@ -765,7 +767,8 @@ function familyDaily(sim, list) {
   const single = list.filter((c) => c.sex !== 'n' && !c.mate && c.age > GROW_DAYS && !c.general);
   for (const c of single) {
     if (c.mate) continue;
-    const m = single.find((o) => o !== c && !o.mate && o.sex !== c.sex && FAMILY_OR_SP(o) === FAMILY_OR_SP(c) && (c.band ? o.band === c.band : Math.hypot(o.pos.x - c.pos.x, o.pos.z - c.pos.z) < 12));
+    const kin = (a, b) => a.parents?.includes(b.id) || b.parents?.includes(a.id) || (a.parents?.length && b.parents?.some((id) => a.parents.includes(id)));
+    const m = single.find((o) => o !== c && !o.mate && o.sex !== c.sex && !kin(c, o) && FAMILY_OR_SP(o) === FAMILY_OR_SP(c) && (c.band ? o.band === c.band : Math.hypot(o.pos.x - c.pos.x, o.pos.z - c.pos.z) < 12));
     if (m && R.chance(0.35)) {
       c.mate = m.id; m.mate = c.id;
       sim.pushLog(`${sim.placeName(c.home.x, c.home.z)}で、${who(c)}と${m.given}がつがいになった。`, 'event', [], c.pos);
@@ -826,6 +829,8 @@ function hungerDaily(sim, list) {
     if (c.band || !eats(c) || c.hunger > 60) continue;
     const f = forage(sim, c, FA ? Math.min(3, FA.needOf(c.sp) / 2) : 1);
     if (f > 0) { c.hunger = Math.min(100, c.hunger + 45 * f); continue; }
+    // 餌場が痩せていても、草の根や虫をかじって少しはしのぐ
+    if (R.chance(0.5)) c.hunger = Math.min(100, c.hunger + 20);
     if (preyList(c.sp).length && R.chance(0.4)) {
       const prey = all.find((o) => Math.abs(o.pos.x - c.pos.x) < 15 && Math.abs(o.pos.z - c.pos.z) < 15 && canEat(sim, c, o, c.hunger < 10) && o.atk <= c.atk * 1.2);
       if (prey) killCreature(sim, prey, c); // 狩った者は満腹になる
@@ -941,7 +946,8 @@ export function monsterThink(sim, c, def, all, humans) {
       if (S.t - c.warnAt < 8) return true;
       if (S.t > (c.enraged || 0)) {
         c.enraged = S.t + 60 * 12;
-        sim.news(`${who(c)}が縄張りを侵され、怒り狂っている！`, 2, c.pos);
+        if (S.t - (c.ragedNews ?? -1e9) > 1440 * 5) { c.ragedNews = S.t; sim.news(`${who(c)}が縄張りを侵され、怒り狂っている！`, 2, c.pos); }
+        else sim.pushLog(`${who(c)}の咆哮が${sim.placeName(c.pos.x, c.pos.z)}に響いた。`, 'event', [], c.pos);
       }
       monsterSay(sim, c, 'alarm');
       if (Math.hypot(intr.pos.x - c.pos.x, intr.pos.z - c.pos.z) < 1.6) startFight(sim, c, intr); else c.goal = { x: intr.pos.x, z: intr.pos.z, run: true };
@@ -1158,6 +1164,13 @@ function bandCouncil(sim, band, why) {
   let target = why === 'grudge' && band.grudge.sid != null ? sim.town(band.grudge.sid) : nearestTown(sim, base.x, base.z, 55);
   if (!target || S.towns[target.id].occupied || Math.hypot(target.x - base.x, target.z - base.z) > 60) target = nearestTown(sim, base.x, base.z, 55);
   if (!target || S.towns[target.id].occupied) { band.grudge = null; band.rage = 0; return; }
+  // 賢い群れは、恨みの町が固ければ同じ国の守りの薄い村を狙う（低い知能はまっすぐ向かう）
+  const brains = Math.max(...bandMembers(sim, band).map((c) => c.intel ?? intelOf(c)));
+  if (brains >= 0.45 && defendersOf(sim, target) > bandMembers(sim, band).length * 1.5) {
+    const soft = S.world.settlements.filter((s2) => s2.kingdom === target.kingdom && !S.towns[s2.id].occupied && Math.hypot(s2.x - base.x, s2.z - base.z) < 60)
+      .sort((a, b) => defendersOf(sim, a) - defendersOf(sim, b))[0];
+    if (soft) target = soft;
+  }
   const plan = planFromLessons(sim, band, target, base);
   target = plan.target;
   // 近くの同族の群れにも呼びかける
@@ -1185,11 +1198,11 @@ function bandCouncil(sim, band, why) {
   party = party.slice(0, 10);
   // 集合場所：前と違う道なら町の反対側へ回り込む
   const ang = Math.atan2(base.z - target.z, base.x - target.x) + (plan.flank ? R.pick([-1.2, 1.2]) : 0);
-  const rd = target.r + 12;
+  const rd = target.r + 20;
   let rally = { x: Math.round(target.x + Math.cos(ang) * rd), z: Math.round(target.z + Math.sin(ang) * rd) };
   const safe = sim.randomNear(rally.x, rally.z, 4, (t) => walkable(t) && t !== T.BLD);
   if (safe && !townMask(sim)[Math.round(safe.z) * W + Math.round(safe.x)]) rally = safe;
-  band.war = { why, target: target.id, rally, party: party.map((c) => c.id), stage: 'gather', launchDay: sim.today + 2, night: plan.night, notes: plan.notes, joined, start: 0, defenders: 0 };
+  band.war = { why, target: target.id, rally, party: party.map((c) => c.id), stage: 'gather', launchDay: sim.today + 1, night: plan.night, notes: plan.notes, joined, start: 0, defenders: 0 };
   for (const c of party) { c.warParty = band.id; c.path = null; }
   M.last = sim.today; band.lastBigWar = sim.today;
   stat(sim, 'council');

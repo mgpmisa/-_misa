@@ -3,6 +3,7 @@
 // 着いて初めて行き先の町の在庫と物価に反映される。道中では盗賊・魔物・嵐に遭うことがある。
 // 状態は S.convoys（隊商の一覧）と S.logi（通算の数字）。古いセーブで欠けていても ensureLogistics で作る。
 import { W, H, T, MinHeap, walkable, MOVE_COST } from './world.js';
+import { tariffConvoy } from './taxes.js';
 import { GOODS, JOBS } from './data.js';
 import { dangerAt } from './danger.js';
 import { around } from './creatures.js';
@@ -533,7 +534,8 @@ function arriveConvoy(sim, c) {
   const to = sim.town(c.to);
   const txt = goodsText(c.goods);
   const earn = sellGoods(sim, c, c.to);
-  const profit = earn - c.cost;
+  const toll = tariffConvoy(sim, c, earn); // 他国の町なら関税。密輸人は関所を避ける
+  const profit = earn - c.cost - toll;
   S.logi.arrived++;
   const own = S.people[c.owner];
   if (own) {

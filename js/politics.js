@@ -279,25 +279,10 @@ export function politicsDaily(sim, opts = {}) {
     const king = S.people[k.kingId];
     if (!king) continue;
     const towns = S.world.settlements.filter((s) => s.kingdom === k.id);
-    // 税収
-    let income = 30 + towns.length * 10;
-    for (const hh of Object.values(S.households)) {
-      if (sim.town(hh.s).kingdom !== k.id || hh.royal || hh.bandits || hh.street) continue;
-      const t = Math.min(hh.money, 300) * k.tax * 0.2;
-      hh.money -= t; income += t;
-    }
-    k.treasury += income;
+    // 税収と税率の上げ下げは taxes.js（taxesDaily）が受け持つ
     // 王の判断
     const threat = D && D.active ? D.power + D.raids * 10 : 0;
     const ambition = king.values.ambition, kind = king.pers.A;
-    if (k.treasury < 150 && k.tax < 0.15) {
-      k.tax = Math.round((k.tax + 0.02) * 100) / 100;
-      sim.news(`${k.name}の${title(king)}${king.given}が税を引き上げた（${Math.round(k.tax * 100)}%）`, 1, sim.town(k.capital));
-      for (const p of sim.living()) if (sim.town(p.s).kingdom === k.id && sim.isAdult(p) && R.chance(0.5)) { sim.remember(p, `${title(king)}さまがまた税を上げた`, { emo: -0.5, imp: 0.5, k: 'politics' }); if (p.rel[king.id]) p.rel[king.id].a -= 3; }
-    } else if (k.treasury > 1600 && k.tax > 0.03) {
-      k.tax = Math.round((k.tax - 0.02) * 100) / 100;
-      sim.news(`${k.name}の${title(king)}${king.given}が減税を発表した`, 1, sim.town(k.capital));
-    }
     if (k.treasury > 900 && sim.today - k.lastFeast > 20 && kind > 0.5 && R.chance(0.15)) {
       k.lastFeast = sim.today; k.treasury -= 200;
       const cap = sim.town(k.capital);

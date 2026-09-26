@@ -545,20 +545,21 @@ export class TerrainChunks {
   // ray：THREE.Ray（raycaster.ray）。地面の高さに沿って光線をたどり、最初に当たるマスを返す（{x,z} か null）
   raycastTile(ray) {
     const o = ray.origin, d = ray.direction;
-    const yTop = topY(9) + 0.1, yBot = -1;
-    if (Math.abs(d.y) < 1e-6) return null;
-    // 高い面から低い面までの区間だけを調べる
-    let tA = (yTop - o.y) / d.y, tB = (yBot - o.y) / d.y;
-    if (tA > tB) [tA, tB] = [tB, tA];
-    tA = Math.max(0, tA);
-    const len = Math.hypot(d.x, d.z) * (tB - tA);
-    const steps = Math.max(1, Math.ceil(len * 4));
-    for (let k = 0; k <= steps; k++) {
-      const t = tA + (tB - tA) * (k / steps);
-      const px = o.x + d.x * t, py = o.y + d.y * t, pz = o.z + d.z * t;
-      const x = Math.round(px + W / 2 - 0.5), z = Math.round(pz + H / 2 - 0.5);
-      if (x < 0 || z < 0 || x >= W || z >= H) continue;
-      if (py <= this.tileTop(z * W + x) + 0.001) return { x, z };
+    const yTop = topY(9) + 0.1, yBot = BOTTOM;
+    if (d.y > -1e-6) return null;                      // 下を向いていない光線は地面に当たらない
+    // 高い面から低い面までの区間だけを、マスの境目ごとにたどる（DDA）
+    let t = Math.max(0, (yTop - o.y) / d.y);
+    const tEnd = (yBot - o.y) / d.y;
+    let gx = o.x + d.x * t + W / 2, gz = o.z + d.z * t + H / 2;
+    let x = Math.floor(gx), z = Math.floor(gz);
+    const sx = d.x > 0 ? 1 : -1, sz = d.z > 0 ? 1 : -1;
+    const dtx = Math.abs(d.x) > 1e-9 ? Math.abs(1 / d.x) : Infinity, dtz = Math.abs(d.z) > 1e-9 ? Math.abs(1 / d.z) : Infinity;
+    let ntx = t + (Math.abs(d.x) > 1e-9 ? ((d.x > 0 ? x + 1 - gx : gx - x) * dtx) : Infinity);
+    let ntz = t + (Math.abs(d.z) > 1e-9 ? ((d.z > 0 ? z + 1 - gz : gz - z) * dtz) : Infinity);
+    for (let k = 0; k < 4 * (W + H) && t <= tEnd; k++) {
+      const tOut = Math.min(ntx, ntz, tEnd);
+      if (x >= 0 && z >= 0 && x < W && z < H && o.y + d.y * tOut <= this.tileTop(z * W + x) + 1e-4) return { x, z };
+      if (ntx < ntz) { t = ntx; ntx += dtx; x += sx; } else { t = ntz; ntz += dtz; z += sz; }
     }
     return null;
   }

@@ -14,6 +14,7 @@ import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js'
 import { healthLabel } from './health.js';
 import { CIVIC_LABEL, CIVIC_GO, CIVIC_PREF } from './civic.js';
 import { convoyOf, convoyLabel } from './logistics.js';
+import { taxNationHTML } from './taxes.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -47,6 +48,7 @@ Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION
 Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
 Object.assign(ACTION_LABEL, CIVIC_LABEL); Object.assign(ACTION_GO, CIVIC_GO); Object.assign(PREF_LABEL, CIVIC_PREF);
 Object.assign(ACTION_LABEL, { escort: '荷車を護衛している', sail: '船に乗り組んでいる' }); Object.assign(PREF_LABEL, { escort: '護衛', sail: '船旅' });
+Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '王に陳情している', riot: '暴動に加わっている' }); Object.assign(ACTION_GO, { levy: '税の取り立てに回っている', petition: '王都へ陳情に向かっている', riot: '広場へ押しかけている' }); Object.assign(PREF_LABEL, { levy: '徴税', petition: '陳情', riot: '暴動' });
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -407,7 +409,8 @@ export class UI {
         <div class="nname" data-goto="${S.world.settlements[k.capital].x},${S.world.settlements[k.capital].z}">${esc(k.name)}</div>
         <dl class="kv"><dt>${king?.sex === 'f' ? '女王' : '国王'}</dt><dd>${king ? `<span class="link" data-pid="${king.id}">${esc(this.sim.fullName(king))}</span>（${this.sim.ageOf(king)}歳）` : '空位'}</dd>
         <dt>人口</dt><dd>${pop}人・町${towns.length}つ・兵${army}人</dd>
-        <dt>国庫</dt><dd>${Math.round(k.treasury)}銅貨・税率${Math.round(k.tax * 100)}%</dd>
+        <dt>国庫</dt><dd>${Math.round(k.treasury)}銅貨</dd>
+        ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
         <dt>技術</dt><dd>${k.techs.map((t) => esc(TECHS.find((x) => x.id === t)?.name)).join('、') || 'なし'}（研究${Math.round(k.research)}）</dd>
         <dt>関係</dt><dd>${rel}</dd>
         ${k.war ? `<dt>戦争</dt><dd class="up">${esc(k.war.name)}（${this.sim.today - k.war.since}日目）</dd>` : ''}</dl></div>`;

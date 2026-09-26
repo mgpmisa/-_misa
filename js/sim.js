@@ -26,6 +26,7 @@ import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workM
 import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, healthSpeedMul, healthWorkMul, onDeath } from './health.js';
 import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, civicFirstJob } from './civic.js';
 import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade } from './logistics.js';
+import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -70,6 +71,7 @@ export class Sim {
     spawnInitialCreatures(this);
     initProperty(this);
     initUnderworld(this);
+    ensureTaxes(this);
     for (let i = 0; i < 4; i++) partiesDaily(this);
     this.slimDead();
     computeDanger(this);
@@ -88,6 +90,7 @@ export class Sim {
     for (const c of Object.values(data.creatures)) c.fight = null;
     if (!data.property) initProperty(this);
     if (!data.uw) initUnderworld(this);
+    ensureTaxes(this);
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     computeDanger(this);
     return true;
@@ -591,6 +594,7 @@ export class Sim {
       const dest = R.pick(this.S.world.settlements.filter((q) => q.id !== p.s && Math.hypot(q.x - s.x, q.z - s.z) < 55));
       if (dest) add(4 + p.pers.O * 2, 'travel', { x: dest.x, z: dest.z, dest: dest.id }, 60, { dest: dest.id });
     }
+    taxCandidates(this, p, add);
     // 悪事
     const crime = tryCrime(this, p);
     if (crime) add(crime.score, crime.type, crime.place, crime.dur, crime);
@@ -818,6 +822,7 @@ export class Sim {
         break;
       }
       case 'trade': this.doTrade(p); break;
+      case 'levy': case 'petition': taxArrive(this, p); break;
       case 'deliver': {
         const locals = this.living().filter((q) => q.s === p.mission?.dest && q !== p);
         const news = p.memories.filter((m) => m.g && this.today - m.t < 10).slice(-3);
@@ -1607,6 +1612,7 @@ export class Sim {
     // 牢の食事：朝と夕に囚人全員へ配る
     { const hh = Math.floor(this.hour()); if (hh === 7 || hh === 17) for (const q of this.living()) if (q.jail != null && q.needs.hunger < 70) q.needs.hunger = Math.min(100, q.needs.hunger + 50); }
     politicsHourly(this);
+    taxesHourly(this);
     demonHourly(this);
     weatherHourly(this);
     choreHourly(this);
@@ -1723,6 +1729,7 @@ export class Sim {
     justiceDaily(this);
     underworldDaily(this);
     politicsDaily(this);
+    taxesDaily(this);
     for (const p of this.living()) this.trimMemories(p);
     this.save();
   }

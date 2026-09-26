@@ -18,11 +18,13 @@
 //   S.explored  = [区画→ビット]。(1<<国id) がその国に知られている。128 は誰かが実際に歩いた。区画 i = cz*cw + cx（8×8マス）
 //   S.expansion = { projects, res, tension, pacts, wars, stats, hist, ... }
 import { T, W, H, walkable, isWater, tryPlace, MinHeap, MOVE_COST, TILE_NAME } from './world.js';
-import { KINGDOMS, JOBS, GOODS, traitLabels } from './data.js';
+import { KINGDOMS, JOBS, GOODS, SPECIES, traitLabels } from './data.js';
 import { createPersonFactory, SENIOR_JOBS } from './history.js';
 import { houseValue, earn } from './property.js';
 import { starterKit } from './items.js';
-import { humanStats } from './society.js';
+import { humanStats, startFight } from './society.js';
+import { killCreature, townMask } from './creatures.js';
+import { addSaying } from './politics.js';
 import { speechStyle } from './speech.js';
 
 // ---------- 定数 ----------
@@ -37,12 +39,16 @@ const KEEP_JOBS = new Set(['carpenter', 'mason', 'woodcutter', 'hunter', 'smith'
 const NO_SETTLER = new Set(['soldier', 'knight', 'general', 'guard', 'gatekeeper', 'militia', 'jailer', 'king', 'royal', 'noble', 'thief', 'banditchief', 'pirate', 'adventurer', 'warrior', 'archer', 'cleric', 'sage', 'paladin', 'beggar']);
 const CLEARABLE = new Set([T.FOREST, T.DENSE, T.JUNGLE]);
 const BUILDABLE = new Set([T.GRASS, T.SAVANNA, T.DESERT, T.SNOW, T.BEACH]);
-const ACTIVE = new Set(['scout', 'recruit', 'clear', 'fence', 'build', 'fortbuild', 'explore']);
+const ACTIVE = new Set(['purge', 'scout', 'recruit', 'clear', 'fence', 'build', 'fortbuild', 'explore']);
+const LAIR_TYPES = new Set(['cave', 'pyramid', 'ruins']);
+const THREAT_R = BIG ? 20 : 14;                // 開拓地のまわり、この距離の魔物と巣を「脅威」とみる
+const THREAT_MIN = 45;                         // これより弱い脅威なら、討伐なしで開拓を始める
+export const TRIBE_KIND = 4;                   // 領土の種類：民族の土地
 
 export const RES_NAME = { timber: '良い森', stone: '石切り場', ore: '鉄の鉱脈', gem: '宝石の鉱脈', fertile: '肥えた土地', water: '豊かな水場', salt: '塩田', harbor: '良港' };
 const RES_FORT = { timber: '森の砦', stone: '石切りの砦', ore: '鉄山の砦', gem: '玉石の砦', fertile: '麦野の砦', water: '水場の砦', salt: '塩浜の砦', harbor: '入り江の砦' };
 export const STAGE_NAME = {
-  scout: '斥候が下見中', recruit: '開拓団を募集中', clear: '木を伐って整地中', fence: '柵と見張り櫓を建設中', build: '家・井戸・畑を建設中',
+  purge: '魔物の討伐中', scout: '斥候が下見中', recruit: '開拓団を募集中', clear: '木を伐って整地中', fence: '柵と見張り櫓を建設中', build: '家・井戸・畑を建設中',
   settle: '村として根づいた', fortbuild: '砦を建設中', explore: '未開の地を探索中', done: '完了', failed: '失敗',
 };
 const hash01 = (n) => { let x = (n * 2654435761) >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x = (x ^ (x >>> 13)) >>> 0; return (x % 10007) / 10007; };
@@ -59,7 +65,10 @@ const kshort = (k) => kname(k).replace('王国', '');
 // ---------- 状態の用意 ----------
 export function ensureExpansion(sim) {
   const S = sim.S;
-  if (S.expansion && S.territory && Array.isArray(S.explored) && S.territory.cw === CW && S.explored.length === NC) return S.expansion;
+  if (S.expansion && S.territory && Array.isArray(S.explored) && S.territory.cw === CW && S.explored.length === NC) {
+    if (!S.territory.tribe) S.territory.tribe = new Array(NC).fill(-1);
+    return S.expansion;
+  }
   initExpansion(sim);
   return S.expansion;
 }
@@ -103,7 +112,7 @@ function initExpansion(sim) {
   }
   const init = KINGDOMS.map((_, k) => owner.filter((o) => o === k).length);
   const origOwner = owner.slice();
-  S.territory = { cs: EXP_CS, cw: CW, ch: CHN, owner, kind, home, init };
+  S.territory = { cs: EXP_CS, cw: CW, ch: CHN, owner, kind, home, init, tribe: new Array(NC).fill(-1) };
   // 知られた土地：自国の領土と、そのまわり2区画（うわさで知っている）
   const ex = new Array(NC).fill(0);
   for (let ci = 0; ci < NC; ci++) {
@@ -179,8 +188,9 @@ function scanResources(sim, land) {
 function setOwner(sim, ci, k, kind = 2, home = -1) {
   const S = sim.S, tr = S.territory, w = S.world;
   const old = tr.owner[ci];
-  tr.owner[ci] = k; tr.kind[ci] = k < 0 ? 0 : kind; tr.home[ci] = home;
-  syncChunk(w, ci, k);
+  if (k >= 0 && tr.tribe?.[ci] >= 0) tr.tribe[ci] = -1;
+  tr.owner[ci] = k; tr.kind[ci] = k < 0 ? (tr.tribe?.[ci] >= 0 ? TRIBE_KIND : 0) : kind; tr.home[ci] = home;
+  syncChunk(w, ci, k < 0 && tr.tribe?.[ci] >= 0 ? -3 : k);
   if (k >= 0) S.explored[ci] |= (1 << k) | WALKED;
   // 区画にある砦・小屋・鉱山は、新しい持ち主のものになる
   if (old !== k && k >= 0) for (const id of w.specials || []) {
@@ -201,7 +211,7 @@ function syncChunk(w, ci, k) {
     w.kingdomOf[i] = k;
   }
 }
-function syncAll(sim) { const tr = sim.S.territory; for (let ci = 0; ci < NC; ci++) syncChunk(sim.S.world, ci, tr.owner[ci]); }
+function syncAll(sim) { const tr = sim.S.territory; for (let ci = 0; ci < NC; ci++) syncChunk(sim.S.world, ci, tr.owner[ci] < 0 && tr.tribe?.[ci] >= 0 ? -3 : tr.owner[ci]); }
 
 // ---------- 参照 ----------
 export function territoryOwner(sim, x, z) { const tr = sim.S.territory; return tr ? tr.owner[chunkAt(x, z)] : -1; }
@@ -216,6 +226,7 @@ export function territorySize(sim, k) { const tr = sim.S.territory; return tr ? 
 export function expansionHourly(sim) {
   const S = sim.S;
   if (!S.expansion) return;
+  troopsHourly(sim);
   const ex = S.explored, w = S.world;
   for (const p of sim.living()) {
     if (p.inside != null || p.jail != null || !p.pos) continue;
@@ -248,6 +259,10 @@ function discovery(sim, p, ci, k) {
 
 // ---------- 行き先（placeFor の頭で呼ぶ） ----------
 export function expansionPlace(sim, p, kind) {
+  if (p.expedition != null && kind === 'home') {
+    const ex = sim.S.expansion?.projects.find((q) => q.id === p.expedition);
+    if (ex && ex.stage === 'purge') return sim.randomNear(ex.x, ex.z, 3) || { x: ex.x, z: ex.z };   // 討伐隊は野営する
+  }
   if (p.expProj == null) return null;
   const X = sim.S.expansion;
   const pr = X?.projects.find((q) => q.id === p.expProj);
@@ -282,6 +297,7 @@ export function expansionDaily(sim) {
   }
   for (const pr of X.projects.slice()) stepProject(sim, pr, pop);
   resourceYields(sim, pop);
+  reinfest(sim);
   diplomacy(sim);
   warFronts(sim);
   // 終わった計画は、しばらくしたら記録だけ残して片づける
@@ -306,7 +322,7 @@ function armySize(sim, kid) { let n = 0; for (const p of sim.living()) if (ARMY.
 function upkeep(sim, k) {
   const tr = sim.S.territory;
   const extra = Math.max(0, territorySize(sim, k.id) - (tr.init[k.id] || 0));
-  if (extra > 0) k.treasury -= extra * 0.25;
+  if (extra > 0) { k.treasury -= extra * 0.25; const st = sim.S.expansion.stats; st.spent = st.spent || {}; st.spent.upkeep = Math.round((st.spent.upkeep || 0) + extra * 0.25); }
 }
 
 // ---------- 王の判断 ----------
@@ -357,7 +373,7 @@ function planKingdom(sim, k, pop) {
   const forts = X.projects.filter((p) => p.k === k.id && p.kind === 'fort' && p.stage !== 'failed').length;
   if (!mine.some((p) => p.kind === 'fort') && forts < 1 + Math.floor(amb * 3) && k.treasury > reserve * 0.6 + 260 && R.chance(0.15 + amb * 0.35)) {
     const t = pickFortSite(sim, k, need);
-    if (t) { startFort(sim, k, t); return; }
+    if (t && startFort(sim, k, t)) return;
   }
   if (mine.filter((p) => p.kind !== 'fort').length >= maxActive) return note('いまの開拓が落ち着くまで、新しい開拓は控える');
   if (k.treasury < reserve) return note(`国庫が${Math.round(reserve)}銅貨に届くまで、開拓は見送る`);
@@ -370,8 +386,9 @@ function planKingdom(sim, k, pop) {
   for (const c of cands.slice(0, 16)) {
     const site = findSite(sim, c.ci);
     if (!site) { X.bad = X.bad || {}; X.bad[c.ci] = sim.today; continue; }
-    startVillage(sim, k, c, site);
-    return note('新しい土地の開拓を決めた');
+    if (!startVillage(sim, k, c, site)) continue;
+    const pr = X.projects[X.projects.length - 1];
+    return note(pr.stage === 'purge' ? `開拓の前に、${pr.dir}の魔物の討伐を命じた` : '新しい土地の開拓を決めた');
   }
   note('目をつけた土地は、どれも村を開くには向かなかった');
 }
@@ -411,13 +428,17 @@ function candidates(sim, k, need) {
     if (w.demon && Math.hypot(c.x - w.demon.x, c.z - w.demon.z) < (w.demonR || 20) + 14) continue;
     if (w.settlements.some((s) => cheb(s.x, s.z, c.x, c.z) < s.r + FR + 3)) continue;
     const danger = dm[ci] || 0;
-    if (danger > 7) continue;
+    if (danger > 14) continue;
+    if (tr.tribe?.[ci] >= 0) { tribeEvent(sim, { type: 'claim', k: k.id, ci, tribe: tr.tribe[ci] }); continue; }
+    const tribeNear = nbrs4(ci).map((n) => tr.tribe?.[n]).find((t) => t != null && t >= 0);
+    if (tribeNear != null && tribeEvent(sim, { type: 'approach', k: k.id, ci, tribe: tribeNear })?.allow === false) continue;
+    const threat = threatsNear(sim, c.x, c.z).power;
     const road = routeDanger(sim, k, c);
     if (road > 9) continue;
     let sc = 0;
     for (const r of X.res[ci] || []) sc += need[r] || 0.5;
     for (const n of nbrs4(ci)) for (const r of X.res[n] || []) sc += (need[r] || 0.5) * 0.3;
-    sc += buildableFrac(w, ci) * 3 - danger * 0.45 - road * 0.25 - d[ci] * 0.9;
+    sc += buildableFrac(w, ci) * 3 - Math.min(6, threat / 120) - road * 0.25 - d[ci] * 0.9;
     const others = nearOthers(sim, k.id, ci);
     if (others.length) sc += (kingOf(sim, k)?.values.ambition || 0.5) * 1.2 - 0.3;   // 他国より先に押さえる
     out.push({ ci, sc: sc + sim.rng.next() * 0.6, others });
@@ -498,7 +519,10 @@ function newProject(sim, k, kind, ci, extra = {}) {
   X.projects.push(pr);
   return pr;
 }
-function spend(sim, k, pr, amt) { k.treasury -= amt; if (pr) pr.spent += amt; }
+function spend(sim, k, pr, amt) {
+  k.treasury -= amt; if (pr) pr.spent += amt;
+  const st = sim.S.expansion.stats; st.spent = st.spent || {}; const key = pr ? `${pr.kind}:${pr.stage}` : 'other'; st.spent[key] = Math.round((st.spent[key] || 0) + amt);
+}
 function dirWord(from, to) {
   const dx = to.x - from.x, dz = to.z - from.z;
   const a = Math.atan2(dz, dx) * 180 / Math.PI;
@@ -552,6 +576,12 @@ function startVillage(sim, k, c, site) {
   if (!from) return;
   const pr = newProject(sim, k, 'village', c.ci, { x: site.x, z: site.z, from: from.id, res: S.expansion.res[c.ci] || [], others: c.others, feature: featureOf(w, site.x, site.z) });
   pr.dir = dirWord(sim.town(k.capital), site);
+  // 強い魔物がいる土地は、まず討伐から
+  const th = threatsNear(sim, site.x, site.z);
+  if (th.power >= THREAT_MIN) {
+    if (!beginPurge(sim, pr, k, th)) { S.expansion.projects.pop(); return false; }
+    return true;
+  }
   const scout = pickScout(sim, k, site);
   if (scout) {
     pr.scout = scout.id;
@@ -563,12 +593,16 @@ function startVillage(sim, k, c, site) {
   spend(sim, k, pr, 20);
   const king = kingOf(sim, k);
   sim.pushLog(`${kname(k.id)}の${king?.sex === 'f' ? '女王' : '王'}${king?.given || ''}が、${pr.dir}の${FEATURE_WORD[pr.feature]}を開拓する計画を立てた。まずは斥候が下見に向かう。`, 'event', scout ? [scout.id] : [], site);
+  return true;
 }
 
 function startFort(sim, k, t) {
   const S = sim.S;
   const c = cCenter(t.ci);
   const pr = newProject(sim, k, 'fort', t.ci, { x: c.x, z: c.z, res: t.res, others: t.others });
+  pr.dir = dirWord(sim.town(k.capital), c);
+  const th = threatsNear(sim, c.x, c.z);
+  if (th.power >= THREAT_MIN && !beginPurge(sim, pr, k, th)) { S.expansion.projects.pop(); return false; }
   spend(sim, k, pr, 180);
   const r = t.res.find((x) => ['ore', 'gem', 'salt', 'harbor'].includes(x)) || t.res[0];
   pr.dir = dirWord(sim.town(k.capital), c);
@@ -576,6 +610,7 @@ function startFort(sim, k, t) {
   pr.resName = RES_NAME[r];
   sim.news(`${kname(k.id)}が、${pr.dir}の国境の${RES_NAME[r]}を押さえるため砦を築き始めた`, 2, c);
   for (const o of t.others) protest(sim, o, k.id, t.ci, `${RES_NAME[r]}に砦を築く`);
+  return true;
 }
 
 // ---------- 計画を1日進める ----------
@@ -583,6 +618,7 @@ function stepProject(sim, pr, pop) {
   const S = sim.S, k = S.kingdoms[pr.k];
   if (!k || pr.stage === 'failed' || pr.stage === 'done') return;
   switch (pr.stage) {
+    case 'purge': return stepPurge(sim, pr, k);
     case 'explore': return stepExplore(sim, pr, k);
     case 'fortbuild': return stepFort(sim, pr, k);
     case 'scout': return stepScout(sim, pr, k);
@@ -627,7 +663,7 @@ function stepScout(sim, pr, k) {
   const S = sim.S, R = sim.rng;
   reveal(sim, pr.k, pr.ci, 1, true);
   const scout = S.people[pr.scout];
-  const danger = S.dangerMap?.[pr.ci] || 0;
+  const danger = threatsNear(sim, pr.x, pr.z).power / 30;
   if (scout && scout.deathYear == null && danger > 3 && R.chance(0.25)) {
     if (danger > 6 && R.chance(0.3)) {
       sim.die(scout, 'monster');
@@ -739,7 +775,7 @@ function stepRecruit(sim, pr, k) {
 function villageName(sim, pr, leader) {
   const w = sim.S.world, R = sim.rng;
   const south = KINGDOMS[pr.k]?.south;
-  const taken = new Set(w.settlements.map((s) => s.name.replace(/(村|町)(（廃村）)?$/, '')));
+  const taken = new Set([...w.settlements.map((s) => s.name), ...sim.S.expansion.projects.map((q) => q.name).filter(Boolean)].map((n) => n.replace(/(村|町)(（廃村）)?$/, '')));
   const N = { forest: ['ヴァルト', 'ホルツ', 'ブッシュ'], river: ['バッハ', 'ブルック', 'フルト'], grass: ['フェルト', 'アウ', 'ヴィーゼ'], rock: ['ベルク', 'シュタイン', 'ヒューゲル'], snow: ['シュネー', 'アイスフェルト'], coast: ['シュトラント', 'ハーフェン'], swamp: ['モーア', 'ブルーフ'], desert: ['ザント'], jungle: ['ヴァルト'] };
   const SO = { forest: 'ガーバ', river: 'ワディ', grass: 'マルジュ', rock: 'ジャバル', desert: 'ラムル', coast: 'サーヒル', swamp: 'バトハ', snow: 'サルジュ', jungle: 'ガーバ' };
   for (let i = 0; i < 12; i++) {
@@ -885,11 +921,10 @@ function toil(sim, pr, adults, kind) {
 // 魔物の襲撃（柵ができると、ぐっと減る）
 function attackCheck(sim, pr, k) {
   const S = sim.S, R = sim.rng;
-  const danger = S.dangerMap?.[chunkAt(pr.x, pr.z)] || 0;
-  let hostile = 0;
-  for (const c of Object.values(S.creatures)) if (c.hostile && !c.dormant && c.hp > 0 && Math.abs(c.pos.x - pr.x) < 16 && Math.abs(c.pos.z - pr.z) < 16) hostile++;
+  const th = threatsNear(sim, pr.x, pr.z, 16);
+  const danger = th.power / 40, hostile = th.ids.length;
   const fenced = pr.stage === 'build' || pr.stage === 'settle';
-  let p = Math.min(0.3, danger * 0.02 + hostile * 0.03 + 0.008) * (fenced ? 0.35 : 1) * (pr.tower != null ? 0.8 : 1);
+  let p = Math.min(0.3, th.power / 900 + hostile * 0.01 + 0.006) * (fenced ? 0.35 : 1) * (pr.tower != null ? 0.8 : 1);
   if (!R.chance(p)) return false;
   S.expansion.stats.attacks++;
   pr.attacks++;
@@ -1294,11 +1329,296 @@ function roadPath(sim, s) {
   return path.filter((i) => { const t = tiles[i]; return t !== T.ROAD && t !== T.BRIDGE && t !== T.PLAZA; });
 }
 
+
+// ---------- 魔物の討伐（開拓の下ごしらえ） ----------
+const cPower = (c) => (c.atk || 5) * Math.sqrt(c.maxhp || 20) * (c.named ? 1.5 : 1) * (c.hp > 0 ? Math.max(0.3, c.hp / (c.maxhp || 1)) : 0);
+const pPower = (p) => (p.atk || 5) * Math.sqrt(p.maxhp || 20) * Math.max(0.2, (p.hp || 1) / (p.maxhp || 1));
+// その場所のまわりの脅威：うろつく魔物と、封じられていない巣とその住人
+export function threatsNear(sim, x, z, r = THREAT_R) {
+  const S = sim.S, w = S.world;
+  const lairs = (w.specials || []).map((id) => w.buildings[id]).filter((b) => b && LAIR_TYPES.has(b.type) && !b.sealed && cheb(b.door.x, b.door.z, x, z) <= r);
+  const lairIds = new Set(lairs.map((b) => b.id));
+  const ids = []; let power = 0, named = null;
+  for (const c of Object.values(S.creatures)) {
+    if (!c.hostile || c.dormant || c.hp <= 0 || c.sp === 'demonlord' || c.occupier != null) continue;
+    const near = c.pos && cheb(c.pos.x, c.pos.z, x, z) <= r;
+    const home = c.lair != null && lairIds.has(c.lair);
+    if (!near && !home) continue;
+    ids.push(c.id); power += cPower(c);
+    if ((c.named || c.sp === 'dragon') && (!named || cPower(c) > cPower(named))) named = c;
+  }
+  return { ids, power, named: named ? named.id : null, lairs: lairs.map((b) => b.id) };
+}
+function armyPower(sim, k) { let n = 0; for (const p of sim.living()) if (ARMY.has(p.job) && sim.town(p.s)?.kingdom === k && p.jail == null) n += pPower(p); return n; }
+
+// 討伐のやり方を決めて始める。戻り値 false なら、この土地は諦める
+function beginPurge(sim, pr, k, th) {
+  const S = sim.S, R = sim.rng, X = S.expansion;
+  const king = kingOf(sim, k);
+  const army = armyPower(sim, k.id);
+  const named = th.named != null ? S.creatures[th.named] : null;
+  let method = th.power < 160 && !named ? 'guild' : 'army';
+  if (named || th.power > army * 0.45) method = 'grand';
+  // 大討伐は、勝ち目と王の気概しだい
+  if (method === 'grand' && (army < th.power * 0.8 || (king && king.values.courage + king.values.ambition < 0.9) || k.treasury < 900)) {
+    X.bad = X.bad || {}; X.bad[pr.ci] = sim.today + 60;
+    const what = named ? named.name : '魔物の群れ';
+    X.decision = X.decision || {}; X.decision[k.id] = { d: sim.today, txt: `${pr.dir}の土地は${what}の縄張りで、今は手が出せない` };
+    return false;
+  }
+  pr.after = pr.stage;
+  pr.stage = 'purge'; pr.sday = sim.today;
+  pr.purge = { method, power0: Math.round(th.power), ids: th.ids.slice(), lairs: th.lairs.slice(), named: th.named, troops: [], quests: [], killed: 0, drove: 0, lost: 0 };
+  const where = `${pr.dir}の${FEATURE_WORD[pr.feature] || '土地'}`;
+  const cap = sim.town(k.capital);
+  if (method !== 'army') postBounties(sim, pr, k, method === 'grand' ? 4 : 3);
+  if (method !== 'guild') sendTroops(sim, pr, k, th.power * (method === 'grand' ? 1.6 : 1.3), method === 'grand' ? 14 : 8);
+  if (method === 'guild') sim.news(`${kname(k.id)}が、${where}に巣くう魔物に懸賞金をかけた（開拓の下ごしらえ）`, 2, { x: pr.x, z: pr.z });
+  else if (method === 'army') sim.news(`${kname(k.id)}の討伐隊（${pr.purge.troops.length}人）が、${where}の魔物退治に出陣した`, 2, cap);
+  else {
+    sim.news(`${kname(k.id)}の${king?.sex === 'f' ? '女王' : '王'}${king?.given || ''}が、国を挙げて${named ? named.name : `${where}の魔物`}の大討伐を宣言した！`, 4, cap);
+    sim.chron(`${kname(k.id)}が${named ? named.name : `${where}の魔物`}の大討伐を宣言した`, k.id);
+    for (const p of sim.living()) if (sim.town(p.s)?.kingdom === k.id && sim.isAdult(p) && R.chance(0.35)) sim.remember(p, `${named ? named.name : '魔物'}の大討伐のお触れが出た`, { emo: -0.1, imp: 0.6, k: 'frontier' });
+  }
+  return true;
+}
+// ギルドへの討伐依頼（国庫から懸賞金。依頼主は王なので、ギルドは王から取り立てない）
+function postBounties(sim, pr, k, n) {
+  const S = sim.S;
+  S.quests = S.quests || [];
+  const cs = pr.purge.ids.map((id) => S.creatures[id]).filter((c) => c && c.hp > 0 && !c.inDungeon && !c.quested).sort((a, b) => cPower(b) - cPower(a)).slice(0, n);
+  for (const c of cs) {
+    const power = c.atk + c.maxhp / 8;
+    const rank = Math.min(6, Math.floor(power / 9));
+    const reward = Math.round((15 + power * 3) * (c.named ? 3 : 1.4));
+    spend(sim, k, pr, reward);
+    c.quested = true;
+    S.nextQuest = (S.nextQuest || 0) + 1;
+    const q = { id: S.nextQuest, state: 'open', takenBy: [], posted: sim.today, deadline: sim.today + 16, type: 'hunt', s: k.capital, from: pr.from ?? k.capital, target: c.id, rank, reward, giver: k.kingId, title: `${sim.placeName(c.pos.x, c.pos.z)}の${c.name}を討て（${kshort(k.id)}王の布告・開拓のため）`, exp: pr.id };
+    S.quests.push(q);
+    pr.purge.quests.push(q.id);
+    const g = sim.townBuilding(sim.town(k.capital), 'guild');
+    sim.pushLog(`【依頼】${q.title}（報酬${reward}銅貨）`, 'event', [], g ? g.door : sim.town(k.capital));
+  }
+}
+// 騎士と兵士の討伐隊
+function sendTroops(sim, pr, k, need, max) {
+  const S = sim.S;
+  const cand = sim.living().filter((p) => sim.town(p.s)?.kingdom === k.id && (ARMY.has(p.job) || p.job === 'militia' || p.job === 'royalguard') && p.jail == null && !p.mission && p.expedition == null && p.expProj == null && sim.isAdult(p) && (p.hp || 0) > (p.maxhp || 1) * 0.6)
+    .sort((a, b) => pPower(b) - pPower(a));
+  let pow = 0;
+  for (const p of cand) {
+    if (pr.purge.troops.length >= max || pow >= need) break;
+    pr.purge.troops.push(p.id); pow += pPower(p);
+    p.expedition = pr.id; p.action = null;
+    p.mission = { type: 'march', x: pr.x + sim.rng.int(-2, 2), z: pr.z + sim.rng.int(-2, 2), until: S.t + 8 * 60, dur: 120 };
+    sim.remember(p, `${pr.dir}の魔物を討つ討伐隊に加わった`, { emo: -0.1, imp: 0.7, k: 'frontier' });
+  }
+  if (pr.purge.troops.length) pr.purge.captain = pr.purge.troops[0];
+}
+function releaseTroops(sim, pr) {
+  for (const id of pr.purge?.troops || []) { const p = sim.S.people[id]; if (p && p.expedition === pr.id) { p.expedition = null; if (p.mission?.type === 'march' || p.mission?.type === 'defend') p.mission = null; p.action = null; } }
+}
+
+// 毎日：討伐の進み具合
+function stepPurge(sim, pr, k) {
+  const S = sim.S, R = sim.rng, P = pr.purge, X = S.expansion;
+  const days = sim.today - pr.sday;
+  const troops = P.troops.map((id) => S.people[id]).filter((p) => p && p.deathYear == null && p.expedition === pr.id);
+  for (const p of troops) { earn(sim, p, 3, 0.6); spend(sim, k, pr, 3); }
+  const th = threatsNear(sim, pr.x, pr.z);
+  let rem = th.ids.map((id) => S.creatures[id]).filter((c) => c && c.hp > 0);
+  // 戦い（遠くの土地でも進むよう、日ごとにまとめて決める。近くにいれば毎時の本物の戦いも起きる）
+  if (troops.length && rem.length) {
+    let army = troops.reduce((a, p) => a + pPower(p), 0);
+    for (const c of rem.slice().sort((a, b) => cPower(a) - cPower(b))) {
+      const cp = cPower(c);
+      if (R.chance(Math.min(0.55, army / (army + cp * 2.2) * 0.6))) {
+        const killer = R.pick(troops);
+        killCreature(sim, c, killer);
+        P.killed++;
+        if (c.named || c.sp === 'dragon') namedSlain(sim, pr, k, c, killer, troops);
+      }
+    }
+    rem = rem.filter((c) => S.creatures[c.id] && c.hp > 0);
+    const remPow = rem.reduce((a, c) => a + cPower(c), 0);
+    if (remPow > 0 && R.chance(Math.min(0.8, remPow / (army + remPow) * 0.9))) {
+      const v = R.pick(troops);
+      const deadly = rem.some((c) => c.named || c.sp === 'dragon') ? 0.35 : 0.12;
+      if (R.chance(deadly)) {
+        sim.die(v, 'monster'); P.lost++;
+        sim.news(`${pr.dir}の討伐で、${JOBS[v.job]?.name || '兵'}の${sim.fullName(v)}が討ち死にした`, 2, { x: pr.x, z: pr.z });
+        for (const q of troops) if (q !== v) sim.remember(q, `討伐のさなか、仲間の${v.given}が魔物に倒された`, { emo: -0.9, imp: 0.85, k: 'frontier', about: [v.id] });
+      } else { v.hp = Math.max(1, Math.round((v.hp || 20) * 0.45)); sim.remember(v, `${pr.dir}の討伐で深手を負った`, { emo: -0.6, imp: 0.7, k: 'frontier' }); }
+    }
+    // 勝ち目がなくなった魔物は、奥地へ逃げていく（殺しつくさない。種は奥地で生き延びる）
+    army = troops.filter((p) => p.deathYear == null).reduce((a, p) => a + pPower(p), 0);
+    const left = rem.filter((c) => S.creatures[c.id] && c.hp > 0);
+    const leftPow = left.reduce((a, c) => a + cPower(c), 0);
+    if (left.length && army > leftPow * 2 && !left.some((c) => c.named)) { P.drove += driveOff(sim, pr, left); rem = []; }
+  }
+  // ギルドだけでは片づかないとき、王は兵を出す
+  if (P.method === 'guild' && days >= 7 && rem.length && !P.troops.length) {
+    P.method = 'army';
+    sendTroops(sim, pr, k, rem.reduce((a, c) => a + cPower(c), 0) * 1.3, 6);
+    if (P.troops.length) sim.news(`冒険者の手に負えず、${kname(k.id)}が${pr.dir}の魔物退治に兵を出した`, 2, sim.town(k.capital));
+  }
+  // 巣が空になれば封じる
+  for (const bid of P.lairs) {
+    const b = sim.building(bid);
+    if (!b || b.sealed) continue;
+    const livesThere = Object.values(S.creatures).some((c) => c.lair === bid && c.hp > 0 && c.hostile);
+    if (!livesThere) {
+      b.sealed = true; b.sealedBy = k.id; b.sealedYear = sim.year(); b.sealedUntil = sim.today + 200;   // 5年ほどで、また魔物が棲みつく
+      sim.news(`${b.name}の魔物が一掃され、入口が封じられた（${kname(k.id)}）`, 2, b.door);
+      sim.chron(`${kname(k.id)}が${b.name}の魔物を討ち払い、巣を封じた`, k.id);
+    }
+  }
+  const nowPow = threatsNear(sim, pr.x, pr.z).power;
+  const namedAlive = P.named != null && S.creatures[P.named]?.hp > 0;
+  if (nowPow < THREAT_MIN * 0.6 && !namedAlive) return purgeDone(sim, pr, k);
+  const beaten = P.troops.length && !troops.some((p) => p.deathYear == null && (p.hp || 0) > (p.maxhp || 1) * 0.3);
+  if (days > (P.method === 'grand' ? 16 : 11) || beaten) return purgeFailed(sim, pr, k, beaten);
+}
+function namedSlain(sim, pr, k, c, killer, troops) {
+  const S = sim.S;
+  sim.news(`${kname(k.id)}の討伐隊が${c.name}を討ち取った！ ${sim.fullName(killer)}の手柄だ`, 4, c.pos);
+  sim.chron(`${sim.fullName(killer)}ら${kname(k.id)}の討伐隊が${c.name}を討ち取った`, k.id);
+  killer.fame = (killer.fame || 0) + 60; killer.deeds.unshift(`${c.name}を討ち取った`);
+  sim.remember(killer, `${c.name}を討ち取った`, { emo: 1, imp: 1, k: 'hero' });
+  for (const q of troops) if (q !== killer && q.deathYear == null) sim.remember(q, `${killer.given}が${c.name}を討ち取るのを、この目で見た`, { emo: 0.9, imp: 0.9, k: 'hero', about: [killer.id] });
+  for (const s of S.world.settlements) if (s.kingdom === k.id) addSaying(sim, s.id, `${c.name}を討った${killer.given}の勇気を見習え`, 2, `${sim.year()}年の大討伐から`);
+  k.fame = (k.fame || 50) + 15;
+}
+// 生き残りの魔物を、国のない奥地へ追いやる（monsters.js の群れの住処もいっしょに移す）
+function driveOff(sim, pr, list) {
+  const S = sim.S, w = S.world, R = sim.rng, tr = S.territory;
+  const mask = townMask(sim);
+  let spot = null;
+  for (let i = 0; i < 120 && !spot; i++) {
+    const a = R.next() * Math.PI * 2, d = R.range(BIG ? 35 : 22, BIG ? 90 : 45);
+    const x = Math.round(pr.x + Math.cos(a) * d), z = Math.round(pr.z + Math.sin(a) * d);
+    if (!inb(x, z) || x < 3 || z < 3 || x > W - 4 || z > H - 4) continue;
+    const t = w.tiles[z * W + x];
+    if (!walkable(t) || t === T.BLD || mask[z * W + x]) continue;
+    if (tr.owner[chunkAt(x, z)] >= 0 && i < 100) continue;
+    if (w.settlements.some((s) => Math.hypot(s.x - x, s.z - z) < s.r + 16)) continue;
+    spot = { x, z };
+  }
+  if (!spot) return 0;
+  const bands = new Set();
+  for (const c of list) {
+    c.home = { x: spot.x, z: spot.z }; c.lair = null; c.inDungeon = false; c.raid = null;
+    c.goal = { x: spot.x + R.int(-2, 2), z: spot.z + R.int(-2, 2), path: true }; c.path = null; c.range = 8; c.quested = false;
+    if (c.band != null) bands.add(c.band);
+  }
+  for (const id of bands) { const b = S.bands?.[id]; if (b) { b.lair = null; b.camp = { x: spot.x, z: spot.z }; } }
+  sim.pushLog(`${pr.dir}の魔物たち（${list.length}体）が、討伐隊に追われて${sim.placeName(spot.x, spot.z)}の奥地へ逃げていった。`, 'event', [], spot);
+  return list.length;
+}
+function purgeDone(sim, pr, k) {
+  const S = sim.S, P = pr.purge;
+  releaseTroops(sim, pr);
+  for (const qid of P.quests) { const q = (S.quests || []).find((x) => x.id === qid); if (q && q.state === 'open') { q.state = 'failed'; q.closed = sim.today; } }
+  const where = `${pr.dir}の${FEATURE_WORD[pr.feature] || '土地'}`;
+  const txt = `${where}の魔物退治が終わった（討ち取り${P.killed}・追い払い${P.drove}${P.lost ? `・戦死${P.lost}` : ''}）`;
+  sim.news(`${kname(k.id)}：${txt}。いよいよ開拓が始まる`, 2, { x: pr.x, z: pr.z });
+  if (P.method === 'grand') sim.chron(`${kname(k.id)}の大討伐が実を結び、${where}が人の住める土地になった`, k.id);
+  for (const id of P.troops) { const p = S.people[id]; if (p && p.deathYear == null) { p.fame = (p.fame || 0) + 6; sim.remember(p, `${where}の魔物退治をやり遂げた`, { emo: 0.7, imp: 0.7, k: 'frontier' }); } }
+  S.expansion.stats.purges = (S.expansion.stats.purges || 0) + 1;
+  const next = pr.after || 'scout';
+  pr.purge.done = true;
+  pr.stage = next; pr.sday = sim.today;
+}
+function purgeFailed(sim, pr, k, beaten) {
+  const S = sim.S, P = pr.purge, X = S.expansion;
+  releaseTroops(sim, pr);
+  X.bad = X.bad || {}; X.bad[pr.ci] = sim.today + 60;
+  const named = P.named != null ? S.creatures[P.named] : null;
+  const where = `${pr.dir}の${FEATURE_WORD[pr.feature] || '土地'}`;
+  const why = beaten ? `討伐隊が${named ? named.name : '魔物'}に打ち負かされた` : '魔物を退治しきれなかった';
+  k.fame = (k.fame || 50) - (P.method === 'grand' ? 12 : 3);
+  if (P.method === 'grand') {
+    sim.chron(`${kname(k.id)}の${named ? named.name : where}大討伐は失敗に終わり、${where}の開拓は断念された`, k.id);
+    for (const s of S.world.settlements) if (s.kingdom === k.id) addSaying(sim, s.id, `${named ? named.name : '奥地の魔物'}の縄張りには近づくな`, 2, `${sim.year()}年の大討伐の失敗から`);
+  }
+  S.expansion.stats.purgeFailed = (S.expansion.stats.purgeFailed || 0) + 1;
+  fail(sim, pr, `${why}ため、開拓を断念した`, P.method === 'guild');
+}
+
+
+// 討伐隊：いちばん近い魔物へ向かい、間合いに入れば戦う（夜は野営して休む）
+function troopsHourly(sim) {
+  const S = sim.S, h = sim.hour();
+  if (h >= 21 || h < 5) return;
+  for (const pr of S.expansion.projects) {
+    if (pr.stage !== 'purge' || !pr.purge?.troops.length) continue;
+    const th = threatsNear(sim, pr.x, pr.z, THREAT_R + 4);
+    const foes = th.ids.map((id) => S.creatures[id]).filter((c) => c && c.hp > 0 && !c.inDungeon && c.pos);
+    for (const id of pr.purge.troops) {
+      const p = S.people[id];
+      if (!p || p.deathYear != null || p.expedition !== pr.id || p.fight || p.jail != null) continue;
+      if ((p.hp || 0) < (p.maxhp || 1) * 0.3) continue;   // 深手の者は野営地で休む
+      let best = null, bd = 1e9;
+      for (const c of foes) { const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z); if (d < bd) { bd = d; best = c; } }
+      if (!best) { if (Math.hypot(p.pos.x - pr.x, p.pos.z - pr.z) > 6) p.mission = { type: 'march', x: pr.x, z: pr.z, until: S.t + 90, dur: 60 }; continue; }
+      if (bd < 2.2) startFight(sim, p, best);
+      else { p.mission = { type: 'defend', x: Math.round(best.pos.x), z: Math.round(best.pos.z), until: S.t + 90 }; if (p.action && p.action.type !== 'defend') p.action = null; }
+    }
+  }
+}
+
+// 封じた巣も、年月がたつとまた魔物が棲みつく（どの種も絶えないように）
+function reinfest(sim) {
+  for (const id of sim.S.world.specials || []) {
+    const b = sim.S.world.buildings[id];
+    if (!b || !b.sealed || sim.today < (b.sealedUntil ?? Infinity)) continue;
+    b.sealed = false; b.sealedUntil = null;
+    sim.pushLog(`封じられていた${b.name}に、いつのまにかまた魔物が棲みついたらしい。`, 'event', [], b.door);
+  }
+}
+
+// ---------- 民族の土地（js/tribes.js と組む） ----------
+// 領土の区画に「民族の土地」という持ち主を持てる。国は民族の土地を勝手には開拓しない。
+// 国が近づいたり欲しがったりすると、登録された相手（tribes.js）に知らせ、交渉・交易・同盟・併合・衝突を決めてもらう。
+let tribeHandler = null;
+export function registerTribeHandler(fn) { tribeHandler = fn; }
+function tribeEvent(sim, ev) {
+  if (!tribeHandler) return null;
+  const X = sim.S.expansion;
+  const key = `${ev.type}:${ev.k}:${ev.tribe}`;
+  X.tribeSeen = X.tribeSeen || {};
+  if (X.tribeSeen[key] != null && sim.today - X.tribeSeen[key] < 10) return null;   // 同じ知らせは10日に1回
+  X.tribeSeen[key] = sim.today;
+  try { return tribeHandler(sim, ev) || null; } catch (e) { return null; }
+}
+export function setTribalLand(sim, ci, tribeId) {
+  const tr = sim.S.territory; ensureExpansion(sim);
+  tr.tribe = tr.tribe || new Array(NC).fill(-1);
+  tr.owner[ci] = -1; tr.kind[ci] = TRIBE_KIND; tr.home[ci] = -1; tr.tribe[ci] = tribeId;
+  syncChunk(sim.S.world, ci, -3);
+  sim.S.explored[ci] |= 0;   // 民族の土地も、歩くまでは知られていない
+  sim.S.expansion._borders = true;
+}
+// 交渉による併合・戦いによる奪取：民族の土地を国の領土にする
+export function annexTribalLand(sim, ci, k, how = '併合') {
+  const tr = sim.S.territory;
+  const t = tr.tribe?.[ci];
+  if (t == null || t < 0) return false;
+  tr.tribe[ci] = -1;
+  setOwner(sim, ci, k, 2, -1);
+  sim.S.expansion.stats.annexed = (sim.S.expansion.stats.annexed || 0) + 1;
+  return how;
+}
+export function tribeAt(sim, x, z) { const tr = sim.S.territory; const t = tr?.tribe?.[chunkAt(x, z)]; return t != null && t >= 0 ? t : null; }
+export function tribalChunks(sim, tribeId) { const tr = sim.S.territory, o = []; if (tr?.tribe) for (let ci = 0; ci < NC; ci++) if (tr.tribe[ci] === tribeId) o.push(ci); return o; }
+
 // ---------- 失敗と廃村 ----------
 function fail(sim, pr, why, quiet = false) {
   const S = sim.S, X = S.expansion;
   if (pr.sid != null && S.world.settlements[pr.sid]) return abandon(sim, pr, why);
   const k = S.kingdoms[pr.k];
+  releaseTroops(sim, pr);
   pr.stage = 'failed'; pr.sday = sim.today; pr.why = why;
   X.lastFail[pr.k] = sim.today;
   if (!quiet) X.stats.failed++;
@@ -1423,10 +1743,12 @@ function placeBox(sim, type, name, x0, z0, bw, bd, extra = {}, rocky = false) {
 function resourceYields(sim, pop) {
   const S = sim.S, tr = S.territory, X = S.expansion, w = S.world;
   const sets = w.settlements.filter((s) => !s.abandoned);
+  // 封じられていない巣のある区画では、資源を採りに行けない
+  const lairChunks = new Set((w.specials || []).map((id) => w.buildings[id]).filter((b) => b && LAIR_TYPES.has(b.type) && !b.sealed).map((b) => chunkAt(b.door.x, b.door.z)));
   for (const [cis, list] of Object.entries(X.res)) {
     const ci = +cis;
     const k = tr.owner[ci];
-    if (k < 0 || tr.kind[ci] < 2) continue;
+    if (k < 0 || tr.kind[ci] < 2 || lairChunks.has(ci)) continue;
     const c = cCenter(ci);
     let best = null, bd = 1e9;
     for (const s of sets) { if (s.kingdom !== k) continue; const d = cheb(s.x, s.z, c.x, c.z); if (d < bd) { bd = d; best = s; } }
@@ -1770,15 +2092,17 @@ export function expansionNationHTML(sim, k, esc = (s) => s) {
   const pTxt = projs.map((p) => {
     const s = p.sid != null ? S.world.settlements[p.sid] : null;
     const nm = s ? s.name : p.name || `${p.dir || ''}の${p.kind === 'explore' ? '未踏の地' : '開拓地'}`;
-    const n = p.kind === 'village' ? `・${aliveMembers(sim, p).length}人` : '';
+    const n = p.stage === 'purge' ? `・${{ guild: 'ギルドに懸賞金', army: `討伐隊${p.purge.troops.length}人`, grand: `大討伐・${p.purge.troops.length}人` }[p.purge.method]}` : p.kind === 'village' ? `・${aliveMembers(sim, p).length}人` : '';
     const at = p.x != null ? p.x : cCenter(p.ci).x, az = p.z != null ? p.z : cCenter(p.ci).z;
     return `<span class="link" data-goto="${at},${az}">${esc(nm)}</span>（${STAGE_NAME[p.stage]}${n}）`;
   }).join('<br>') || 'なし';
   const fr = S.world.settlements.filter((s) => s.frontier && s.kingdom === k.id && !s.abandoned).map((s) => esc(s.name)).join('、');
+  const dec = X.decision?.[k.id];
   const pacts = X.pacts.filter((p) => p.a === k.id || p.b === k.id).map((p) => `${p.type === 'alliance' ? '同盟' : '休戦'}：${esc(kshort(p.a === k.id ? p.b : p.a))}（あと${p.until - sim.today}日）`).join('、');
   return `<dt>領土</dt><dd>${size}区画（約${size * EXP_CS * EXP_CS}マス）<b class="${diff > 0 ? 'down' : diff < 0 ? 'up' : ''}">${diff >= 0 ? '+' : ''}${diff}</b></dd>
     <dt>開拓</dt><dd>${pTxt}</dd>
     ${fr ? `<dt>開拓村</dt><dd>${fr}</dd>` : ''}
+    ${dec ? `<dt>王の評定</dt><dd>${esc(dec.txt)}（${sim.today - dec.d}日前）</dd>` : ''}
     <dt>資源</dt><dd>${resTxt}</dd>
     ${pacts ? `<dt>約束</dt><dd>${pacts}</dd>` : ''}`;
 }
@@ -1807,6 +2131,18 @@ export function drawTerritory(sim, g, opt = {}) {
     if (cz === CHN - 1 || tr.owner[ci + CW] !== o) { g.moveTo(x0, z0 + cs - 0.5); g.lineTo(x0 + cs, z0 + cs - 0.5); }
     if (cz === 0 || tr.owner[ci - CW] !== o) { g.moveTo(x0, z0 + 0.5); g.lineTo(x0 + cs, z0 + 0.5); }
     g.stroke();
+  }
+  // 民族の土地（国に属さない）
+  if (tr.tribe) {
+    g.strokeStyle = '#b08a52';
+    for (let ci = 0; ci < NC; ci++) {
+      const t = tr.tribe[ci]; if (t == null || t < 0) continue;
+      const x0 = (ci % CW) * cs, z0 = Math.floor(ci / CW) * cs;
+      g.fillStyle = 'rgba(176,138,82,0.18)'; g.fillRect(x0, z0, cs, cs);
+      g.beginPath();
+      for (const [n, a, b, c2, d] of [[ci + 1, cs - 0.5, 0, cs - 0.5, cs], [ci - 1, 0.5, 0, 0.5, cs], [ci + CW, 0, cs - 0.5, cs, cs - 0.5], [ci - CW, 0, 0.5, cs, 0.5]]) if (tr.tribe[n] !== t) { g.moveTo(x0 + a, z0 + b); g.lineTo(x0 + c2, z0 + d); }
+      g.stroke();
+    }
   }
   // 開拓中の土地
   const blink = (Math.floor(Date.now() / 500) % 2) === 0;
