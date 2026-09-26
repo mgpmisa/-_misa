@@ -51,7 +51,8 @@ const VR = BIGW ? 7 : 5;                           // 村の半径（チェビ�
 // 王国の町の縁から（村の半径＋これ）だけ離れた所を「奥地」とみる。今の 160 の世界は土地が混んでいるので近め
 const MIN_TOWN = BIGW ? Math.round(13 * LS) : 6;
 const MIN_SPECIAL = BIGW ? Math.round(5 * LS) : 2; // 特別な場所（洞窟・遺跡など）から離す
-const MAX_VILLAGES = BIGW ? 99 : 6;                // 今の小さな世界に置く村の数の上限
+const MAX_VILLAGES = BIGW ? 3 : 6;                 // 置く村の数の上限（重くならないよう、広い大陸でも2〜3つ）
+const MAX_TRIBAL_POP = 240;                        // 民族の人口の合計の目安（150〜250人）
 const inb = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
 const cheb = (ax, az, bx, bz) => Math.max(Math.abs(ax - bx), Math.abs(az - bz));
 const kname = (k) => KINGDOMS[k]?.name || '王国';
@@ -93,12 +94,25 @@ export function initTribes(sim) {
   S.tribes = { v: 1, villages: [], pending: [], arcs: [], away: [], legends: {}, seq: 1, stats: { lots: 0, sent: 0, returned: 0, arcs: 0, endings: 0, slain: 0, trades: 0, gifts: 0, clashes: 0, annexed: 0 }, hist: [] };
   // 移住の仕組み（sim.immigration）がよその人を民族の村へ送りこまないよう、町ごとの基準人口を先に作っておく
   if (!S.initPop) { S.initPop = {}; for (const p of sim.living()) S.initPop[p.s] = (S.initPop[p.s] || 0) + 1; }
-  const order = BIGW ? TRIBES.map((t) => t.id) : ORDER;
+  const order = ORDER;
   const changed = [];
+  const tribalPop = () => S.tribes.villages.reduce((n, V) => n + V.pop0, 0);
+  // 1) 本体が用意した置き場（world.freeVillages の tribe:true）を使う。まわりの地形にいちばん合う民族を選ぶ
+  for (const fv of (w.freeVillages || []).filter((v) => v.tribe && v.usedBy == null)) {
+    if (S.tribes.villages.length >= MAX_VILLAGES || tribalPop() >= MAX_TRIBAL_POP - 40) break;
+    const placed = new Set(S.tribes.villages.map((V) => V.tribe));
+    const t = order.map(tribeById).filter((x) => x && !placed.has(x.id)).map((x, i) => ({ t: x, sc: biomeMatch(w, x, fv.x, fv.z, (fv.r || VR) + 6) - i * 0.01 })).sort((a, b) => b.sc - a.sc)[0]?.t;
+    if (!t) break;
+    const V = buildVillage(sim, t, { x: fv.x, z: fv.z }, changed);
+    fv.usedBy = V.id;
+  }
+  // 2) 置き場が足りなければ、自分で奥地を探す
   for (const tid of order) {
+    if (S.tribes.villages.length >= MAX_VILLAGES || tribalPop() >= MAX_TRIBAL_POP - 40) break;
+    if (S.tribes.villages.some((V) => V.tribe === tid)) continue;
     const t = tribeById(tid);
     if (!t) continue;
-    const want = BIGW ? t.villages : 1;
+    const want = 1;
     let made = 0;
     for (let n = 0; n < want; n++) {
       if (S.tribes.villages.length >= MAX_VILLAGES) break;
@@ -108,8 +122,9 @@ export function initTribes(sim) {
       buildVillage(sim, t, site, changed);
       made++;
     }
-    if (!made) S.tribes.pending.push(tid);
   }
+  const placedAll = new Set(S.tribes.villages.map((V) => V.tribe));
+  S.tribes.pending = TRIBES.map((t) => t.id).filter((id) => !placedAll.has(id));
   if (changed.length) sim.events.push({ type: 'tiles', list: [...new Set(changed)] });
   initLegends(sim);
   addLoreChronicle(sim);
@@ -172,6 +187,13 @@ function findVillageSite(sim, t) {
   return out;
 }
 
+// その場所のまわりが、民族の住む地形にどれだけ合うか（0〜1）
+function biomeMatch(w, t, x, z, r) {
+  const tiles = new Set((t.tiles || [t.biome]).map(TILE).filter((v) => v != null));
+  let m = 0, n = 0;
+  for (let dz = -r; dz <= r; dz += 2) for (let dx = -r; dx <= r; dx += 2) { if (!inb(x + dx, z + dz)) continue; n++; if (tiles.has(w.tiles[(z + dz) * W + x + dx])) m++; }
+  return n ? m / n : 0;
+}
 // 地形を村の土地にならす（民族の家が建てられるように）
 const BASE_OK = [T.GRASS, T.SAVANNA, T.DESERT, T.SNOW, T.BEACH, T.FOREST];
 const CLEAR = { [T.DENSE]: T.FOREST, [T.JUNGLE]: T.GRASS, [T.SWAMP]: T.GRASS, [T.ROCK]: T.GRASS, [T.PASTURE]: T.GRASS };
@@ -334,7 +356,9 @@ function populateVillage(sim, V, t, s) {
   const S = sim.S, R = sim.rng, Y = sim.year();
   const make = createPersonFactory({ rng: R, people: S.people, nextId: () => S.nextId++ });
   const [lo0, hi0] = t.pop || [20, 40];
-  const target = BIGW ? R.int(lo0, hi0) : R.int(Math.max(9, Math.round(lo0 * 0.33)), Math.max(12, Math.round(hi0 * 0.25)));
+  // 広い大陸：民族の人口の目安どおり（ただし1村40〜80人、合計 MAX_TRIBAL_POP まで）。小さな世界：9〜18人
+  const room = MAX_TRIBAL_POP - TS(sim).villages.reduce((n, v) => n + (v.pop0 || 0), 0);
+  const target = BIGW ? clamp(R.int(lo0, hi0), 40, Math.max(40, Math.min(80, room))) : R.int(Math.max(9, Math.round(lo0 * 0.33)), Math.max(12, Math.round(hi0 * 0.25)));
   const clans = R.shuffle((TRIBE_NAMES[t.id]?.clans || [t.self]).slice());
   const people = [], families = [];
   const g = gOfV(V);

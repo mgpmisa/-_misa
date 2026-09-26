@@ -36,9 +36,14 @@ const stripEnd = (t) => t.replace(/[。！!]+$/, '');
 const firstNum = (t) => { const m = t.match(/(\d+)銅貨/); return m ? +m[1] : null; };
 const clip = (arr, n) => { if (arr.length > n) arr.splice(0, arr.length - n); };
 
-// 全員の「今日すでに誰かが言った文」（保存しない。ないのが普通）
-const GL = { d: -1, seen: new Set() };
-function glReset(api) { if (GL.d !== api.today) { GL.d = api.today; GL.seen = new Set(); } }
+// 全員の「この3日で誰かが言った文」（保存しない。読み込み直後は空で、それでかまわない）
+const GL = { d: -1, seen: new Set(), prev: [new Set(), new Set()] };
+function glReset(api) {
+  if (GL.d === api.today) return;
+  GL.prev = GL.d === api.today - 1 ? [GL.seen, GL.prev[0]] : [new Set(), new Set()];
+  GL.d = api.today; GL.seen = new Set();
+}
+const glHas = (h) => GL.seen.has(h) || GL.prev[0].has(h) || GL.prev[1].has(h);
 
 // ---------- 心の状態 ----------
 export function mindOf(api, p) {
@@ -167,7 +172,7 @@ function say1(v, body) {
   if (/(です|ます|でした|ました|ません|ください)$/.test(body)) return v.fill(body) + '。';
   // もう終助詞などで終わっている文・呼びかけ・誘いは、そのまま言い切る
   if (/(かな|よね|よ|ね|さ|わ|ぞ|ぜ|もの|もん|っけ|って|なあ|かい|のに|けど|から|ように|よろしく|大事に|つけて|がんばって|頑張って|ないで|ありがとう)$/.test(body)) return v.fill(body) + '。';
-  if (/[おこそとのほもよろごぞどぼ]う$/.test(body)) return v.fill(body) + '。';
+  if (/[おこそとのほもよろごぞどぼ]う$/.test(body) || /んだ$/.test(body)) return v.fill(body) + '。';
   if (/(報い|違い|思い|災い|匂い|戦い|願い|付き合い|お互い|具合|くらい|ぐらい)$/.test(body)) return v.s(body, 'n');
   if (/だ$/.test(body) && !/[うくぐすつぬぶむるいたん]だ$/.test(body)) return v.s(body.slice(0, -1), 'n');
   if (/[うくぐすつぬぶむるたいだ]$/.test(body) || /ない$/.test(body)) return v.s(body, 'v');
@@ -275,8 +280,8 @@ const GENERIC = { 1: ['思い出すだけで顔がゆるむ', 'いい日だっ�
 const KIND_NOUN = { gear: '武器の', trade: '商いの', spend: '買い物の', hunt: '魔物退治の', quest: '依頼の', sight: '魔物を見た', death: '弔いの', theft: '財布の', dream: '夢の', school: '学校の', work: '仕事の', ill: '具合の', fight: 'けんかの', party: '仲間の', festival: 'お祭りの', pet: '動物の', grandkids: '孫の', debt: '借金の', money: 'お金の', tax: '税の' };
 
 function sgn(e) { return e > 0.25 ? 1 : e < -0.25 ? -1 : 0; }
-function commentFor(api, m, qName) {
-  const tbl = COMMENT[m.k] || GENERIC;
+function commentFor(api, m, qName, age = 30) {
+  const tbl = (m.k === 'grandkids' && age < 30) ? GENERIC : COMMENT[m.k] || GENERIC;
   const s = sgn(m.emo);
   const list = tbl[s] || GENERIC[s];
   let c = api.rng.pick(list);
@@ -381,7 +386,16 @@ function candidates(api, A, B, mA, vA) {
   }
   mine.sort((a, b) => b[0] - a[0]);
   for (const [sc, m] of mine.slice(0, 5)) {
-    add('m' + (m.min ?? m.t) + ':' + (m.txt.length), sc * 1.2, (v) => topicMem(api, A, B, v, m));
+    // 魔物を見た話は、危険を知らせるために日を変えて何度でもする
+    if (m.k === 'sight') add('m' + (m.min ?? m.t) + ':' + today, 1.8, (v) => topicMem(api, A, B, v, m));
+    else add('m' + (m.min ?? m.t) + ':' + (m.txt.length), sc * 1.2, (v) => topicMem(api, A, B, v, m));
+  }
+  // 危ない場所（危険の記憶）を教える
+  const dk = Object.entries(A.danger || {}).filter(([, x]) => x > 2);
+  if (dk.length) {
+    dk.sort((a, b) => b[1] - a[1]);
+    const [dkey, dval] = dk[R.next() < 0.6 ? 0 : (R.next() * dk.length) | 0];
+    add('dg:' + dkey + ':' + today, 1 + A.pers.A, (v) => topicDangerPlace(api, A, B, v, dkey, dval));
   }
   // 昔の思い出（子どものころ・若いころ）
   if (R.next() < 0.5) {
@@ -396,7 +410,7 @@ function candidates(api, A, B, mA, vA) {
   const gos = A.memories.filter((m) => m.g && m.g.subj !== B.id && !(B.gk && B.gk[m.g.key]) && today - m.t < 12 && alive(api, m.g.subj));
   if (gos.length) {
     const m = gos.length > 1 ? gos.reduce((a, b) => (Math.abs(b.g.emo) + (b.t - a.t) * 0.1 > Math.abs(a.g.emo) ? b : a)) : gos[0];
-    add('g:' + m.g.key, 1.2 + E * 1.5 + (A.pers.A < 0.45 ? 0.8 : 0), (v) => topicRumor(api, A, B, v, m));
+    add('g:' + m.g.key, 0.7 + E * 0.9 + (A.pers.A < 0.45 ? 0.5 : 0), (v) => topicRumor(api, A, B, v, m));
   }
   // 相手へのお祝い・お悔やみ
   const cg = A.memories.find((m) => m.g && m.g.subj === B.id && today - m.t < 10 && m.g.congrat);
@@ -453,7 +467,7 @@ function candidates(api, A, B, mA, vA) {
   for (const k of mA.kn) {
     if (k.from === B.id || today - k.d > 6) continue;
     if (mB.kk.includes(k.key)) continue;
-    add('kn:' + k.key, 0.8 + E * 0.6, (v) => topicKnow(api, A, B, v, k));
+    add('kn:' + k.key, (k.k === 'nw' ? 0.4 : 0.8) + E * 0.5, (v) => topicKnow(api, A, B, v, k));
     break;
   }
   // (8) 最近の大きな出来事（速報）
@@ -463,7 +477,7 @@ function candidates(api, A, B, mA, vA) {
     if (api.S.t - n.t > 2880) break;
     if (/建国記念日|誕生日/.test(n.text)) continue;
     if (mB.kk.includes('nw' + n.t)) continue;
-    if (R.next() < 0.4) { add('nw' + n.t, 0.6 + (n.imp || 1) * 0.2, (v) => topicNews(api, A, B, v, n)); break; }
+    if (R.next() < 0.3) { add('nw' + n.t, 0.35 + (n.imp || 1) * 0.15, (v) => topicNews(api, A, B, v, n)); break; }
   }
   // (9) 目的・悩み・夢
   if (A.plan && (A.plan.stage === 'saving' || A.plan.stage === 'waiting') && age >= 16) add('pl' + Math.floor(A.plan.saved / 10), 0.7, (v) => topicPlan(api, A, B, v));
@@ -523,7 +537,8 @@ function topicMem(api, A, B, v, m) {
   const aboutYou = m.txt.includes(B.given);
   const txt = ownTxt(v, aboutYou ? m.txt.split(B.given).join(v.fill('{you}')) : m.txt);
   if (aboutYou && m.emo > 0.2) {
-    const text = say1(v, `${when}、${txt}`) + say1(v, R.pick(['本当にありがとう', 'あれはうれしかった', 'ちゃんとお礼を言いたかった']));
+    const got = /(もらった|くれた|贈られた|ごちそうになった|助けられた|紹介された|誘われ)/.test(m.txt);
+    const text = say1(v, `${when}、${txt}`) + say1(v, got ? R.pick(['本当にありがとう', 'あれはうれしかった', 'ちゃんとお礼を言いたかった']) : R.pick(['喜んでもらえてよかった', 'また一緒に過ごしたい', 'あれは楽しかった']));
     return { kind: 'memory', text, sentiment: 0.6, about: [B.id], lead: false, mind: { t: 'shared', m }, src: `相手とのことの記憶「${m.txt}」` };
   }
   let first;
@@ -533,12 +548,23 @@ function topicMem(api, A, B, v, m) {
   else if (st === 2) first = say1(v, `${txt}のが${when === '今日' || when === 'さっき' || when === '今朝' ? when : when + 'のこと'}`);
   else first = say1(v, `${when}のことなんだけど、${txt}`);
   let text = first;
-  if (R.next() < 0.75) text += say1(v, commentFor(api, m, q && q.id !== B.id ? q.given : q ? v.fill('{you}') : null));
+  if (R.next() < 0.75) text += say1(v, commentFor(api, m, q && q.id !== B.id ? q.given : q ? v.fill('{you}') : null, api.ageOf(A)));
   const topic = { kind: m.emo < -0.25 ? 'complain' : m.emo > 0.3 ? 'boast' : 'neutral', text, sentiment: m.emo, about: q ? [q.id] : undefined, mind: { t: 'mem', m }, src: `自分の記憶「${m.txt}」` };
   if (m.k === 'sight' && m.where) { topic.kind = 'warning'; topic.warning = { x: m.where.x, z: m.where.z, v: 2 }; }
   if (m.k === 'boast' || ['hunt', 'quest', 'discovery', 'hero', 'justice', 'trade'].includes(m.k) && m.emo > 0) topic.kind = 'boast';
   if (m.k === 'death' && m.src === 'self') topic.kind = 'grief';
   return topic;
+}
+
+function topicDangerPlace(api, A, B, v, key, val) {
+  const R = api.rng;
+  const x = Math.floor(+key / 100) * 8 + 4, z = (+key % 100) * 8 + 4;
+  const place = api.placeName(x, z);
+  let why = null;
+  for (let i = A.memories.length - 1; i >= 0; i--) { const m = A.memories[i]; if (m.where && Math.abs(m.where.x - x) <= 8 && Math.abs(m.where.z - z) <= 8) { why = m; break; } }
+  if (!why) for (let i = A.memories.length - 1; i >= 0; i--) { const m = A.memories[i]; if (['sight', 'fight', 'quest'].includes(m.k) && m.emo < 0 && api.today - m.t < 20) { why = m; break; } }
+  const text = say1(v, R.pick([`${place}には気をつけて`, `${place}には近づかないほうがいい`, `${place}は危ない`])) + (why ? say1(v, `${whenOf(api, why)}、${ownTxt(v, why.txt).split('。')[0]}`) : say1(v, R.pick(['{me}はあそこで痛い目にあった', 'あそこは魔物の気配がする'])));
+  return { kind: 'warning', text, sentiment: -0.4, warning: { x, z, v: val }, mind: { t: 'danger' }, teach: { key: 'dg:' + key, k: 'danger', x, z, place }, src: why ? `危険の記憶（${place}）「${why.txt}」` : `危険の記憶（${place}・${val.toFixed(1)}）` };
 }
 
 function topicOld(api, A, B, v, m) {
@@ -894,13 +920,19 @@ function mindReact(api, B, A, topic, v) {
     const exp = mt.sp ? B.memories.slice().reverse().find((x) => x.txt.includes(SPECIES[mt.sp].name)) : null;
     if (exp) return { text: say1(v, `${whenOf(api, exp)}、${ownTxt(v, exp.txt).split('。')[0]}`) + say1(v, R.pick(['次はその手でいく', 'それを知ってればよかった'])), da: 2.5, src: `返事の元：自分の記憶「${exp.txt}」` };
     if (same) return { text: say1(v, R.pick(['{me}の師匠も同じことを言ってた', 'それは{me}も知ってる。でも、もうひとつこつがある'])), da: 2, src: `返事の元：同じ仕事（${jobName(B.job)}）` };
-    return { text: say1(v, R.pick(['へえ、覚えておく', 'いいことを聞いた', 'そういうものなんだ'])), da: 1.5, src: '返事の元：初めて聞く知識' };
+    return { text: say1(v, R.pick(['へえ、覚えておく', 'いいことを聞いた', 'そういうものなのか', `${A.given}は物知り`])), da: 1.5, src: '返事の元：初めて聞く知識' };
+  }
+  if (mt.t === 'danger') {
+    const t = topic.teach, dv = B.danger?.[t.key.slice(3)] ?? 0;
+    if (dv > 1) return { text: say1(v, R.pick([`${t.place}なら、{me}も怖い目にあった`, `やっぱり${t.place}は危ないんだ`])) + say1(v, 'お互い気をつけよう'), da: 3, src: `返事の元：自分の危険の記憶（${t.place}）` };
+    if (['guard', 'knight', 'soldier', 'watchman'].includes(B.job)) return { text: say1(v, R.pick([`${t.place}か。見回りのときに気をつける`, `${t.place}のこと、詰所に伝えておく`])), da: 2.5, src: `返事の元：自分の仕事（${jobName(B.job)}）` };
+    return { text: say1(v, R.pick([`${t.place}だね。教えてくれてありがとう`, `${t.place}には近づかないようにする`, `${t.place}か……覚えておく`])), da: 2.5, src: '返事の元：初めて聞く危ない場所' };
   }
   if (mt.t === 'know') {
     const k = mt.k;
     const had = mB.kn.find((x) => x.key === k.key && x.from !== A.id && x.from != null);
     if (had) { const f = api.person(had.from); return { text: say1(v, `それ、${f ? f.given : '誰か'}も言ってた`), da: 1, src: `返事の元：${f?.given}から聞いた知識` }; }
-    return { text: say1(v, R.pick(['いいことを聞いた', 'へえ、そうなんだ。気をつける', '覚えておく'])), da: 1.5, src: '返事の元：初めて聞く知識' };
+    return { text: say1(v, R.pick(['いいことを聞いた', 'へえ、気をつける', '覚えておく'])), da: 1.5, src: '返事の元：初めて聞く知識' };
   }
   if (mt.t === 'news') {
     const c = B.values?.courage > 0.7 && /討|魔物|魔王/.test(mt.n.text) ? '{me}もいつか、そんなふうになりたい' : B.pers.N > 0.6 ? 'なんだか落ち着かない' : B.pers.A > 0.6 ? '関わった人たちが無事だといい' : '世の中いろいろ';
@@ -926,6 +958,25 @@ function mindReact(api, B, A, topic, v) {
     return null;
   }
   return null;
+}
+
+// どの話題にも使える返事：自分の最近の体験（気持ちの向きが同じもの）を返す
+function ownExperience(api, B, A, topic, v) {
+  const R = api.rng, s = topic.sentiment ?? 0;
+  if (Math.abs(s) < 0.2 || R.next() > 0.65) return null;
+  let best = null, bs = 0;
+  for (const x of B.memories) {
+    if (x.g || x.t < 0 || api.today - x.t > 5 || Math.abs(x.emo) < 0.3 || ['story', 'news'].includes(x.k)) continue;
+    const sc = (Math.sign(x.emo) === Math.sign(s) ? 2 : 0.6) + (x.imp ?? 0.3) - (api.today - x.t) * 0.1;
+    if (sc > bs) { bs = sc; best = x; }
+  }
+  if (!best) return null;
+  const w = whenOf(api, best), txt = ownTxt(v, best.txt.split(A.given).join(v.fill('{you}'))).split('。')[0];
+  const same = Math.sign(best.emo) === Math.sign(s);
+  const lead = same ? (s < 0 ? R.pick(['わかる。', 'それを言うなら、', '']) : R.pick(['いいね。', 'それはよかった。', ''])) : (s < 0 ? R.pick(['それは大変。', 'そうか……']) : R.pick(['いいなあ。', 'うらやましい。']));
+  const body = same ? `{me}も${w}、${txt}` : `{me}のほうは${w}、${txt}`;
+  const link = same ? (s < 0 ? R.pick(['お互いつらい', '人ごとじゃない']) : R.pick(['いいことって続く', 'お互い運がいい'])) : (best.emo < 0 ? R.pick(['世の中うまくいかない', 'うまくいく人もいるんだなあ']) : R.pick(['いいこともあれば悪いこともある', '元気出して']));
+  return { text: v.fill(lead) + say1(v, body) + say1(v, link), da: same ? 3 : 2, src: `返事の元：自分の最近の体験「${best.txt}」` };
 }
 
 // ---------- あいさつと別れ ----------
@@ -989,7 +1040,7 @@ function byeOf(api, v, S, L, hour, ctx) {
 function lineOK(mP, h, strict) {
   if (mP.h.includes(h)) return false;
   if (strict && mP.r.includes(h)) return false;
-  if (strict && GL.seen.has(h)) return false;
+  if (strict && glHas(h)) return false;
   return true;
 }
 function commit(p, mP, text) {
@@ -1004,7 +1055,7 @@ function pickLine(api, p, mP, v, gen, sentiment, optional, role) {
   for (let i = 0; i < 5; i++) {
     const t = gen(i);
     if (!t) continue;
-    if (lineOK(mP, hashStr(t), i < 3)) { text = t; break; }
+    if (lineOK(mP, hashStr(t), i < 3 || optional)) { text = t; break; }
     // 言い回しを変える（あいさつ・別れは変えずに言わない）
     if (optional) continue;
     for (let j = 0; j < 3; j++) {
@@ -1080,7 +1131,7 @@ export function mindConversation(api, A, B) {
     // speech.js の話題（行事・家計・病・働き方・裏社会・王への陳情など）もまぜる
     const special = (speaker.rank === 'homeless' ? 2.5 : 0) + (listener.rank === 'king' && speaker.rank !== 'king' ? 2.5 : 0) + (speaker.jail != null ? 4 : 0) + (api.hh(speaker)?.refugee != null ? 2.5 : 0) + (api.S.demon?.active ? 1.2 : 0) + (api.kingdomOf(speaker)?.war ? 1.2 : 0) + (speaker.rank === 'king' ? 2 : 0) + (api.ageOf(speaker) < 13 ? 1.2 : 0);
     const fbKeysRecent = ms.tk.slice(-4);
-    cands.push({ key: null, w: 1.6 + special, fb: true });
+    cands.push({ key: null, w: 1.3 + special, fb: true });
     const text = pickLine(api, speaker, ms, vs, (tries) => {
       for (let k = 0; k < 3; k++) {
         const c = api.rng.weighted(cands, (x) => x.w);
@@ -1115,6 +1166,7 @@ export function mindConversation(api, A, B) {
     let re = null;
     try { re = mindReact(api, listener, speaker, topic, vl); } catch (e) { if (api.tmDebug) throw e; re = null; }
     const base = react(api, listener, speaker, topic, vl);
+    if (!re && !['romance', 'petition', 'beg', 'aboutyou', 'quarrel'].includes(topic.kind) && !(topic.kind === 'king' && topic.treason)) { try { re = ownExperience(api, listener, speaker, topic, vl); } catch (e) { if (api.tmDebug) throw e; } }
     if (!re) re = { ...base, src: '返事の元：気持ち（定番の返事）' };
     else { if (base.romance) re.romance = true; if (base.give) re.give = true; if (base.adopt) re.adopt = true; if (re.da == null) re.da = base.da; if (re.praise == null && base.praise && re.da > 0) re.praise = base.praise; }
     const reText = pickLine(api, listener, ml, vl, (tries) => personalize(api, vl, tries < 3 ? re.text : react(api, listener, speaker, topic, vl).text, topic.sentiment, { role: 'reply', nameMul: tries ? 2 : 1 }), topic.sentiment, false, 'reply');
@@ -1142,31 +1194,48 @@ export function mindConversation(api, A, B) {
 }
 
 // ---------- 心の声 ----------
+// innerThought の文が、自分が最近思ったことか、町じゅうでありふれた文なら、自分の記憶・知識・計画から別の考えを作る
 export function mindThought(api, p) {
   if (!p.needs) return null;
+  glReset(api);
   const m = mindOf(api, p);
+  if (!Array.isArray(m.tr)) m.tr = [];
   const R = api.rng;
-  const ok = (t) => t && !m.th.includes(hashStr(t));
-  const keep = (t) => { m.th.push(hashStr(t)); clip(m.th, 40); return t; };
-  for (let i = 0; i < 3; i++) { const t = innerThought(api, p); if (ok(t)) return keep(t); }
-  // 記憶・知識・計画・目的から別の考えを作る
+  const mine = (h) => m.th.includes(h) || m.tr.includes(h);
+  const keep = (t) => { const h = hashStr(t); m.th.push(h); clip(m.th, 40); m.tr.push(h); clip(m.tr, 30); GL.seen.add(h); return t; };
+  let first = null;
+  for (let i = 0; i < 2; i++) {
+    const t = innerThought(api, p);
+    if (!t) continue;
+    const h = hashStr(t);
+    if (!mine(h) && !glHas(h)) return keep(t);
+    if (!first && !m.th.includes(h)) first = t;
+  }
+  // 記憶・知識・計画・目的から、その人だけの考えを作る
   const me = firstPerson(p, p.style || 'plain');
   const opts = [];
-  for (const x of p.memories) {
-    if (x.g || x.t < 0 || api.today - x.t > 5 || (x.imp ?? 0) < 0.3) continue;
+  for (let i = p.memories.length - 1, c = 0; i >= 0 && c < 6; i--) {
+    const x = p.memories[i];
+    if (x.g || x.t < 0 || api.today - x.t > 5 || (x.imp ?? 0) < 0.3 || x.k === 'story') continue;
+    c++;
     const w = whenOf(api, x), t = x.txt.split('。')[0].replace(/わたし/g, me);
-    opts.push(x.emo >= 0 ? R.pick([`${w}の、${t}こと。思い出すと顔がゆるむ。`, `${t}……${w}のことなのに、もう懐かしい。`]) : R.pick([`${w}、${t}。まだ胸がざわつく。`, `${t}……。考えないようにしよう。`]));
+    opts.push(x.emo >= 0 ? R.pick([`${w}、${t}。思い出すと顔がゆるむ。`, `${t}……${w}のことなのに、もう懐かしい。`, `${w}のこと。${t}。また、ああいう日があるといい。`]) : R.pick([`${w}、${t}。まだ胸がざわつく。`, `${t}……。考えないようにしよう。`, `${w}のことが、まだ頭から離れない。${t}。`]));
   }
   for (const k of m.kn) {
     const f = api.person(k.from);
     if (!f) continue;
-    if (k.k === 'px') opts.push(`${f.given}の言ってた${GOODS[k.g]?.name}の値段、本当かな。`);
+    if (k.k === 'px') opts.push(`${f.given}の言ってた${GOODS[k.g]?.name}の${k.v}銅貨、本当かな。`);
     else if (k.txt) opts.push(`${f.given}が言ってたっけ。「${stripEnd(k.txt)}」。`);
   }
-  for (const [id, e] of Object.entries(m.met)) { if (api.today - e.d >= 3 && api.rel(p, { id: +id }).a > 30) { const q = alive(api, +id); if (q) opts.push(`${q.given}、元気かな。${kn(Math.min(api.today - e.d, 10))}日も会ってない。`); } }
+  for (const [id, e] of Object.entries(m.met)) {
+    const d = api.today - e.d;
+    if (d >= 3 && (p.rel?.[id]?.a ?? 0) > 30) { const q = alive(api, +id); if (q) opts.push(`${q.given}、元気かな。${kn(Math.min(d, 10))}日も会ってない。`); }
+    if (e.s && e.sd != null && api.today - e.sd <= 3) { const q = alive(api, +id); if (q) opts.push(`${q.given}の${e.s}、どうなったかな。`); }
+  }
   if (p.plan && p.plan.stage === 'saving') opts.push(`${p.plan.txt}まで、あと${Math.max(1, Math.round(p.plan.need - p.plan.saved))}銅貨。`);
   if (p.pur) for (const t of purposeThoughts(api, p)) opts.push(t);
   R.shuffle(opts);
-  for (const t of opts) if (ok(t)) return keep(t);
-  return null;
+  for (const t of opts) { const h = hashStr(t); if (!mine(h) && !glHas(h)) return keep(t); }
+  for (const t of opts) if (!m.th.includes(hashStr(t))) return keep(t);
+  return first ? keep(first) : null;
 }

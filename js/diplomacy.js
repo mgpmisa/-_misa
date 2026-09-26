@@ -66,7 +66,7 @@ const BRIDGE_WOOD = 3;
 const LS = Math.max(1, Math.min(W, H) / 160);
 const BIG = W >= 320;
 const CREW_REACH = Math.round(45 * LS);      // 現場まで歩いて通える町の距離
-const NOROAD_MAX = Math.round(75 * LS);      // 街道がないとき、国の隊商が野を越えて行ける距離
+const NOROAD_MAX = 80;                       // 街道がないとき、国の隊商が野を越えて行ける距離（広い世界でも同じ。遠い国とは街道がないと商えない）
 const MAX_CARAVANS = 3;
 const ROADLIKE = (t) => t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK;
 const NOBUILD = new Set([T.SEA, T.DEEP, T.PEAK, T.BLD, T.LAVA, T.WALL, T.FENCE, T.FIELD, T.PASTURE]);
@@ -517,15 +517,20 @@ function startRoad(sim, k, c, path, todo, cost) {
 function checkThreats(sim, road) {
   const S = sim.S, D = S.diplo, w = S.world;
   const pts = road.todo.filter((_, i) => i % 8 === 0).slice(road.lo >> 3);
+  // 道すじの場所ごとに、まわりの魔物の強さを見る。弱い獣や小物がばらばらにいるだけなら、人夫と護衛で追い払える
   const ids = new Set(); let power = 0, named = null;
   for (const i of pts) {
     const x = i % W, z = (i / W) | 0;
     if (w.settlements.some((s) => cheb(s.x, s.z, x, z) <= (s.r || 6) + 3)) continue;
     const th = threatsNear(sim, x, z, 5);
-    for (const id of th.ids) if (!ids.has(id)) { ids.add(id); const c = S.creatures[id]; if (c) power += (c.atk || 5) * Math.sqrt(c.maxhp || 20); }
+    let local = 0;
+    for (const id of th.ids) { const c = S.creatures[id]; if (c) local += (c.atk || 5) * Math.sqrt(c.maxhp || 20); }
+    if (local < 160 && th.named == null) continue;
+    for (const id of th.ids) ids.add(id);
+    power = Math.max(power, local);
     if (th.named != null) named = th.named;
   }
-  if (power < 90 && named == null) { if (road.stage === 'purge') { road.stage = 'build'; note(sim, `${road.name}の道すじの魔物がいなくなり、普請が再開された`, [road.k], { pos: sim.town(road.from) }); } return false; }
+  if (!ids.size) { if (road.stage === 'purge') { road.stage = 'build'; note(sim, `${road.name}の道すじの魔物がいなくなり、普請が再開された`, [road.k], { pos: sim.town(road.from) }); } return false; }
   if (road.stage !== 'purge') {
     road.stage = 'purge'; road.purgeDay = sim.today; D.stats.purges++;
     note(sim, `${road.name}の道すじに強い魔物がいる。${kname(sim, road.k)}は討伐が済むまで普請を止め、ギルドに討伐を頼んだ`, [road.k], { news: 1, pos: sim.town(road.from) });
@@ -1069,8 +1074,12 @@ function diplomacyTurns(sim) {
     const PA = kingPolicyOf(sim, a), PB = kingPolicyOf(sim, b);
     const rab = rel(sim, a, b), rba = rel(sim, b, a);
     // 交易協定
-    const comp = complementary(sim, a, b);
-    if (!pactOf(sim, a, b, 'trade') && Math.min(rab, rba) > -10 && comp > 0) {
+    const ca = sim.town(A.capital), cb = sim.town(B.capital);
+    // 協定を結ぶ意味があるのは、道でつながっているか、街道を造っている相手。品の過不足が合うか、すでに取引があるか、値の開きが大きいとき
+    const reach = kingdomsLinked(sim, a, b) || D.roads.some((r) => ['build', 'purge'].includes(r.stage) && ((r.k === a && kOfSid(sim, r.to) === b) || (r.k === b && kOfSid(sim, r.to) === a)));
+    const dealt = D.deals.some((d) => sim.today - d.d < 20 && ((d.seller === a && d.buyer === b) || (d.seller === b && d.buyer === a)));
+    const comp = complementary(sim, a, b) + (dealt ? 1 : 0) + (ca && cb && tradeGain(sim, a, ca.id, cb.id) > 40 ? 1 : 0);
+    if (reach && !pactOf(sim, a, b, 'trade') && Math.min(rab, rba) > -10 && comp > 0) {
       const want = (P) => ({ merchant: 0.8, peace: 0.55, timid: 0.3, ambitious: 0.35 }[P.type]);
       if (R.chance(want(PA) * want(PB) + 0.1)) {
         D.pacts.push({ id: D.seq++, type: 'trade', a, b, since: sim.today, until: sim.today + 60 });
