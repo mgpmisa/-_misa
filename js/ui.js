@@ -9,6 +9,7 @@ import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
+import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
 import { elderCard, elderBuildingRows } from './elder.js';
 import { monsterHtml } from './monsters.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
@@ -416,6 +417,7 @@ export class UI {
         <dt>国庫</dt><dd>${Math.round(k.treasury)}銅貨</dd>
         ${expansionNationHTML(this.sim, k, esc) || ''}
         ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
+        ${bankNationHTML(this.sim, k, esc) || ''}
         <dt>技術</dt><dd>${k.techs.map((t) => esc(TECHS.find((x) => x.id === t)?.name)).join('、') || 'なし'}（研究${Math.round(k.research)}）</dd>
         <dt>関係</dt><dd>${rel}</dd>
         ${k.war ? `<dt>戦争</dt><dd class="up">${esc(k.war.name)}（${this.sim.today - k.war.since}日目）</dd>` : ''}</dl></div>`;
@@ -482,7 +484,7 @@ export class UI {
       <canvas id="priceChart" width="300" height="90"></canvas>
       <p>黄＝パン　緑＝小麦（最近の値動き）</p>
       <p>世帯 ${hhs.length}　平均の蓄え ${avg.toFixed(0)}銅貨　町の蓄え ${Math.round(m.fund)}銅貨<br>
-      貧しい世帯 ${poor}　お腹をすかせた人 ${hungry}人　盗み ${m.crime || 0}件${m.occupied ? '<br><b class="up">魔王軍に占領されている</b>' : ''}</p>`;
+      貧しい世帯 ${poor}　お腹をすかせた人 ${hungry}人　盗み ${m.crime || 0}件${m.occupied ? '<br><b class="up">魔王軍に占領されている</b>' : ''}</p>${bankEconHTML(this.sim, sid, esc) || ''}`;
     const cv = $('priceChart'), g = cv.getContext('2d');
     const hist = m.history;
     if (hist.length > 1) {
@@ -633,7 +635,7 @@ export class UI {
       const worth = (p.inv || []).reduce((s2, it) => s2 + itemValue(it), 0);
       h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}</dd>` : '').join('')}
         <dt>持ち物</dt><dd>${inv.map((it) => esc(itemName(it))).join('、') || 'なし'}</dd>${p.treasures?.length ? `<dt>宝物</dt><dd>${p.treasures.map(esc).join('、')}</dd>` : ''}
-        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd></dl></div>`;
+        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;
@@ -736,7 +738,7 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    const typeLabel = { guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    const typeLabel = { mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     if (INTERIOR_TYPES.has(b.type)) h += `<div class="row-btns"><button id="enterBtn">${['cave', 'pyramid', 'demoncastle', 'ruins', 'mine'].includes(b.type) ? '奥へ踏み込んで見る' : '中に入って見る'}</button></div>`;
     if (b.type === 'house' || b.type === 'mansion') {

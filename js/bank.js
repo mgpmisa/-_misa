@@ -326,14 +326,14 @@ function bankDailyOne(sim, k, b) {
     if (sim.today < l.due) continue;
     if (l.king) { kingLoanDue(sim, k, b, l); continue; }
     const p = alive(sim, l.to), hh = p && sim.hh(p);
-    if (hh && hh.money >= l.owed + 30) {
+    if (hh && hh.money >= l.owed + 10) {
       hh.money -= l.owed; b.vault += l.owed; b.profit += l.owed - l.amt; b.loans.splice(b.loans.indexOf(l), 1); B.stats.repaid++;
       remember(sim, p, `両替商の館からの借り入れ${r1(l.owed)}銅貨を返し終えた`, 0.4, 0.4);
       continue;
     }
     l.late++; l.due = sim.today + 5;
-    if (hh && hh.money > 40) { const part = Math.min(l.owed, hh.money - 40); hh.money -= part; b.vault += part; l.owed -= part; if (l.owed < 0.5) { b.loans.splice(b.loans.indexOf(l), 1); continue; } }
-    if (!p || l.late >= 3) {
+    if (hh && hh.money > 25) { const part = Math.min(l.owed, hh.money - 25); hh.money -= part; b.vault += part; l.owed -= part; if (l.owed < 0.5) { b.loans.splice(b.loans.indexOf(l), 1); continue; } }
+    if (!p || l.late >= 4) {
       b.loans.splice(b.loans.indexOf(l), 1); B.stats.defaults++;
       b.loss = (b.loss || 0) + l.owed;
       if (p) { remember(sim, p, `両替商の館への借金${r1(l.owed)}銅貨を返せず、踏み倒すことになった`, -0.7, 0.75); p.badDebt = true; }
@@ -556,7 +556,7 @@ function hoardDaily(sim) {
     const bk = B.k[kid];
     const gresham = bk ? Math.max(0, 0.9 - bk.q * bk.wear) * 0.15 : 0;   // 悪貨が出回ると、良い銅貨をしまい込む
     const scar = head.bankScar != null ? 0.03 : 0;
-    const ch = (isMiser(head) ? 0.03 : 0.002) + gresham + (B.distrust[kid] || 0) * 0.02 + scar;
+    const ch = (isMiser(head) ? 0.012 : 0.001) + gresham + (B.distrust[kid] || 0) * 0.02 + scar;
     if (!R.chance(ch)) continue;
     const amt = r1((hh.money - 100) * R.range(0.3, 0.6));
     if (amt < 20) continue;

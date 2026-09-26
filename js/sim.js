@@ -32,6 +32,7 @@ import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes 
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
 import { monstersDaily, monstersHourly } from './monsters.js';
 import { elderDaily } from './elder.js';
+import { bankDaily, priceLevel, hhDeposit } from './bank.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -428,8 +429,9 @@ export class Sim {
   price(g, sid = 0) { return Math.max(1, Math.round(this.S.towns[sid].price[g])); }
   priceRatio(g, sid = 0) { return this.S.towns[sid].price[g] / GOODS[g].base; }
   updatePrices() {
-    for (const m of Object.values(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
-      const target = g.base * clamp(Math.pow(g.target / (m.stock[k] + g.target * 0.25), 0.55), 0.45, 3.5);
+    for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
+      const L = priceLevel(this, +sid);
+      const target = g.base * L * clamp(Math.pow(g.target / (m.stock[k] + g.target * 0.25), 0.55), 0.45, 3.5);
       m.price[k] += (target - m.price[k]) * 0.25;
     }
   }
@@ -1613,7 +1615,7 @@ export class Sim {
     for (const p of this.living()) {
       const n = p.needs;
       const needAvg = (n.hunger * 1.3 + n.sleep + n.survival * 1.3 + n.lust * 0.5 + n.sloth * 0.7 + n.pleasure + n.esteem) / 6.8;
-      const money = this.householdMoney(p);
+      const money = this.householdMoney(p) + hhDeposit(this, this.hh(p));
       const moneyF = money < 15 ? -12 : money < 50 ? -4 : money > 250 ? 6 : 0;
       let memF = 0;
       for (const m of p.memories) { const age = this.today - m.t; if (age >= 0 && age < 6) memF += m.emo * m.imp * 12 * (1 - age / 6); }
@@ -1754,6 +1756,7 @@ export class Sim {
     careerDaily(this);
     elderDaily(this);
     financeDaily(this);
+    bankDaily(this, GOODS);
     creatureDaily(this);
     faunaDaily(this);
     monstersDaily(this);

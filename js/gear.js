@@ -689,7 +689,8 @@ export function gearDungeonLoot(sim, p, b) {
 export function gearGuardMul(p) {
   const m = p?.morale;
   if (m == null) return 1;
-  return clamp(0.85 + m / 333, 0.85, 1.15);   // 満足度50で1.0、80で1.09、20で0.91
+  // 満足度が高くても無謀に挑ませはしない（勝ち目の見極めは danger.js のまま）。低いと及び腰になる
+  return m >= 40 ? 1 : 0.85 + m / 267;
 }
 // 迎え撃ちに出るか（満足度がひどく低い者は、見て見ぬふりをすることがある）
 export function gearWillDefend(p, rng) {

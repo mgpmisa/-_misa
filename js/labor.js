@@ -668,18 +668,18 @@ export function laborDaily(sim) {
       const loveM = p.workReason === 'love' ? 0.8 : 1;
       const old = age >= 55 ? 1.25 : 1;
       const bed = [0, 3, 6][sim.hh(p)?.bedQ || 0] || 0;
-      let f = (p.fatigue || 0) + (worked / 60) * 4.6 * heavy * cart * loveM * old - 30 - bed - (wasRest && worked < 60 ? 14 : 0) - (L.hobby && worked < 300 ? 3 : 0);
+      let f = (p.fatigue || 0) + (worked / 60) * 4.6 * heavy * cart * loveM * old - 24 - bed - (wasRest && worked < 60 ? 16 : 0) - (L.hobby && worked < 300 ? 3 : 0);
       if (p.ail) f += 4;
       p.fatigue = clamp(f, 0, 100);
       // 不満：休めない・働きづめ・重い税・貧しさ
       const kl = k ? kLabor(sim, k) : null;
       const taxLv = k?.taxes?.lv || 1;
       const taxPain = hh ? clamp(taxDue(sim, hh) / Math.max(20, hh.money), 0, 1.5) * Math.max(0, taxLv - 0.9) : 0;
-      let g = L.gripe * 0.9
+      let g = L.gripe * 0.93
         + Math.max(0, L.streak - every) * 2.4
         + Math.max(0, p.fatigue - 55) / 6
-        + (wasRest && worked >= 180 && L.restWork === sim.today - 1 ? 4 : 0)
-        + taxPain * 6
+        + (wasRest && worked >= 180 && L.restWork === sim.today - 1 ? 6 : 0)
+        + taxPain * 8 + Math.max(0, taxLv - 1.3) * 2.5
         + (hh && hh.money < 20 ? 1.5 : 0)
         + (kl && kl.every >= 7 ? 0.6 : 0)
         - (wasRest && worked < 60 ? 6 : 0)
