@@ -355,9 +355,9 @@ const F = {
     for (let k = 1; k <= n; k++) out.push(Math.round(step * k + (R ? R.range(-0.4, 0.4) : 0)));
     return out.filter((v) => v > 0 && v < len - 1);
   },
-  bed(K, x, z, o = {}) { // 1×2（dir:'z' のとき南北に長い）
-    const M = K.M, alongZ = o.dir !== 'x';
-    const w = alongZ ? 1 : 2, d = alongZ ? 2 : 1;
+  bed(K, x, z, o = {}) { // 1×2（dir:'z' のとき南北に長い）。double のときは夫婦で寝る幅広の寝台
+    const M = K.M, alongZ = o.dir !== 'x', dbl = !!o.double;
+    const w = alongZ ? (dbl ? 1.6 : 1) : 2, d = alongZ ? 2 : (dbl ? 1.6 : 1);
     const lo = o.poor;
     const fh = lo ? 0.12 : 0.32;
     if (!lo) {
@@ -373,7 +373,8 @@ const F = {
       K.box(x, 2.0, z, w, 0.12, d, o.canopy);
     }
     K.solid(x, z, w, d);
-    K.slot('bed', x + w / 2, z + d / 2, { y: fh + 0.18, lie: true, face: alongZ ? [0, 1] : [1, 0] });
+    const bs = K.slot('bed', x + w / 2, z + d / 2, { y: fh + 0.18, lie: true, face: alongZ ? [0, 1] : [1, 0], cap: dbl ? 2 : 1 });
+    if (dbl) { bs.double = true; bs.spots = alongZ ? [[-0.38, 0], [0.38, 0]] : [[0, -0.38], [0, 0.38]]; bs.occ = []; }
     if (o.upper) { // 二段ベッド
       const y2 = 1.1;
       for (const [px_, pz_] of [[x + 0.05, z + 0.05], [x + w - 0.15, z + 0.05], [x + 0.05, z + d - 0.15], [x + w - 0.15, z + d - 0.15]]) K.box(px_, 0, pz_, 0.1, y2 + 0.5, 0.1, M.wood);
@@ -661,7 +662,7 @@ const BUILD = {
     for (let z = 2; z + 2 <= D - 1 && beds.length < nb; z += 2) beds.push([0.1, z]);
     for (let z = 2; z + 2 <= D - 1 && beds.length < nb; z += 2) beds.push([W - 1.1, z]);
     const blankets = [M.red, M.blue, M.green, M.purple, M.orange, M.pink];
-    beds.forEach(([x, z], i) => F.bed(K, x, z, { poor, blanket: poor ? M.sack : blankets[(i + K.R.int(0, 5)) % 6], canopy: rich && i === 0 ? M.red : null, frame: rich ? M.darkWood : M.wood }));
+    beds.forEach(([x, z], i) => F.bed(K, x, z, { double: i === 0 && members >= 2 && x < 1, poor, blanket: poor ? M.sack : blankets[(i + K.R.int(0, 5)) % 6], canopy: rich && i === 0 ? M.red : null, frame: rich ? M.darkWood : M.wood }));
     // 食卓と椅子
     const seats = clamp(Math.max(2, members), 2, 6);
     const tw = seats > 4 ? 3 : 2, tx = Math.floor(W / 2 - tw / 2), tz = Math.floor(D / 2) - 0.5;
@@ -1764,7 +1765,7 @@ export class InteriorView {
   drop(id) {
     const r = this.ents.get(id);
     if (!r) return;
-    if (r.slot) { r.slot.n--; r.slot = null; }
+    this.freeSlot(r);
     this.disposeSprite(r);
     this.ents.delete(id);
     const b = this.bubbles.get(id);
@@ -1812,16 +1813,60 @@ export class InteriorView {
   static FALLBACK = { bed: ['bed', 'lie'], eat: ['eat', 'seat', 'wander'], seat: ['seat', 'eat', 'wander'], pew: ['pew', 'seat', 'wander'], desk: ['desk', 'seat', 'wander'], drill: ['drill', 'seat', 'wander'], work: ['work', 'wander'], stage: ['stage', 'work', 'wander'], wait: ['wait', 'seat', 'wander'], throne: ['throne', 'royal', 'boss', 'wander'], royal: ['royal', 'wander'], guard: ['guard', 'wander'], cell: ['cell', 'wander'], boss: ['boss', 'room'], room: ['room'], explore: ['explore'], wander: ['wander'] };
   takeSlot(r, kind, e) {
     for (const k of InteriorView.FALLBACK[kind] || ['wander']) {
-      if (k === 'wander' || k === 'lie' || k === 'room' || k === 'explore' || k === 'boss' && !this.K.slots.some((s) => s.k === 'boss')) return k === 'boss' ? 'room' : k;
-      const list = this.K.slots.filter((s) => s.k === k && s.n < s.cap);
+      if (k === 'lie') { if (this.takeMat(r)) return 'lie'; continue; }
+      if (k === 'wander' || k === 'room' || k === 'explore' || k === 'boss' && !this.K.slots.some((s) => s.k === 'boss')) return k === 'boss' ? 'room' : k;
+      let list = this.K.slots.filter((s) => s.k === k && s.n < s.cap);
+      if (k === 'bed') {
+        // 1つの寝台には1人。夫婦の寝台（double）だけは夫婦2人で寝る
+        const mate = e.spouseId;
+        const shared = list.find((s) => s.double && s.n > 0 && s.occ.some((o) => o === mate));
+        if (shared) list = [shared];
+        else {
+          const free = list.filter((s) => s.n === 0);
+          // 夫婦の寝台は、夫婦者（連れ合いが家にいる人）に優先して渡す
+          const pref = mate != null ? free.filter((s) => s.double) : free.filter((s) => !s.double);
+          list = pref.length ? pref : free;
+        }
+      }
       if (!list.length) continue;
       // 同じ人はなるべく同じ席に（id から選ぶ）
       const h = typeof e.id === 'number' ? e.id : strHash(e.id);
       const s = list[h % list.length];
       s.n++; r.slot = s;
+      if (s.spots) { let i = 0; while (s.occ[i] != null) i++; s.occ[i] = e.id; r.spot = i; } else r.spot = null;
       return k;
     }
     return 'wander';
+  }
+  // 寝台が足りないときは、床に寝わらを敷いて寝る（ほかの人と重ならない場所を探す）
+  takeMat(r) {
+    const K = this.K;
+    const taken = [];
+    for (const s of K.slots) if (s.n > 0 || s.k === 'bed') taken.push([s.x, s.z]);
+    for (const o of this.ents.values()) if (o !== r && o.kind === 'lie') taken.push([o.tx, o.tz]);
+    const door = K.door || { x: -9, z: -9 };
+    let best = null, bd = -1;
+    for (let z = 0; z < K.D; z++) for (let x = 0; x < K.W; x++) {
+      const cx = x + 0.5, cz = z + 0.5;
+      if (!K.walkable(cx, cz) || Math.hypot(cx - door.x, cz - door.z) < 1.6) continue;
+      let dmin = 9; for (const [tx, tz] of taken) dmin = Math.min(dmin, Math.hypot(cx - tx, cz - tz));
+      if (dmin < 0.95) continue;
+      // 壁ぎわを好む（部屋の真ん中で寝ない）
+      const wallish = (x === 0 || z === 0 || x === K.W - 1 || z === K.D - 1) ? 1 : 0;
+      const sc = Math.min(dmin, 2) + wallish + (r.room >= 0 && this.G?.rooms[r.room] ? 0 : 0);
+      if (sc > bd) { bd = sc; best = [cx, cz]; }
+    }
+    if (!best) return false;
+    const s = { k: 'mat', x: best[0], z: best[1], y: 0.04, face: [1, 0], lie: true, room: -1, cap: 1, n: 1, dyn: true };
+    K.slots.push(s); r.slot = s; r.spot = null;
+    return true;
+  }
+  freeSlot(r) {
+    const s = r.slot; if (!s) return;
+    s.n--;
+    if (s.occ && r.spot != null) s.occ[r.spot] = null;
+    if (s.dyn) { const i = this.K.slots.indexOf(s); if (i >= 0) this.K.slots.splice(i, 1); }
+    r.slot = null; r.spot = null;
   }
   roomFor(e) {
     const G = this.G;
@@ -1896,7 +1941,7 @@ export class InteriorView {
       } else {
         r.e = e;
         const k = this.kindFor(e, human);
-        if (k !== r.want) { if (r.slot) { r.slot.n--; r.slot = null; } this.assign(r, e, human); this.retarget(r); }
+        if (k !== r.want) { this.freeSlot(r); this.assign(r, e, human); this.retarget(r); }
       }
     };
     for (const p of this.peopleInside()) add(p, true);
@@ -1908,7 +1953,7 @@ export class InteriorView {
     r.want = want;
     r.kind = this.takeSlot(r, want, e);
     r.lie = false;
-    if (r.slot) { r.tx = r.slot.x; r.tz = r.slot.z; r.ty = r.slot.y; }
+    if (r.slot) { const o = r.spot != null && r.slot.spots ? r.slot.spots[r.spot] : [0, 0]; r.tx = r.slot.x + o[0]; r.tz = r.slot.z + o[1]; r.ty = r.slot.y; }
     else if (r.kind === 'explore') { const g = this.nextExplore(r); r.tx = g[0]; r.tz = g[1]; r.ty = 0; }
     else { const [x, z] = this.randomCell(r.room); r.tx = x; r.tz = z; r.ty = 0; }
     if (r.slot?.k === 'cell') { r.tx += (hash2(strHash(String(e.id)), 7) - 0.5) * 0.9; }

@@ -432,6 +432,8 @@ export class Sim {
   market(sid) { return this.S.towns[sid]; }
   price(g, sid = 0) { return Math.max(1, Math.round(this.S.towns[sid].price[g])); }
   priceRatio(g, sid = 0) { return this.S.towns[sid].price[g] / GOODS[g].base; }
+  // 市場の金庫：売り手への支払いはここから出て、買い手の代金はここに入る（お金は湧かず消えない）
+  mcash(sid) { const m = this.S.towns[sid]; if (m.cash == null) m.cash = 800; return m; }
   marketHasFood(sid) { const m = this.S.towns[sid]; return ['bread', 'fish', 'wheat', 'meat'].some((g) => m.stock[g] >= 1); }
   updatePrices() {
     for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
@@ -442,8 +444,9 @@ export class Sim {
   }
   sell(p, good, qty) {
     const m = this.market(p.s), hh = this.hh(p);
-    const earn = qty * m.price[good] * 0.85 * tradeMul(p);
-    m.stock[good] += qty; hh.money += earn;
+    this.mcash(p.s);
+    const earn = Math.max(0, Math.min(qty * m.price[good] * 0.85 * tradeMul(p), m.cash));
+    m.stock[good] += qty; m.cash -= earn; hh.money += earn;
     return earn;
   }
   buy(p, good, qty) {
@@ -451,7 +454,8 @@ export class Sim {
     qty = Math.min(qty, Math.floor(m.stock[good]), Math.floor(hh.money / m.price[good]));
     if (qty <= 0) return 0;
     const cost = qty * m.price[good];
-    m.stock[good] -= qty; hh.money -= cost; m.commission += cost * 0.06;
+    this.mcash(p.s);
+    m.stock[good] -= qty; hh.money -= cost; m.cash += cost * 0.94; m.commission += cost * 0.06;
     return qty;
   }
   hasTech(p, tech) { const k = this.kingdomOf(p); return k && k.techs.includes(tech); }
@@ -922,7 +926,8 @@ export class Sim {
     if (qty <= 0) return;
     from.stock[tr.good] -= qty; hh.money -= qty * from.price[tr.good];
     const earn = qty * to.price[tr.good] * 0.92;
-    to.stock[tr.good] += qty; hh.money += earn;
+    const tm = this.mcash(tr.dest ?? to.id ?? p.s); const earn2 = Math.max(0, Math.min(earn, tm.cash)); tm.cash -= earn2;
+    to.stock[tr.good] += qty; hh.money += earn2;
     const profit = earn - qty * from.price[tr.good];
     this.remember(p, `${this.town(tr.dest).name}で${GOODS[tr.good].name}を売って${Math.round(profit)}銅貨もうけた`, { emo: profit > 0 ? 0.5 : -0.4, imp: 0.45, k: 'trade' });
     p.needs.esteem = Math.min(100, p.needs.esteem + (profit > 0 ? 15 : -5));
@@ -981,20 +986,20 @@ export class Sim {
       }
       case 'baker': {
         const need = 1 * eff;
-        if (m.stock.wheat >= need && m.stock.bread < GOODS.bread.target * 1.6) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; this.sell(p, 'bread', need * 1.8); }
+        if (m.stock.wheat >= need && m.stock.bread < GOODS.bread.target * 1.6) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; this.mcash(p.s).cash += need * m.price.wheat * 0.9; this.sell(p, 'bread', need * 1.8); }
         break;
       }
       case 'smith': { this.forge(p, dt, eff); break; }
       case 'carpenter': {
         const need = 1 * eff;
-        if (m.stock.wood >= need && m.stock.furniture < GOODS.furniture.target * 2) { m.stock.wood -= need; hh.money -= need * m.price.wood * 0.9; this.sell(p, 'furniture', need * 0.1); }
-        hh.money += 1.5 * hr;
+        if (m.stock.wood >= need && m.stock.furniture < GOODS.furniture.target * 2) { m.stock.wood -= need; hh.money -= need * m.price.wood * 0.9; this.mcash(p.s).cash += need * m.price.wood * 0.9; this.sell(p, 'furniture', need * 0.1); }
+        { const town = this.S.towns[p.s]; const f = Math.min(1.5 * hr, (town.fund || 0) * 0.01); town.fund -= f; hh.money += f; } // 町の家々の修繕の手間賃（町の蓄えから）
         break;
       }
       case 'tailor': this.sell(p, 'cloth', 0.25 * eff); break;
       case 'innkeeper': {
         const need = 0.8 * eff;
-        if (m.stock.wheat >= need && m.stock.ale < GOODS.ale.target * 1.5) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; m.stock.ale += need * 3; }
+        if (m.stock.wheat >= need && m.stock.ale < GOODS.ale.target * 1.5) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; this.mcash(p.s).cash += need * m.price.wheat * 0.9; m.stock.ale += need * 3; }
         break;
       }
       case 'merchant': {
@@ -1005,7 +1010,7 @@ export class Sim {
       case 'priest': case 'elder': case 'jailer': case 'servant': case 'guard': case 'soldier': case 'knight': {
         const k = this.kingdomOf(p);
         const pay = ({ knight: 1.4, soldier: 1, guard: 1, jailer: 0.9, servant: 0.8, priest: 1, elder: 0.7 }[p.job]) * hr;
-        if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else hh.money += pay * 0.3;
+        if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else { const town = S.towns[p.s]; const f = Math.min(pay * 0.5, town.fund || 0); town.fund -= f; hh.money += f; }
         if (['soldier', 'knight'].includes(p.job)) { p.xp = (p.xp || 0) + 0.3 * hr; this.levelCheck(p); }
         break;
       }
@@ -1013,12 +1018,12 @@ export class Sim {
         const k = this.kingdomOf(p);
         const pts = 0.3 * (JOBS[p.job].research || 1) * (0.5 + skill) * (this.hasTech(p, 'printing') ? 1.4 : 1) * hr;
         if (k) { k.research += pts; k.contrib[p.id] = (k.contrib[p.id] || 0) + pts; }
-        hh.money += 2.5 * hr;
+        { const k2 = this.kingdomOf(p); const st = 2.5 * hr; if (k2 && k2.treasury > st) { k2.treasury -= st; hh.money += st; } } // 研究の俸禄（国庫から）
         break;
       }
       case 'king': case 'royal': case 'noble': {
         // 統治・社交（政治は politics.js）
-        hh.money += (p.job === 'noble' ? 4 : 0) * hr;
+        // 貴族の収入は領地の地代（property.js の家賃・小作料）から入る
         break;
       }
       default: this.genericWork(p, dt, eff); civicWork(this, p, dt, eff);
@@ -1030,7 +1035,7 @@ export class Sim {
     const J = JOBS[p.job], hh = this.hh(p), m = this.market(p.s), hr = dt / 60, R = this.rng, S = this.S;
     if (!J) return;
     const k = this.kingdomOf(p);
-    if (J.pay) { const pay = J.pay * hr; if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else hh.money += pay * 0.3; }
+    if (J.pay) { const pay = J.pay * hr; if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else { const town = S.towns[p.s]; const f = Math.min(pay * 0.5, town.fund || 0); town.fund -= f; hh.money += f; } }
     if (J.research && k) { const pts = 0.3 * J.research * (0.5 + (p.skill[p.job] || 0.3)) * hr; k.research += pts; k.contrib[p.id] = (k.contrib[p.id] || 0) + pts; }
     if (J.combat && !J.pay) { p.xp = (p.xp || 0) + 0.2 * hr; this.levelCheck(p); }
     if (J.goods) {
@@ -1042,7 +1047,7 @@ export class Sim {
     }
     const near = (r) => this.living().filter((q) => q !== p && (p.inside != null ? q.inside === p.inside : !q.inside && Math.abs(q.pos.x - p.pos.x) + Math.abs(q.pos.z - p.pos.z) < r));
     switch (J.svc) {
-      case 'finance': if (k) k.treasury += 4 * hr * (0.5 + p.pers.C); break;
+      case 'finance': if (k) k.financier = p.id; break; // 財務の腕は徴税の手際に効く（お金は作らない）
       case 'advise': if (k) k.advisor = p.id; break;
       case 'command': if (k) k.general = p.id; p.xp = (p.xp || 0) + 0.4 * hr; this.levelCheck(p); break;
       case 'feed': { const royal = Object.values(S.households).find((h) => h.royal && h.s === p.s); if (royal) royal.food += 1.5 * hr; break; }
@@ -1067,10 +1072,10 @@ export class Sim {
         p.needs.esteem = Math.min(100, p.needs.esteem + kids.length * 2 * hr);
         break;
       }
-      case 'bank': { const fee = Math.min(2 * hr, S.towns[p.s].fund * 0.001); S.towns[p.s].fund -= fee; hh.money += fee + 1 * hr; break; }
-      case 'mill': if (m.stock.wheat > 4) { m.stock.wheat -= 1.2 * hr; m.stock.bread += 1.5 * hr; hh.money += 1.5 * hr; } break;
+      case 'bank': { const fee = Math.min(2 * hr, S.towns[p.s].fund * 0.001); S.towns[p.s].fund -= fee; hh.money += fee; break; }
+      case 'mill': if (m.stock.wheat > 4) { this.mcash(p.s); m.stock.wheat -= 1.2 * hr; m.stock.bread += 1.5 * hr; const f = Math.min(1.5 * hr, m.cash); m.cash -= f; hh.money += f; } break;
       case 'childcare': for (const q of this.living()) if (q.hh === p.hh && this.ageOf(q) < 10) q.needs.pleasure = Math.min(100, q.needs.pleasure + 8 * hr); break;
-      case 'trade': for (const g of ['cloth', 'jewelry', 'pottery', 'honey']) if (m.stock[g] < GOODS[g].target * 0.5) m.stock[g] += 0.1 * hr; hh.money += 2 * hr; break;
+      case 'trade': for (const g of ['cloth', 'jewelry', 'pottery', 'honey']) if (m.stock[g] < GOODS[g].target * 0.5) m.stock[g] += 0.1 * hr; { this.mcash(p.s); const f = Math.min(2 * hr, m.cash * 0.01); m.cash -= f; hh.money += f; } break;
       case 'quests': {
         if (R.chance(0.02 * dt)) {
           const s = this.townOf(p);
@@ -1160,7 +1165,7 @@ export class Sim {
     town.mats = town.mats || {}; town.shop = town.shop || [];
     if (m.stock.ore >= 1 && (town.mats.iron || 0) < 12) { m.stock.ore -= 0.8 * eff; hh.money -= 0.8 * eff * m.price.ore * 0.9; town.mats.iron = (town.mats.iron || 0) + 0.4 * eff; }
     p.forgeT = (p.forgeT || 0) + dt;
-    if (p.forgeT < 90 || town.shop.length >= 14) { hh.money += 1 * dt / 60; return; }
+    if (p.forgeT < 90 || town.shop.length >= 14) return;
     p.forgeT = 0;
     const skill = p.skill.smith || 0.3;
     const wantTools = town.shop.filter((x) => ITEMS[x.id].type === 'tool').length < 4;

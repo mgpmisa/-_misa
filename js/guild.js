@@ -226,7 +226,12 @@ export function reportQuest(sim, p) {
     if (giver && giver.deathYear == null) addItem(giver, makeItem(q.item, 1, { n: q.qty }));
   }
   const giver = q.giver != null ? S.people[q.giver] : null;
-  if (giver && giver.deathYear == null && giver.rank !== 'king') { const hh = sim.hh(giver); if (hh) hh.money -= Math.min(hh.money * 0.5, q.reward * 0.5); }
+  // 報酬は依頼主が払う（王の布告なら国庫）。払えない分はギルドの積立（町の蓄え）から
+  let fundR = 0;
+  if (giver && giver.deathYear == null && giver.rank !== 'king') { const hh = sim.hh(giver); if (hh) { const x = Math.min(Math.max(0, hh.money) * 0.5, q.reward); hh.money -= x; fundR += x; } }
+  else { const k = S.kingdoms[sim.town(q.s).kingdom]; if (k) { const x = Math.min(Math.max(0, k.treasury - 100), q.reward); k.treasury -= x; fundR += x; } }
+  if (fundR < q.reward) { const town = S.towns[q.s]; const x = Math.min(q.reward - fundR, Math.max(0, town.fund || 0)); town.fund -= x; fundR += x; }
+  q.reward = Math.round(fundR);
   const share = Math.round(q.reward / members.length);
   for (const m of members) {
     m.purse = (m.purse || 0) + share * 0.7; if (sim.hh(m)) sim.hh(m).money += share * 0.3;
@@ -392,6 +397,13 @@ export function splitLoot(sim, p, it) {
 
 // 報酬のお金：パーティーなら一緒に戦った仲間と山分け、ひとりなら財布と家計に
 export function splitCoins(sim, p, amt) {
+  // 魔物退治の報酬は、国庫（なければ近くの町の蓄え）から出る。払えない分は出ない
+  const k = sim.kingdomOf?.(p); const town = sim.S.towns[p.s];
+  let paid = 0;
+  if (k && k.treasury > 200) { paid = Math.min(amt, (k.treasury - 200) * 0.1); k.treasury -= paid; }
+  if (paid < amt && town) { const f = Math.min(amt - paid, (town.fund || 0) * 0.2); town.fund -= f; paid += f; }
+  amt = paid;
+  if (amt <= 0) return;
   const pt = partyOf(sim, p);
   const mates = pt ? pt.members.map((id) => sim.S.people[id]).filter((m) => m && m.deathYear == null && (m === p || (m.quest && m.quest === p.quest))) : [p];
   const each = amt / mates.length;
