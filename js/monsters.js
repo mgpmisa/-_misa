@@ -246,7 +246,7 @@ function fight(sim, A, B) {
   if (victims.length < lossN && lm.length <= lossN) victims.push(...lm.filter((c) => !victims.includes(c)).slice(0, lossN - victims.length));
   for (const v of victims) killCreature(sim, v, R.pick(wm));
   let wLoss = 0;
-  if (wm.length > 2 && R.chance(decisive ? 0.15 : 0.45)) { const v = wm.filter((c) => c.id !== win.leader).sort((a, b) => power(a) - power(b))[0]; if (v) { killCreature(sim, v, R.pick(lm.filter((c) => S.creatures[c.id]).concat(wm))); wLoss = 1; } }
+  if (wm.length > 2 && R.chance(decisive ? 0.15 : 0.45)) { const v = wm.filter((c) => c.id !== win.leader).sort((a, b) => power(a) - power(b))[0]; if (v) { killCreature(sim, v, R.pick(lm.filter((c) => S.creatures[c.id]).concat(wm).filter((c) => c !== v))); wLoss = 1; } }
   win.wins++; lose.losses++;
   win.loyalty = Math.min(100, win.loyalty + 12); lose.loyalty = Math.max(0, lose.loyalty - 15);
   // 勝った群れは大きくなる（捕虜・倒れた者が骸兵として起きる・噂を聞いた同族が集まる）
@@ -396,6 +396,8 @@ function endCampaign(sim, g, alive_) {
   const mem = DA.memory[sid] = DA.memory[sid] || { defeats: 0, wins: 0 };
   g.campaign = null;
   const t = sim.town(sid);
+  const gc = S.creatures[g.cid];
+  if (gc && gc.occupier == null) { gc.role = 'aide'; gc.raid = null; }
   if (won) {
     mem.wins++; g.wins++; DA.wins++; g.loyalty = Math.min(100, g.loyalty + 12);
     sim.pushLog(`${g.title}が${t.name}攻めの手柄を${D.name}に報告した。`, 'event', [], t);
@@ -543,7 +545,7 @@ export function monstersDaily(sim) {
     const ms = bandMembers(sim, band);
     for (const c of ms) {
       if (c.id === band.leader) { c.role = c.named ? 'treasure' : 'leader'; c.leader = null; }
-      else { c.leader = band.leader; if (c.role === 'leader' || c.role === 'aide' || c.role === 'castleguard') c.role = c.lair != null ? 'guardian' : 'member'; }
+      else { c.leader = band.leader; if (!['guardian', 'sentry', 'scout', 'member', 'raider'].includes(c.role)) c.role = c.lair != null ? 'guardian' : 'member'; }
       c.bandBounty = Math.round(Math.max(0, ms.length - 2) * 4 * (c.id === band.leader ? 3 : 1));
     }
   }

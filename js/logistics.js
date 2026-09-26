@@ -48,14 +48,16 @@ export function seaRoute(sim, a, b) {
 }
 function seaAStar(w, s, t) {
   const tiles = w.tiles, N = W * H;
-  const g = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1);
+  const g = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
   const si = s.z * W + s.x, ti = t.z * W + t.x;
   const heap = new MinHeap();
   g[si] = 0; heap.push(0, si);
   let iter = 0;
-  while (heap.size && iter++ < 60000) {
+  while (heap.size && iter++ < 250000) {
     const i = heap.pop();
     if (i === ti) break;
+    if (closed[i]) continue;
+    closed[i] = 1;
     const x = i % W, z = (i / W) | 0;
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) {
       if (!dx && !dz) continue;
