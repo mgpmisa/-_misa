@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>リンデンベルク村</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="bubbles"></div>
+
+<header id="topbar">
+  <div class="brand">
+    <span class="village">リンデンベルク村</span>
+    <span id="clock" class="clock">—</span>
+  </div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="時間の速さ">
+      <button data-speed="0" title="一時停止">❚❚</button>
+      <button data-speed="1" class="on">1×</button>
+      <button data-speed="4">4×</button>
+      <button data-speed="15">15×</button>
+      <button data-speed="60">60×</button>
+    </div>
+    <div class="seg" role="group" aria-label="視点">
+      <button id="rotL" title="左に回す">⟲</button>
+      <button id="rotR" title="右に回す">⟳</button>
+      <button id="viewIso" title="斜め見下ろし">斜</button>
+      <button id="viewTop" title="真上から">上</button>
+      <button id="viewLow" title="低い視点">横</button>
+    </div>
+    <button id="menuBtn" class="plain">≡</button>
+  </div>
+</header>
+
+<aside id="side" class="panel">
+  <nav class="tabs" role="tablist">
+    <button data-tab="log" class="on">出来事</button>
+    <button data-tab="people">住人</button>
+    <button data-tab="chron">年代記</button>
+    <button data-tab="econ">暮らし</button>
+  </nav>
+  <div class="tabbody" id="tab-log">
+    <div class="chips">
+      <button data-filter="all" class="on">すべて</button>
+      <button data-filter="talk">会話</button>
+      <button data-filter="event">出来事</button>
+    </div>
+    <ol id="log"></ol>
+  </div>
+  <div class="tabbody" id="tab-people" hidden>
+    <input id="search" type="search" placeholder="名前で探す">
+    <ul id="peopleList"></ul>
+  </div>
+  <div class="tabbody" id="tab-chron" hidden><ol id="chron"></ol></div>
+  <div class="tabbody" id="tab-econ" hidden><div id="econ"></div></div>
+  <button id="sideToggle" class="toggle" aria-label="パネルを閉じる">‹</button>
+</aside>
+
+<aside id="inspector" class="panel" hidden>
+  <button id="closeInsp" class="close" aria-label="閉じる">×</button>
+  <div id="inspBody"></div>
+</aside>
+
+<div id="menu" class="panel menu" hidden>
+  <h3>設定</h3>
+  <label>ドットの粗さ
+    <select id="pixelSel"><option value="1">細かい</option><option value="2" selected>ふつう</option><option value="3">粗い</option><option value="4">とても粗い</option></select>
+  </label>
+  <label><input type="checkbox" id="bubbleChk" checked> 吹き出しを表示</label>
+  <button id="newWorld" class="danger">新しい世界をつくる</button>
+  <p id="newWorldConfirm" hidden>いまの村と住人の記録は消えます。<button id="newWorldYes" class="danger">消して作り直す</button></p>
+  <p class="hint">左ドラッグ：回転 ／ 右ドラッグ：移動 ／ ホイール：拡大<br>スマホ：1本指で回転、2本指で移動・拡大<br>住人や建物をタップすると詳しく見られます。</p>
+  <p class="hint">村は自動で保存され、次に開いたときも続きから始まります。</p>
+</div>
+
+<div id="loading"><div><div class="ltitle">リンデンベルク村</div><div id="loadMsg">三百年の歴史を紡いでいます……</div></div></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
