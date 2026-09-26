@@ -307,7 +307,7 @@ export function expansionDaily(sim) {
     if (X.hist.length > 300) X.hist.shift();
   }
   for (const k of S.kingdoms) X.famePrev[k.id] = k.fame;
-  if (X._borders) { X._borders = false; sim.events.push({ type: 'borders' }); }
+  if (X._borders) { X._borders = false; X.rev = (X.rev || 0) + 1; sim.events.push({ type: 'borders' }); }
 }
 
 function popBySid(sim) {
@@ -781,7 +781,7 @@ function villageName(sim, pr, leader) {
   for (let i = 0; i < 12; i++) {
     let base;
     if (south) base = R.chance(0.7) ? `${SO[pr.feature] || 'アイン'}・${leader.given}` : `アイン・${R.pick(['ヌール', 'サファ', 'ラハ', leader.given])}`;
-    else base = R.chance(0.65) ? `${leader.given}${R.pick(N[pr.feature] || N.grass)}` : `ノイ${R.pick(N[pr.feature] || N.grass).replace(/^./, (c) => c)}`;
+    else base = R.chance(0.65) ? `${leader.given}${R.pick(N[pr.feature] || N.grass)}` : `ノイ${R.pick(N[pr.feature] || N.grass)}`;
     if (!taken.has(base)) return `${base}村`;
   }
   return `${leader.given}${pr.id}村`;
@@ -790,7 +790,12 @@ function villageName(sim, pr, leader) {
 // 伐採：柵の内側と、そのまわり1マスの森を伐る。開拓小屋を建てる
 function beginClear(sim, pr, k) {
   const S = sim.S, w = S.world;
-  const camp = placeBox(sim, 'camp', `${pr.name.replace(/村$/, '')}開拓団の小屋`, pr.x - FR + 1, pr.z - FR + 1, 2, 2, { kingdom: pr.k, home: pr.from, camp: true, special: true, exp: pr.id });
+  let camp = null;
+  // 小屋は柵の内側の四隅のどこか（広場と十字の通りをふさがない所）
+  for (const [ox, oz] of [[-FR + 1, -FR + 1], [FR - 2, -FR + 1], [-FR + 1, FR - 3], [FR - 2, FR - 3], [-FR + 2, -FR + 2], [FR - 3, FR - 4], [-3, -3], [2, 2]]) {
+    camp = placeBox(sim, 'camp', `${pr.name.replace(/村$/, '')}開拓団の小屋`, pr.x + ox, pr.z + oz, 2, 2, { kingdom: pr.k, home: pr.from, camp: true, special: true, exp: pr.id }, true);
+    if (camp) break;
+  }
   if (camp) {
     pr.camp = camp.id;
     (w.specials = w.specials || []).push(camp.id);
@@ -1371,8 +1376,16 @@ function beginPurge(sim, pr, k, th) {
   pr.purge = { method, power0: Math.round(th.power), ids: th.ids.slice(), lairs: th.lairs.slice(), named: th.named, troops: [], quests: [], killed: 0, drove: 0, lost: 0 };
   const where = `${pr.dir}の${FEATURE_WORD[pr.feature] || '土地'}`;
   const cap = sim.town(k.capital);
+  if (method !== 'guild') {
+    sendTroops(sim, pr, k, th.power * (method === 'grand' ? 1.6 : 1.3), method === 'grand' ? 14 : 8);
+    // 兵が集まらない：大討伐は取りやめ、ふつうの討伐はギルドの懸賞金に切りかえる
+    if (pr.purge.troops.length < 2) {
+      releaseTroops(sim, pr); pr.purge.troops = [];
+      if (method === 'grand') { pr.stage = pr.after; delete pr.purge; X.bad = X.bad || {}; X.bad[pr.ci] = sim.today + 30; return false; }
+      method = pr.purge.method = 'guild';
+    }
+  }
   if (method !== 'army') postBounties(sim, pr, k, method === 'grand' ? 4 : 3);
-  if (method !== 'guild') sendTroops(sim, pr, k, th.power * (method === 'grand' ? 1.6 : 1.3), method === 'grand' ? 14 : 8);
   if (method === 'guild') sim.news(`${kname(k.id)}が、${where}に巣くう魔物に懸賞金をかけた（開拓の下ごしらえ）`, 2, { x: pr.x, z: pr.z });
   else if (method === 'army') sim.news(`${kname(k.id)}の討伐隊（${pr.purge.troops.length}人）が、${where}の魔物退治に出陣した`, 2, cap);
   else {
@@ -1431,9 +1444,12 @@ function stepPurge(sim, pr, k) {
   // 戦い（遠くの土地でも進むよう、日ごとにまとめて決める。近くにいれば毎時の本物の戦いも起きる）
   if (troops.length && rem.length) {
     let army = troops.reduce((a, p) => a + pPower(p), 0);
+    let kills = 0;
     for (const c of rem.slice().sort((a, b) => cPower(a) - cPower(b))) {
+      if (kills >= Math.max(1, Math.floor(troops.length / 2))) break;   // 1日に討てるのは、隊の半分の数まで
       const cp = cPower(c);
-      if (R.chance(Math.min(0.55, army / (army + cp * 2.2) * 0.6))) {
+      if (R.chance(Math.min(0.4, army / (army + cp * 3) * 0.5))) {
+        kills++;
         const killer = R.pick(troops);
         killCreature(sim, c, killer);
         P.killed++;
@@ -1477,7 +1493,8 @@ function stepPurge(sim, pr, k) {
   const nowPow = threatsNear(sim, pr.x, pr.z).power;
   const namedAlive = P.named != null && S.creatures[P.named]?.hp > 0;
   if (nowPow < THREAT_MIN * 0.6 && !namedAlive) return purgeDone(sim, pr, k);
-  const beaten = P.troops.length && !troops.some((p) => p.deathYear == null && (p.hp || 0) > (p.maxhp || 1) * 0.3);
+  const fresh = P.troops.map((id) => S.people[id]).filter((p) => p && p.deathYear == null && p.expedition === pr.id);
+  const beaten = P.troops.length > 0 && !fresh.some((p) => (p.hp || 0) > (p.maxhp || 1) * 0.3);
   if (days > (P.method === 'grand' ? 16 : 11) || beaten) return purgeFailed(sim, pr, k, beaten);
 }
 function namedSlain(sim, pr, k, c, killer, troops) {
@@ -1561,7 +1578,7 @@ function troopsHourly(sim) {
       if ((p.hp || 0) < (p.maxhp || 1) * 0.3) continue;   // 深手の者は野営地で休む
       let best = null, bd = 1e9;
       for (const c of foes) { const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z); if (d < bd) { bd = d; best = c; } }
-      if (!best) { if (Math.hypot(p.pos.x - pr.x, p.pos.z - pr.z) > 6) p.mission = { type: 'march', x: pr.x, z: pr.z, until: S.t + 90, dur: 60 }; continue; }
+      if (!best) { if (Math.hypot(p.pos.x - pr.x, p.pos.z - pr.z) > 6) { p.mission = { type: 'march', x: pr.x, z: pr.z, until: S.t + 90, dur: 60 }; if (p.action && p.action.type !== 'march') p.action = null; } continue; }
       if (bd < 2.2) startFight(sim, p, best);
       else { p.mission = { type: 'defend', x: Math.round(best.pos.x), z: Math.round(best.pos.z), until: S.t + 90 }; if (p.action && p.action.type !== 'defend') p.action = null; }
     }
@@ -1629,11 +1646,12 @@ function fail(sim, pr, why, quiet = false) {
   if (pr.kind === 'village' && pr.stage === 'failed' && !quiet) releaseClaims(sim, pr);
   const camp = pr.camp != null ? sim.building(pr.camp) : null;
   if (camp) camp.name = '打ち捨てられた開拓小屋';
-  const where = pr.name || `${pr.dir || ''}の開拓地`;
+  const where = pr.name || `${pr.dir || ''}の${FEATURE_WORD[pr.feature] || '土地'}`;
   if (quiet) sim.pushLog(`${kname(pr.k)}：${where}の計画は見送られた（${why}）。`, 'event', [], pr.x != null ? { x: pr.x, z: pr.z } : null);
   else {
-    sim.news(`${kname(pr.k)}の${where}の開拓は失敗に終わった。${why}`, 2, { x: pr.x, z: pr.z });
-    sim.chron(`${where}の開拓は失敗に終わった（${why}）`, pr.k);
+    const act = pr.kind === 'fort' ? '築城' : '開拓';
+    sim.news(`${kname(pr.k)}の${where}の${act}は失敗に終わった。${why}`, 2, { x: pr.x, z: pr.z });
+    sim.chron(`${where}の${act}は失敗に終わった（${why}）`, pr.k);
     for (const p of alive) if (sim.isAdult(p)) sim.remember(p, `${where}の開拓に失敗し、肩を落として故郷へ戻った`, { emo: -0.8, imp: 0.9, k: 'frontier' });
     if (k) k.fame -= 3;
   }
@@ -2055,7 +2073,7 @@ export function expansionWarEnded(sim, winner, loser) {
   let rec = X.wars.find((q) => !q.ended && ((q.a === winner.id && q.b === loser.id) || (q.a === loser.id && q.b === winner.id)));
   if (!rec) { rec = { key: `peace@${sim.today}`, a: winner.id, b: loser.id, since: sim.today, name: '戦', seized: [], ended: false }; X.wars.push(rec); }
   settlePeace(sim, rec, winner, loser);
-  if (X._borders) { X._borders = false; sim.events.push({ type: 'borders' }); }
+  if (X._borders) { X._borders = false; X.rev = (X.rev || 0) + 1; sim.events.push({ type: 'borders' }); }
 }
 
 // politics.js の declareWar から呼ぶ：本当の争いの種と、前線の場所
@@ -2108,10 +2126,26 @@ export function expansionNationHTML(sim, k, esc = (s) => s) {
 }
 
 // ミニマップ：国境線・知られていない土地の霧・開拓地の印（ミニマップは1マス=1点）
+let layer = null;   // 国境と霧の絵は、国境が変わったときだけ描き直す（毎フレーム4096区画を描かない）
 export function drawTerritory(sim, g, opt = {}) {
-  const S = sim.S, tr = S.territory, ex = S.explored;
+  const S = sim.S, tr = S.territory;
   if (!tr) return;
   const sc = opt.scale || 1;
+  const rev = `${S.expansion?.rev || 0}:${sim.today}:${sc}`;
+  if (typeof document !== 'undefined' && opt.cache !== false) {
+    if (!layer || layer.rev !== rev) {
+      const cv = layer?.cv || document.createElement('canvas');
+      cv.width = W * sc; cv.height = H * sc;
+      const g2 = cv.getContext('2d'); g2.clearRect(0, 0, cv.width, cv.height);
+      drawLayer(sim, g2, sc, opt);
+      layer = { cv, rev };
+    }
+    g.drawImage(layer.cv, 0, 0);
+  } else drawLayer(sim, g, sc, opt);
+  drawMarks(sim, g, sc);
+}
+function drawLayer(sim, g, sc, opt) {
+  const S = sim.S, tr = S.territory, ex = S.explored;
   const cs = EXP_CS * sc;
   // 霧：どの国にも知られていない区画
   if (ex && opt.fog !== false) {
@@ -2144,6 +2178,9 @@ export function drawTerritory(sim, g, opt = {}) {
       g.stroke();
     }
   }
+}
+function drawMarks(sim, g, sc) {
+  const S = sim.S;
   // 開拓中の土地
   const blink = (Math.floor(Date.now() / 500) % 2) === 0;
   for (const p of S.expansion?.projects || []) {

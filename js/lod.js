@@ -91,8 +91,9 @@ export function lodMul(sim, c) {
 export function lodDue(sim, all) {
   const L = sim._lod;
   if (!L || !L.on) return null;
-  if (L.bucketAt !== L.next) {
-    L.bucketAt = L.next;
+  if (L.bucketAt !== L.next || L.bucketCid !== sim.S.nextCid) {
+    // 10分ごと、または新しい生き物が生まれたときに組分けし直す
+    L.bucketAt = L.next; L.bucketCid = sim.S.nextCid;
     L.b0 = []; L.b1 = Array.from({ length: LOD_PERIOD[1] }, () => []); L.b2 = Array.from({ length: LOD_PERIOD[2] }, () => []);
     for (const c of all) {
       if (c.dormant || c.hp <= 0) continue;
@@ -100,6 +101,13 @@ export function lodDue(sim, all) {
       const tier = always ? 0 : lodTier(sim, c.pos.x, c.pos.z);
       if (tier === 0) L.b0.push(c);
       else (tier === 1 ? L.b1 : L.b2)[idHash(L, c.id) % LOD_PERIOD[tier]].push(c);
+    }
+    // 遠い生き物の居場所の升目（creatures.js の buildGrid と同じ鍵）。組分けのときだけ作る
+    const g = L.farGrid = new Map();
+    for (const list of [...L.b1, ...L.b2]) for (const c of list) {
+      if (c.inDungeon) continue;
+      const k = (Math.floor(c.pos.x / 8) << 8) | Math.floor(c.pos.z / 8);
+      let a = g.get(k); if (!a) g.set(k, a = []); a.push(c);
     }
   }
   const out = L.due || (L.due = []);
@@ -109,6 +117,15 @@ export function lodDue(sim, all) {
   for (const c of L.b1[L.n % p1]) out.push(c, c.fight || c.raid != null ? 1 : p1);
   for (const c of L.b2[L.n % p2]) out.push(c, c.fight || c.raid != null ? 1 : p2);
   return out;
+}
+
+// 生き物の升目（sim._cgrid）。近い生き物だけ毎歩作り直し、遠い生き物は組分けのときの升目を .far に付けておく。
+// creatures.js の around() が .far も見るようにしておくこと（遠い升目の中の死んだ生き物は around が除く）。
+export function lodCreatureGrid(sim, buildGrid) {
+  const L = sim._lod;
+  const g = buildGrid(L.b0.filter((c) => !c.dormant && c.hp > 0 && !c.inDungeon));
+  g.far = L.farGrid;
+  return g;
 }
 
 // 人の歩き（遠い荒野をひとりで旅している人だけ間引く）。人の注意の地図とは別に、カメラと町だけを見る。

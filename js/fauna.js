@@ -534,10 +534,13 @@ export function faunaDied(sim, c, killer) {
   const human = killer && typeof killer.id === 'number';
   // 食物連鎖の記録：誰が誰を食べたか
   if (killer) {
+    // 表にない組み合わせは「返り討ち」（襲われた側が相手を倒した）として別に数える
+    const eats = human ? preyFor('human').includes(c.sp) : preyFor(killer.sp).includes(c.sp);
     const k = (human ? '人' : killer.sp) + '>' + c.sp;
-    F.stats.eaten = F.stats.eaten || {};
-    F.stats.eaten[k] = (F.stats.eaten[k] || 0) + 1;
-    if (!human) killer._ate = { sp: c.sp, pre: killer.hunger || 0 };
+    const box = eats ? 'eaten' : 'fought';
+    F.stats[box] = F.stats[box] || {};
+    F.stats[box][k] = (F.stats[box][k] || 0) + 1;
+    if (!human && eats) killer._ate = { sp: c.sp, pre: killer.hunger || 0 };
   } else if (c._cause) {
     F.stats.deaths = F.stats.deaths || {};
     const k = c._cause + '>' + c.sp;
@@ -652,7 +655,8 @@ function foodFactor(sim, c, def, si, drought) {
   const season = 1; // 季節の増減は餌場（regrowPatches）が受け持つ
   let bio = { grass: 1, forest: 1, dense: 1, jungle: 1.15, desert: 0.45, snow: 0.5, mountain: 0.6, beach: 0.8, sea: 1, deepsea: 1, river: 1, waste: 0.2, town: 0.7 }[b] ?? 0.8;
   if (c.sp === 'reindeer' && b === 'snow') bio = 0.85; // コケを掘って食べる
-  if (c.sp === 'camel' && b === 'desert') bio = 1;
+  if (['camel', 'scorpion', 'snake'].includes(c.sp) && b === 'desert') bio = 1;
+  if (c.sp === 'bat' && b === 'mountain') bio = 1;
   if (c.sp === 'polarbear' || c.sp === 'penguin') bio = 1;
   let f = season * bio;
   // 雪原の冬はもっと厳しい
@@ -1584,7 +1588,7 @@ export const FOOD_WEB = {
   snake: { lv: 2, base: ['insect'], prey: ['rat', 'frog', 'rabbit', 'squirrel'], need: 0.5 },
   scorpion: { lv: 2, base: ['insect'], prey: ['rat'], need: 0.2 },
   eagle: { lv: 2, base: ['fish'], prey: ['rabbit', 'squirrel', 'rat', 'monkey', 'goose', 'chicken', 'duck'], need: 1 },
-  seagull: { lv: 2, base: ['fish', 'carrion'], need: 0.4 }, penguin: { lv: 2, base: ['fish'], need: 0.8 }, dolphin: { lv: 2, base: ['fish'], need: 3 },
+  seagull: { lv: 2, base: ['fish', 'carrion'], need: 0.4 }, penguin: { lv: 2, base: ['fish'], need: 0.5 }, dolphin: { lv: 2, base: ['fish'], need: 3 },
   cat: { lv: 2, base: ['carrion'], prey: ['rat', 'frog'], need: 0.3 }, dog: { lv: 2, base: ['carrion'], prey: [], need: 1 },
   // 大きな肉食（lv3）
   wolf: { lv: 3, base: ['carrion'], prey: ['deer', 'reindeer', 'boar', 'rabbit', 'goat', 'sheep', 'camel'], need: 5, pack: true },
@@ -1592,7 +1596,7 @@ export const FOOD_WEB = {
   polarbear: { lv: 3, base: ['fish'], prey: ['penguin', 'reindeer'], need: 8 },
   tiger: { lv: 3, base: ['carrion'], prey: ['deer', 'boar', 'monkey', 'camel', 'goat'], need: 7 },
   croc: { lv: 3, base: ['fish'], prey: ['deer', 'boar', 'frog', 'turtle', 'monkey', 'goose', 'camel'], need: 4 },
-  whale: { lv: 3, base: ['fish'], need: 20 },
+  whale: { lv: 3, base: ['fish'], need: 8 },
   // 魔物（lv4）：monsters.js が preyFor / foodValue / canHunt を使う
   goblin: { lv: 4, base: ['nuts'], prey: ['rabbit', 'squirrel', 'frog', 'rat', 'deer', 'boar', 'chicken', 'goat', 'sheep'], need: 2 },
   hobgoblin: { lv: 4, prey: ['deer', 'boar', 'rabbit', 'goat', 'sheep', 'pig'], need: 4 },
@@ -1613,7 +1617,7 @@ const DENSITY = {
   rat: 1.3, crow: 1.0, owl: 4.6, frog: 31, snake: 1.75, turtle: 15, bat: 4.9, deer: 3.4, boar: 6.2, wolf: 5.4, bear: 3.9, fox: 2.0, rabbit: 4.0, squirrel: 6.2,
   camel: 13.9, scorpion: 18.5, croc: 19.3, monkey: 52, tiger: 26, parrot: 39, reindeer: 14.2, polarbear: 5.3, penguin: 55, seagull: 43, eagle: 3.2, dolphin: 5.1, whale: 0.28,
 };
-const BASE_RATE = { plant: 3, nuts: 2.4, fish: 2.8, insect: 1.5, carrion: 0.8 };
+const BASE_RATE = { plant: 3, nuts: 2.4, fish: 2.8, insect: 2.2, carrion: 1.0 };
 
 // 誰が誰を食べるか
 export function preyFor(sp) { return FOOD_WEB[sp]?.prey || []; }
@@ -1666,7 +1670,7 @@ export function isRare(sim, sp) {
 const CELL = 16;
 const PLANT_W = { grass: 1, forest: 0.8, dense: 0.7, jungle: 1.1, desert: 0.15, snow: 0.25, mountain: 0.3, beach: 0.3, waste: 0.05, river: 0.4, town: 0.2 };
 const NUTS_W = { forest: 0.45, dense: 0.6, jungle: 0.7, grass: 0.05 };
-const FISH_W = { river: 1.2, sea: 0.6, deepsea: 0.25, beach: 0.2 };
+const FISH_W = { river: 1.2, sea: 0.6, deepsea: 0.4, beach: 0.2 };
 function patchCaps(sim) {
   const w = sim.S.world;
   if (sim._faCap && sim._faCapW === w) return sim._faCap;
