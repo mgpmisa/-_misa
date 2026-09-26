@@ -252,6 +252,8 @@ export function expansionPlace(sim, p, kind) {
   const X = sim.S.expansion;
   const pr = X?.projects.find((q) => q.id === p.expProj);
   if (!pr || !['clear', 'fence', 'build'].includes(pr.stage)) return null;
+  // 子どもと年寄りは、家が建つまで故郷で待つ
+  if (!sim.isAdult(p) || sim.ageOf(p) > 60) return null;
   const camp = pr.camp != null ? sim.building(pr.camp) : null;
   if (kind === 'home') {
     const hh = sim.hh(p);
@@ -410,15 +412,27 @@ function candidates(sim, k, need) {
     if (w.settlements.some((s) => cheb(s.x, s.z, c.x, c.z) < s.r + FR + 3)) continue;
     const danger = dm[ci] || 0;
     if (danger > 7) continue;
+    const road = routeDanger(sim, k, c);
+    if (road > 9) continue;
     let sc = 0;
     for (const r of X.res[ci] || []) sc += need[r] || 0.5;
     for (const n of nbrs4(ci)) for (const r of X.res[n] || []) sc += (need[r] || 0.5) * 0.3;
-    sc += buildableFrac(w, ci) * 3 - danger * 0.45 - d[ci] * 0.9;
+    sc += buildableFrac(w, ci) * 3 - danger * 0.45 - road * 0.25 - d[ci] * 0.9;
     const others = nearOthers(sim, k.id, ci);
     if (others.length) sc += (kingOf(sim, k)?.values.ambition || 0.5) * 1.2 - 0.3;   // 他国より先に押さえる
     out.push({ ci, sc: sc + sim.rng.next() * 0.6, others });
   }
   return out.sort((a, b) => b.sc - a.sc);
+}
+// 自国のいちばん近い町から、その土地までの道中の危なさ（危険地図の最大）
+function routeDanger(sim, k, c) {
+  const S = sim.S, dm = S.dangerMap || [];
+  const from = S.world.settlements.filter((s) => s.kingdom === k.id && !s.abandoned).sort((a, b) => Math.hypot(a.x - c.x, a.z - c.z) - Math.hypot(b.x - c.x, b.z - c.z))[0];
+  if (!from) return 0;
+  let m = 0;
+  const n = Math.max(2, Math.ceil(Math.hypot(c.x - from.x, c.z - from.z) / 4));
+  for (let i = 1; i < n; i++) m = Math.max(m, dm[chunkAt(from.x + (c.x - from.x) * i / n, from.z + (c.z - from.z) * i / n)] || 0);
+  return m;
 }
 function buildableFrac(w, ci) {
   const cx = ci % CW, cz = Math.floor(ci / CW); let n = 0;
