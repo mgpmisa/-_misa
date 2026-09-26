@@ -8,7 +8,7 @@ import { clamp } from './rng.js';
 import { startFight } from './society.js';
 import { DROPS, addItem, makeItem } from './items.js';
 import { splitCoins, splitLoot } from './guild.js';
-import { faunaThink, faunaDied } from './fauna.js';
+import { faunaThink, faunaDied, popTarget, canHunt } from './fauna.js';
 import { monsterThink, onMonsterKilled } from './monsters.js';
 
 // 生息数の目安
@@ -313,7 +313,7 @@ function think(sim, c, def, all, humans) {
   if (PREDATOR.has(c.sp) && c.hunger < 40) {
     let prey = null, bd = 12;
     for (const o of all) {
-      if (o === c || o.hp <= 0 || o.dormant || !PREY.has(o.sp) || SPECIES[o.sp].size > def.size * 1.4) continue;
+      if (o === c || o.hp <= 0 || o.dormant || !PREY.has(o.sp) || !canHunt(sim, c.sp, o.sp, c.hunger < 8) || SPECIES[o.sp].size > def.size * 1.4) continue;
       const d = dist(o, c);
       if (d < bd && !inTown(sim, o.pos.x, o.pos.z)) { bd = d; prey = o; }
     }
@@ -509,7 +509,8 @@ export function creatureDaily(sim) {
   // ネズミは町の食糧をかじる
   for (const c of all) if (c.sp === 'rat' && c.owner != null && S.towns[c.owner]) { const m = S.towns[c.owner]; m.stock.wheat = Math.max(0, m.stock.wheat - 0.6); m.stock.bread = Math.max(0, m.stock.bread - 0.3); }
   // 繁殖・湧き
-  for (const [sp, target] of Object.entries(POP)) {
+  for (const [sp, target0] of Object.entries(POP)) {
+    const target = popTarget(sim, sp) ?? target0;
     const def = SPECIES[sp];
     const n = count[sp] || 0;
     const demonMul = sp === 'imp' || sp === 'demonsoldier' ? (S.demon?.active ? 2.5 : 0.6) : 1;

@@ -22,7 +22,7 @@ import { calendarDaily, calendarHalfDay } from './calendar.js';
 import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, harvestMul, roadsClosed, weatherMoodDelta, legacyWeatherAt } from './weather.js';
 import { financeDaily, financeHourly, financeCandidates, financeArrive } from './finance.js';
 import { careerDaily, careerOptions, careerDo, careerWorkPlace } from './career.js';
-import { faunaDaily, faunaHourly } from './fauna.js';
+import { faunaDaily, faunaHourly, canHunt } from './fauna.js';
 import { initUnderworld, underworldDaily, underworldHourly, underworldDecide, underworldArrive, underworldWorkMul } from './underworld.js';
 import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workMul, healMul, tradeMul } from './growth.js';
 import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, healthSpeedMul, healthWorkMul, onDeath } from './health.js';
@@ -933,7 +933,7 @@ export class Sim {
         if (!p.fight && this.rng.chance(0.05 * dt)) {
           let prey = null, bd = 9;
           for (const c of Object.values(this.S.creatures)) {
-            if (c.kind !== 'wild' || c.hp <= 0 || c.atk > p.atk * 1.5) continue;
+            if (c.kind !== 'wild' || c.hp <= 0 || c.atk > p.atk * 1.5 || !canHunt(this, 'human', c.sp)) continue;
             const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
             if (d < bd) { bd = d; prey = c; }
           }
