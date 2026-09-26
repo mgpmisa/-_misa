@@ -3,6 +3,7 @@
 // 同じ人が同じ台詞をくり返さないよう、最近の発言を覚えておく。
 import { casualKin } from './kin.js';
 import { careerThought } from './career.js';
+import { underworldTopic, underworldThoughts } from './underworld.js';
 import { financeThoughts, financeTopic, financeTopicWeight } from './finance.js';
 import { calendarTopicWeight, calendarTopic, calendarReact, calendarThought } from './calendar.js';
 import { JOBS, GOODS, TECHS, RANKS } from './data.js';
@@ -137,6 +138,7 @@ function topics(api, A, B) {
   add(0.5, topicWeather);
   add(calendarTopicWeight(api, A), calendarTopic);
   add(financeTopicWeight(api, A, B), (a1, a2, a3, v) => financeTopic(a1, a2, a3, v));
+  const ut = underworldTopic(api, A, B); if (ut) add(ut.w, ut.fn);
   add(A.job && age >= 14 ? 1.2 : 0, topicWork);
   add(age >= 14 ? 0.4 + Math.abs(api.priceRatio('bread', A.s) - 1) * 3 + (api.householdMoney(A) < 20 ? 1.2 : 0) : 0, topicEconomy);
   add(age >= 16 ? A.values.family * 1.2 : 0.3, topicFamily);
@@ -758,6 +760,7 @@ export function innerThought(api, p) {
   const ct = calendarThought(api, p); if (ct) opts.push(ct);
   for (const t of financeThoughts(api, p)) opts.push(t);
   const cth = careerThought(api, p); if (cth) opts.push(cth);
+  opts.push(...underworldThoughts(api, p));
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
   if (low[1] < 30) opts.push(needTxt[low[0]]);
   if (act === 'work') opts.push(`さて、もうひと頑張り。${JOBS[p.job]?.name ?? ''}の仕事は待ってくれない。`);

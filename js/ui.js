@@ -9,6 +9,8 @@ import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
+import { growthHtml, growthCreatureHtml } from './growth.js';
+import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -38,6 +40,7 @@ const PREF_LABEL = {
 };
 Object.assign(ACTION_LABEL, CHORE_LABEL, { collect: '借金の取り立てに来ている' }); Object.assign(ACTION_GO, { collect: '借金を取り立てに向かっている' }); Object.assign(PREF_LABEL, { collect: '取り立て' });
 Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
+Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -69,6 +72,8 @@ export class UI {
     $('shadowChk').checked = this.r.renderer.shadowMap.enabled;
     $('shadowChk').onchange = (e) => this.r.setShadows(e.target.checked);
     $('attnChk').onchange = (e) => { this.attention = e.target.checked; };
+    $('matureChk').checked = this.sim.S.settings?.matureCrimes !== false;
+    $('matureChk').onchange = (e) => { this.sim.S.settings = this.sim.S.settings || {}; this.sim.S.settings.matureCrimes = e.target.checked; };
     $('newWorld').onclick = () => { $('newWorldConfirm').hidden = false; };
     $('newWorldYes').onclick = () => this.onNewWorld && this.onNewWorld();
     $('sideToggle').onclick = () => $('side').classList.toggle('closed');
@@ -598,13 +603,15 @@ export class UI {
       if (p.lastWords) h += `<div class="thought"><b>最期に思っていたこと</b>${esc(p.lastWords)}</div>`;
     } else {
       const fin = financeSummary(this.sim, p);
-      h += `<div class="psub">いま：${esc(this.actionText(p))}${fin ? `<br>${esc(fin)}` : ''}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
+      const uwl = p.deathYear == null ? underworldLabel(this.sim, p) : [];
+      h += `<div class="psub">いま：${esc(this.actionText(p))}${fin ? `<br>${esc(fin)}` : ''}${uwl.length ? `<br>${esc(uwl.join('・'))}` : ''}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
       h += `<div class="thought"><b>心の声</b>${esc(p.thought || '……')}</div>`;
       h += `<div class="row-btns"><button id="followBtn" class="${this.follow === p.id ? 'on' : ''}">${this.follow === p.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">この人を見る</button></div>`;
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
       h += `<div class="section"><h4>7つの欲求（満たされ具合）</h4><div class="bars">${bar('気分', p.mood)}${Object.entries(DESIRES).map(([k, n]) => bar(n, p.needs[k])).join('')}</div>
         <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd><dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
         </dl></div>`;
+      if (p.deathYear == null) h += growthHtml(sim, p) || '';
       // 装備と所持品
       const eq = p.eq || {};
       const slotName = { weapon: '武器', armor: '防具', shield: '盾', accessory: '装身具', tool: '道具' };
@@ -669,6 +676,7 @@ export class UI {
       <dl class="kv" style="margin-top:8px"><dt>強さ</dt><dd>攻${c.atk} 守${c.def}</dd><dt>倒した数</dt><dd>${c.kills || 0}</dd><dt>経験</dt><dd>${Math.round(c.xp || 0)}${d.evolve ? `（いずれ${esc(SPECIES[d.evolve].name)}に進化する）` : ''}</dd>
       ${c.bounty ? `<dt>懸賞金</dt><dd>${c.bounty}銅貨</dd>` : ''}<dt>年齢</dt><dd>${c.age}日</dd></dl></div>`;
     h += `<div class="section"><h4>種族としての学び</h4><dl class="kv"><dt>仲間の死</dt><dd>${mem.deaths || 0}体</dd><dt>進化</dt><dd>${mem.evolved || 0}回</dd><dt>人間への警戒</dt><dd>${(mem.fear || 0) > 5 ? '強い（手強い人間は避ける）' : (mem.fear || 0) > 2 ? 'ある' : 'ない'}</dd><dt>避ける場所</dt><dd>${Object.values(mem.danger || {}).filter((v) => v > 2).length}か所</dd></dl></div>`;
+    h += growthCreatureHtml(c) || '';
     h += faunaHtml(this.sim, c) || '';
     return h;
   }

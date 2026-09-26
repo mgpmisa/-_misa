@@ -42,6 +42,7 @@ function H(sim) {
   h.stats = h.stats || { sick: 0, cured: 0, died: 0, epi: 0, scars: 0, treat: 0 };
   h.mourned = h.mourned || {};
   if (h.graveIdx == null) h.graveIdx = S.graves.length; // 導入前の墓は数えない
+  if (h.lastEpi == null) h.lastEpi = sim.today - 10; // 始まってすぐには流行らない
   h.sick = h.sick || [];
   return h;
 }
@@ -566,7 +567,7 @@ export function healthTopic(api, A, B) {
     ache: ['古傷がうずいて、よく眠れない'],
     wound: ['傷が膿んで、ずきずきする'],
   }[A.ail.kind] || ['どうも具合が悪い']), 'v'), sentiment: -0.4 }) };
-  if (B.ail && B.ail.sev >= 20 && (A.rel?.[B.id]?.a || 0) > 0) return { w: 2, fn: (api2, A2, B2, v) => ({ kind: 'good', text: v.s(`${ailNameOf(B2)}だって聞いた。無理しないで`, 'n'), sentiment: 0.5, about: [B2.id] }) };
+  if (B.ail && B.ail.sev >= 20 && (A.rel?.[B.id]?.a || 0) > 0) return { w: 2, fn: (api2, A2, B2, v) => ({ kind: 'good', text: v.s(`${ailNameOf(B2)}だって聞いた。お大事に`, 'raw') + '。', sentiment: 0.5, about: [B2.id] }) };
   if (hs?.epi?.some((e) => e.sid === A.s)) return { w: 2.2, fn: (api2, A2, B2, v) => ({ kind: 'complain', text: v.s(api2.rng.pick(['流行り病で、隣の家も寝込んでいる', 'このところ、弔いの鐘ばかり聞こえる', '流行り病がおさまるまで、人の多いところは避けたい']), 'v'), sentiment: -0.6 }) };
   if (A.scars?.length && (A.rel?.[B.id]?.f || 0) > 40) return { w: 0.4, fn: (api2, A2, B2, v) => {
     const s = api2.rng.pick(A2.scars);

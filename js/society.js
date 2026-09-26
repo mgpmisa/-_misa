@@ -1,5 +1,6 @@
 // 戦い・犯罪・裁き
 import { clamp } from './rng.js';
+import { growthStats, growthAttack } from './growth.js';
 import { JOBS, SPECIES } from './data.js';
 import { killCreature } from './creatures.js';
 import { equipBonus, countItem, takeItem } from './items.js';
@@ -12,12 +13,14 @@ export function humanStats(sim, p) {
   const lv = p.lv || 1;
   const child = age < 14 ? 0.4 : age > 70 ? 0.6 : 1;
   const steel = sim.S.kingdoms && sim.hasTech?.(p, 'steel') ? 2 : 0;
-  const maxhp = Math.round((40 + lv * 8 + combat * 6) * child);
+  let maxhp = Math.round((40 + lv * 8 + combat * 6) * child);
   const eb = equipBonus(p);
+  const g = growthStats(sim, p);
+  maxhp = Math.round(maxhp * g.hp);
   return {
     maxhp,
-    atk: Math.round((3 + combat * 2 + lv * 1.6 + eb.atk + (eb.atk ? steel : 0)) * child),
-    def: Math.round((1 + lv * 0.8 + eb.def) * child),
+    atk: Math.round((3 + combat * 2 + lv * 1.6 + eb.atk + (eb.atk ? steel : 0)) * child * g.atk),
+    def: Math.round((1 + lv * 0.8 + eb.def) * child * g.def),
     hp: p.hp == null ? maxhp : Math.min(p.hp, maxhp),
   };
 }
@@ -65,6 +68,8 @@ export function stepCombat(sim, dt) {
     // 魔王の耐性
     if (t.sp === 'demonlord' && isHuman(e)) dmg = Math.round(dmg * (e.eq?.weapon?.id === 'holysword' ? (sim.S.demon?.resist?.includes('holy') ? 1.1 : 1.6) : 0.6));
     if (isHuman(t) && sim.hasTech(t, 'barrier') && !isHuman(e) && sim.townOf(t) && Math.hypot(t.pos.x - sim.townOf(t).x, t.pos.z - sim.townOf(t).z) < sim.townOf(t).r) dmg = Math.max(1, Math.round(dmg * 0.7));
+    dmg = growthAttack(sim, e, t, dmg);
+    if (dmg <= 0) continue; // かわされた
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp - dmg <= 0) dmg = Math.max(0, t.hp - 1);
     t.hp -= dmg;
     if (isHuman(t)) { t.needs.survival = Math.max(0, t.needs.survival - 12); sim.learnDanger(t, t.pos.x, t.pos.z, 1); }

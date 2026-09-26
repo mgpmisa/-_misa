@@ -21,6 +21,8 @@ import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, 
 import { financeDaily, financeHourly, financeCandidates, financeArrive } from './finance.js';
 import { careerDaily, careerOptions, careerDo, careerWorkPlace } from './career.js';
 import { faunaDaily, faunaHourly } from './fauna.js';
+import { initUnderworld, underworldDaily, underworldHourly, underworldDecide, underworldArrive, underworldWorkMul } from './underworld.js';
+import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workMul, healMul, tradeMul } from './growth.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -64,6 +66,7 @@ export class Sim {
     progress('生き物たちを放っています……');
     spawnInitialCreatures(this);
     initProperty(this);
+    initUnderworld(this);
     for (let i = 0; i < 4; i++) partiesDaily(this);
     this.slimDead();
     computeDanger(this);
@@ -81,6 +84,7 @@ export class Sim {
     for (const p of this.living()) { p.talk = null; p.fight = null; p.path = p.path || []; }
     for (const c of Object.values(data.creatures)) c.fight = null;
     if (!data.property) initProperty(this);
+    if (!data.uw) initUnderworld(this);
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     computeDanger(this);
     return true;
@@ -418,7 +422,7 @@ export class Sim {
   }
   sell(p, good, qty) {
     const m = this.market(p.s), hh = this.hh(p);
-    const earn = qty * m.price[good] * 0.85;
+    const earn = qty * m.price[good] * 0.85 * tradeMul(p);
     m.stock[good] += qty; hh.money += earn;
     return earn;
   }
@@ -618,6 +622,7 @@ export class Sim {
     choreOptions(this, p, add);
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
+    underworldDecide(this, p, cands, add);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -818,6 +823,7 @@ export class Sim {
       case 'hunt': huntBounty(this, p, this.S.people[a.friend]); a.until = this.S.t + 5; break;
       case 'collect': financeArrive(this, p); break;
     }
+    underworldArrive(this, p);
     choreArrive(this, p, a);
   }
 
@@ -881,7 +887,7 @@ export class Sim {
     if (tool) { tool.dur -= 0.004 * hr; if (tool.dur <= 0) { p.inv.splice(p.inv.indexOf(tool), 1); p.eq.tool = null; this.remember(p, `長年使った${itemName(tool)}がとうとう壊れた`, { emo: -0.3, imp: 0.3 }); } }
     const si = this.seasonIdx();
     const sm = [0.5, 0.9, 2.4, 0.08][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
-    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p);
+    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p);
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
     switch (p.job) {
@@ -992,7 +998,7 @@ export class Sim {
         break;
       }
       case 'heal': {
-        for (const q of near(3)) if (q.hp < q.maxhp) { q.hp = Math.min(q.maxhp, q.hp + 12 * hr * (0.5 + (p.skill[p.job] || 0.3))); if (R.chance(0.05)) { this.remember(q, `${p.given}に傷を手当てしてもらった`, { emo: 0.5, imp: 0.4, about: [p.id] }); this.relMut(q, p).a += 4; } }
+        for (const q of near(3)) if (q.hp < q.maxhp) { q.hp = Math.min(q.maxhp, q.hp + 12 * hr * (0.5 + (p.skill[p.job] || 0.3)) * healMul(p)); if (R.chance(0.05)) { this.remember(q, `${p.given}に傷を手当てしてもらった`, { emo: 0.5, imp: 0.4, about: [p.id] }); this.relMut(q, p).a += 4; } }
         S.towns[p.s].healer = this.today;
         break;
       }
@@ -1155,18 +1161,7 @@ export class Sim {
     p.needs.esteem = Math.min(100, p.needs.esteem + 10);
   }
 
-  levelCheck(p) {
-    const need = 20 * p.lv * p.lv;
-    if ((p.xp || 0) >= need) {
-      p.xp -= need; p.lv++;
-      Object.assign(p, humanStats(this, p));
-      p.hp = Math.min(p.maxhp, p.hp + 20);
-      if (p.lv % 3 === 0) {
-        this.remember(p, `鍛錬を重ねて、また一段強くなった（Lv${p.lv}）`, { emo: 0.6, imp: 0.5 });
-        p.needs.esteem = Math.min(100, p.needs.esteem + 20);
-      }
-    }
-  }
+  levelCheck(p) { growthLevelCheck(this, p); }
 
   // ---------- 1ステップ ----------
   step(dt) {
@@ -1364,7 +1359,7 @@ export class Sim {
 
   walk(p, dt) {
     const age = this.ageOf(p);
-    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' ? 1.2 : 1);
+    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' ? 1.2 : 1) * moveMul(p);
     const w = this.S.world;
     while (speed > 0 && p.path.length) {
       const t = p.path[0];
@@ -1471,6 +1466,7 @@ export class Sim {
     if (a.deathYear != null || b.deathYear != null) return;
     a.cooldown = this.rng.range(40, 120); b.cooldown = this.rng.range(40, 120);
     a.talkedToday[b.id] = 1; b.talkedToday[a.id] = 1;
+    growthTalk(this, a, b, e);
     const ra = this.relMut(a, b), rb = this.relMut(b, a);
     ra.a = clamp(ra.a + e.daA, -100, 100); rb.a = clamp(rb.a + e.daB, -100, 100);
     ra.f = Math.min(100, ra.f + 2); rb.f = Math.min(100, rb.f + 2);
@@ -1586,10 +1582,12 @@ export class Sim {
     this.S.gatherings = this.S.gatherings.filter((g) => g.to > this.S.t);
     computeDanger(this);
     crimeHourly(this);
+    underworldHourly(this);
     politicsHourly(this);
     demonHourly(this);
     weatherHourly(this);
     choreHourly(this);
+    growthHourly(this);
     faunaHourly(this);
     financeHourly(this);
   }
@@ -1600,6 +1598,7 @@ export class Sim {
     for (const p of this.living()) { p.talkedToday = {}; p.workedToday = 0; }
     const si = this.seasonIdx();
     weatherDaily(this);
+    growthDaily(this);
     if (doy === 0) this.newYear();
     // 町の蓄え：裕福な家から集め、困っている家に施す
     for (const hh of Object.values(S.households)) {
@@ -1697,6 +1696,7 @@ export class Sim {
     creatureDaily(this);
     faunaDaily(this);
     justiceDaily(this);
+    underworldDaily(this);
     politicsDaily(this);
     for (const p of this.living()) this.trimMemories(p);
     this.save();

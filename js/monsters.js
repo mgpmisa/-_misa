@@ -1430,3 +1430,11 @@ export function monsterDetail(sim, c) {
   if (band?.lessons?.length) { const l = band.lessons[band.lessons.length - 1]; rows.push(['教訓', `${l.sid != null ? sim.town(l.sid).name : 'どこか'}で${l.foes}人に${l.kind === 'defeat' ? '敗れた' : '退いた'}`]); }
   return rows;
 }
+
+// 詳細欄にそのまま足せる HTML（ui.js の creatureHtml で faunaHtml の次に）
+export function monsterHtml(sim, c) {
+  const rows = monsterDetail(sim, c);
+  if (!rows.length) return '';
+  const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  return `<div class="section"><h4>魔物としての暮らし</h4><dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
+}

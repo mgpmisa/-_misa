@@ -1501,7 +1501,7 @@ function nicknames(sim, animals) {
   const t = nearestTown(sim, c.pos.x, c.pos.z);
   const why = c.rank === 1 && c._gsize >= 3 ? `${SPECIES[c.sp].name}の群れを率いる一頭` : (c.kills || 0) >= 3 ? `何頭もの獲物を仕留めてきた${SPECIES[c.sp].name}` : c.trapWise ? `どんな罠にもかからない${SPECIES[c.sp].name}` : `長く生きた大きな${SPECIES[c.sp].name}`;
   if (t && t.d < 50) {
-    sim.news(`${t.s.name}の人々は、${sim.placeName(c.pos.x, c.pos.z)}に棲む${why}を「${nick}」と呼ぶようになった`, 1, c.pos);
+    sim.news(`${t.s.name}の人々は、${sim.placeName(c.pos.x, c.pos.z).replace(t.s.name + 'の', '町の')}に棲む${why}を「${nick}」と呼ぶようになった`, 1, c.pos);
     for (const q of townsfolk(sim, t.s.id, 3, (q) => ['hunter', 'woodcutter', 'shepherd', 'gatherer', 'rancher', 'farmer', 'storyteller'].includes(q.job))) sim.remember(q, `${sim.placeName(c.pos.x, c.pos.z)}には「${nick}」と呼ばれる${SPECIES[c.sp].name}がいる`, { emo: 0.1, imp: 0.5, k: 'sight', where: posR(c) });
   }
 }
