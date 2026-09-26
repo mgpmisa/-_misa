@@ -6,6 +6,7 @@ import { JOBS, SPECIES } from './data.js';
 import { killCreature } from './creatures.js';
 import { W } from './world.js';
 import { equipBonus, countItem, takeItem } from './items.js';
+import { gearOnHit, gearMoraleMul } from './gear.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 
@@ -21,7 +22,7 @@ export function humanStats(sim, p) {
   maxhp = Math.round(maxhp * g.hp);
   return {
     maxhp,
-    atk: Math.round((3 + combat * 2 + lv * 1.6 + eb.atk + (eb.atk ? steel : 0)) * child * g.atk),
+    atk: Math.round((3 + combat * 2 + lv * 1.6 + eb.atk + (eb.atk ? steel : 0)) * child * g.atk * gearMoraleMul(p)),
     def: Math.round((1 + lv * 0.8 + eb.def) * child * g.def),
     hp: p.hp == null ? maxhp : Math.min(p.hp, maxhp),
   };
@@ -80,6 +81,7 @@ export function stepCombat(sim, dt) {
     if (dmg <= 0) continue; // かわされた
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp - dmg <= 0) dmg = Math.max(0, t.hp - 1);
     t.hp -= dmg;
+    gearOnHit(sim, e, t, dmg);
     if (isHuman(t)) { t.needs.survival = Math.max(0, t.needs.survival - 12); sim.learnDanger(t, t.pos.x, t.pos.z, 1); }
     sim.events.push({ type: 'hit', id: t.id, dmg });
     // 殴り合い：相手が弱ったら終わる

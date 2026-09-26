@@ -131,7 +131,8 @@ function breakItem(sim, p, it, why) {
   if (typeof p.id === 'number') {
     sim.remember(p, txt, { emo: it.memento || long ? -0.6 : -0.35, imp: it.memento || it.found ? 0.8 : long ? 0.55 : 0.35, k: 'gear' });
     if (cherished(it)) { (p.treasures = p.treasures || []).push(`折れた${nm}`); st.treasures++; }
-    if (d.type !== 'tool') {
+    if (d.type === 'tool') autoEquip(p);   // 予備の道具があれば持ち替える
+    else {
       autoEquip(p);
       Object.assign(p, humanStats(sim, p));
       if (isGuardian(p)) { const g = gm(p); p.morale = clamp((p.morale ?? 55) - 6, 0, 100); g.broke = sim.today; }

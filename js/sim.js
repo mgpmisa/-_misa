@@ -33,7 +33,9 @@ import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from
 import { monstersDaily, monstersHourly } from './monsters.js';
 import { elderDaily } from './elder.js';
 import { bankDaily, priceLevel, hhDeposit } from './bank.js';
+import { laborDaily, laborRestDay, restDayFor, laborWork, laborWorkMul, laborCandidates, laborArrive, laborDo } from './labor.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
+import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -78,6 +80,7 @@ export class Sim {
     initProperty(this);
     initUnderworld(this);
     ensureTaxes(this);
+    ensureGear(this);
     for (let i = 0; i < 4; i++) partiesDaily(this);
     this.slimDead();
     ensureExpansion(this);
@@ -98,6 +101,7 @@ export class Sim {
     if (!data.property) initProperty(this);
     if (!data.uw) initUnderworld(this);
     ensureTaxes(this);
+    ensureGear(this);
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     ensureExpansion(this);
     computeDanger(this);
@@ -124,7 +128,7 @@ export class Sim {
   seasonIdx() { return Math.floor(this.dayOfYear() / DAYS_PER_SEASON); }
   season() { return SEASONS[this.seasonIdx()]; }
   hour() { return (this.S.t % 1440) / 60; }
-  isRestDay() { return this.dayIndex % 7 === 6; }
+  isRestDay(sid) { return laborRestDay(this, sid ?? 0); }
   isFestival() { return this.dayOfYear() === DAYS_PER_SEASON * 3 - 1; }
   weather(p) { return p?.pos ? legacyWeatherAt(this, p.pos.x, p.pos.z) : this.S.weather; }
   chronicle() { return this.S.chronicle; }
@@ -526,7 +530,7 @@ export class Sim {
   // ---------- 意思決定 ----------
   decide(p) {
     const R = this.rng, h = this.hour(), age = this.ageOf(p), hh = this.hh(p), n = p.needs;
-    const rest = this.isRestDay() || calendarHalfDay(this, p.s);
+    const rest = restDayFor(this, p) || calendarHalfDay(this, p.s);
     const cands = [];
     const wm = weatherMood(this, p);
     const add = (score, type, place, dur, extra = {}) => { if (score > -50) cands.push({ score: score + R.range(0, 1.2) + (p.q[type] || 0) * 1.5 + weatherBias(wm, type), type, place, dur, ...extra }); };
@@ -575,12 +579,13 @@ export class Sim {
       else if (n.hunger < 35) add(sc + (job === 'beggar' ? 2 : 0), 'beg', this.placeFor(p, 'plaza'), 60);
     }
     const workAge = age >= 14 && age <= 67 && job;
-    const workHours = h >= 7 && h < 17;
-    if (workAge && job !== 'thief' && job !== 'beggar' && workHours && (!rest || ['innkeeper', 'guard', 'knight', 'soldier', 'jailer', 'king', 'servant'].includes(job)) && p.workedToday < 9 * 60 && n.sleep > 15) {
+    const lw = workAge ? laborWork(this, p, rest) : null;
+    const workHours = !!lw && h >= 7 && h < lw.end;
+    if (workAge && job !== 'thief' && job !== 'beggar' && workHours && p.workedToday < lw.max && n.sleep > 15) {
       const skill = p.skill[job] || 0.3;
       const wp = careerWorkPlace(this, p) || this.placeFor(p, JOBS[job].place);
       const unsafe = wp && !JOBS[job].combat && tooDangerous(this, p, wp.x, wp.z);
-      add(3 + p.pers.C * 3 + p.values.ambition + skill - (100 - n.sloth) / 30 - (unsafe ? 8 : 0), 'work', unsafe ? this.placeFor(p, 'plaza') : wp, R.int(60, 150));
+      add(3 + p.pers.C * 3 + p.values.ambition + skill - (100 - n.sloth) / 30 - (unsafe ? 8 : 0) + lw.bias, 'work', unsafe ? this.placeFor(p, 'plaza') : wp, R.int(60, 150));
     }
     if (job === 'innkeeper' && h >= 17 && h < 23) add(5, 'work', this.placeFor(p, 'tavern'), 90);
     if ((job === 'guard' || job === 'knight') && (h >= 20 || h < 2) && R.chance(0.3)) add(4, 'work', this.placeFor(p, 'patrol'), 60);
@@ -642,6 +647,8 @@ export class Sim {
     civicOptions(this, p, add);
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
+    gearCandidates(this, p, add);
+    laborCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
     healthDecide(this, p, cands, add);
     cands.sort((a, b) => b.score - a.score);
@@ -748,7 +755,7 @@ export class Sim {
   dangerHigh() {
     const m = this.S.dangerMap;
     if (!m) return null;
-    if (this._dhSrc !== m) { this._dhSrc = m; this._dh = m.map((v) => Math.max(0, v - 5)); }
+    if (this._dhSrc !== m) { this._dhSrc = m; this._dh = m.map((v) => (v > 4 ? (v - 2) * 1.5 : 0)); }
     return this._dh;
   }
 
@@ -874,6 +881,8 @@ export class Sim {
     underworldArrive(this, p);
     choreArrive(this, p, a);
     civicArrive(this, p, a);
+    gearArrive(this, p);
+    laborArrive(this, p);
   }
 
   doShop(p) {
@@ -933,10 +942,10 @@ export class Sim {
     }
     const tool = p.eq?.tool;
     const toolMul = tool ? 0.7 + 0.35 * tool.q : 0.6;
-    if (tool) { tool.dur -= 0.004 * hr; if (tool.dur <= 0) { p.inv.splice(p.inv.indexOf(tool), 1); p.eq.tool = null; this.remember(p, `長年使った${itemName(tool)}がとうとう壊れた`, { emo: -0.3, imp: 0.3 }); } }
+    if (tool) gearWearTool(this, p, tool, hr);
     const si = this.seasonIdx();
     const sm = [0.9, 1.3, 2.4, 0.25][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
-    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p);
+    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p) * laborWorkMul(p);
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
     switch (p.job) {
@@ -1185,7 +1194,7 @@ export class Sim {
     const d = ITEMS[it.id];
     if (!['weapon', 'armor', 'shield', 'accessory'].includes(d.type)) return false;
     const cur = p.eq?.[d.type];
-    const sc = (x) => ((ITEMS[x.id].atk || 0) + (ITEMS[x.id].def || 0)) * x.q;
+    const sc = (x) => ((ITEMS[x.id].atk || 0) + (ITEMS[x.id].def || 0)) * x.q * wearMul(x);
     return !cur || sc(it) > sc(cur) * 1.2;
   }
   buyGear(p) {
@@ -1313,9 +1322,11 @@ export class Sim {
       }
       case 'storytell': this.tellStories(p, this.nearby(p, 5)); n.esteem += 3 * hr; break;
     }
+    laborDo(this, p, dt);
     if (!p.action) return;
     choreDo(this, p, dt);
     civicDo(this, p, dt);
+    gearDo(this, p, dt);
     for (const k of NEED_KEYS) n[k] = clamp(n[k], 0, 100);
     const wakeEarly = a.type === 'sleep' && n.sleep >= 99 && this.hour() > 4 && this.hour() < 12;
     if (S.t >= a.until || wakeEarly) {
@@ -1378,7 +1389,7 @@ export class Sim {
           this.hh(p).money += gold;
           p.needs.esteem = Math.min(100, p.needs.esteem + 30);
           let txt = `${b.name}を探索して${gold}銅貨ぶんの戦利品を持ち帰った`;
-          if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) addItem(p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk']))); if (R.chance(0.3)) addItem(p, makeItem(R.pick(['sword', 'axe', 'shield', 'ring', 'amulet', 'chainmail']), R.range(0.7, 1.4))); autoEquip(p); Object.assign(p, humanStats(this, p)); }
+          if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) addItem(p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk']))); gearDungeonLoot(this, p, b); autoEquip(p); Object.assign(p, humanStats(this, p)); }
           if (b.type !== 'hideout' && R.chance(0.06 + (b.type === 'pyramid' ? 0.08 : 0))) {
             const item = R.pick(TREASURE_ITEMS);
             (p.treasures = p.treasures || []).push(item);
@@ -1664,6 +1675,7 @@ export class Sim {
     weatherHourly(this);
     choreHourly(this);
     growthHourly(this);
+    gearHourly(this);
     healthHourly(this);
     faunaHourly(this);
     financeHourly(this);
@@ -1672,6 +1684,7 @@ export class Sim {
   newDay() {
     const S = this.S, R = this.rng;
     const doy = this.dayOfYear();
+    laborDaily(this);
     for (const p of this.living()) { p.talkedToday = {}; p.workedToday = 0; }
     const si = this.seasonIdx();
     weatherDaily(this);
@@ -1780,6 +1793,7 @@ export class Sim {
     underworldDaily(this);
     politicsDaily(this);
     taxesDaily(this);
+    gearDaily(this);
     expansionDaily(this);
     for (const p of this.living()) this.trimMemories(p);
     this.save();
@@ -1868,6 +1882,7 @@ export class Sim {
   die(p, cause, killer = null) {
     if (p.deathYear != null) return;
     onDeath(this, p, cause, killer);
+    gearOnDeath(this, p, cause, killer);
     const S = this.S, age = this.ageOf(p);
     p.deathYear = this.year(); p.deathCause = cause; p.deathDay = this.today;
     p.lastWords = p.thought;

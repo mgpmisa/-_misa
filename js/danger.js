@@ -3,6 +3,7 @@ import { SPECIES, JOBS } from './data.js';
 import { musterOnAlarm } from './civic.js';
 import { W, H, T } from './world.js';
 import { startFight } from './society.js';
+import { gearGuardMul, gearWillDefend } from './gear.js';
 
 export const CH = 8;              // 区画の大きさ（マス）
 export const CW = W / CH, CHH = H / CH;
@@ -67,12 +68,12 @@ export function defendTowns(sim) {
     if (S.towns[s.id].occupied) continue;
     const near = hostile.filter((c) => Math.abs(c.pos.x - s.x) < s.r + 9 && Math.abs(c.pos.z - s.z) < s.r + 9);
     if (!near.length) continue;
-    const guards = sim.living().filter((p) => p.s === s.id && DEFENDERS.has(p.job) && !p.fight && p.jail == null && p.hp > p.maxhp * 0.4 && !(p.action?.type === 'sleep' && p.job !== 'gatekeeper' && p.job !== 'watchman'));
+    const guards = sim.living().filter((p) => p.s === s.id && DEFENDERS.has(p.job) && !p.fight && p.jail == null && p.hp > p.maxhp * 0.4 && !(p.action?.type === 'sleep' && p.job !== 'gatekeeper' && p.job !== 'watchman') && gearWillDefend(p, sim.rng));
     for (const c of near) {
       // 力の差を見る：勝ち目のない相手（竜など）には立ち向かわず、鐘を鳴らして籠城し、討伐を頼む
       const power = (x) => (x.atk || 5) * Math.sqrt(x.maxhp || x.hp || 20);
       const avail = guards.filter((p) => !p.fight);
-      const ours = avail.slice(0, 4).reduce((t, p) => t + power(p), 0);
+      const ours = avail.slice(0, 4).reduce((t, p) => t + power(p) * gearGuardMul(p), 0);
       const pack = near.filter((o) => Math.hypot(o.pos.x - c.pos.x, o.pos.z - c.pos.z) < 8).reduce((t, o) => t + power(o), 0);
       if (ours < Math.max(power(c) * 1.8, pack * 1.3)) {
         const town = S.towns[s.id];

@@ -6,6 +6,7 @@ import { careerThought } from './career.js';
 import { elderThought, elderTopic, elderTopicWeight } from './elder.js';
 import { underworldTopic, underworldThoughts } from './underworld.js';
 import { healthThoughts, healthTopic } from './health.js';
+import { laborThought, laborTopic } from './labor.js';
 import { financeThoughts, financeTopic, financeTopicWeight } from './finance.js';
 import { calendarTopicWeight, calendarTopic, calendarReact, calendarThought } from './calendar.js';
 import { JOBS, GOODS, TECHS, RANKS } from './data.js';
@@ -143,6 +144,7 @@ function topics(api, A, B) {
   add(elderTopicWeight(api, A, B), (a1, a2, a3, v) => elderTopic(a1, a2, a3, v));
   const ut = underworldTopic(api, A, B); if (ut) add(ut.w, ut.fn);
   const ht = healthTopic(api, A, B); if (ht) add(ht.w, ht.fn);
+  const lbt = laborTopic(api, A, B); if (lbt) add(lbt.w, lbt.fn);
   add(A.job && age >= 14 ? 1.2 : 0, topicWork);
   add(age >= 14 ? 0.4 + Math.abs(api.priceRatio('bread', A.s) - 1) * 3 + (api.householdMoney(A) < 20 ? 1.2 : 0) : 0, topicEconomy);
   add(age >= 16 ? A.values.family * 1.2 : 0.3, topicFamily);
@@ -767,6 +769,7 @@ export function innerThought(api, p) {
   const eth = elderThought(api, p); if (eth) opts.push(eth);
   opts.push(...underworldThoughts(api, p));
   opts.push(...healthThoughts(api, p));
+  const lt = laborThought(api, p); if (lt) opts.push(lt);
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
   if (low[1] < 30) opts.push(needTxt[low[0]]);
   if (act === 'work') opts.push(`さて、もうひと頑張り。${JOBS[p.job]?.name ?? ''}の仕事は待ってくれない。`);

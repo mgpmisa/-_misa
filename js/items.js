@@ -118,18 +118,19 @@ export function autoEquip(p) {
   p.eq = p.eq || {};
   for (const slot of ['weapon', 'armor', 'shield', 'accessory']) {
     const cands = (p.inv || []).filter((x) => ITEMS[x.id]?.type === slot);
-    const score = (x) => ((ITEMS[x.id].atk || 0) + (ITEMS[x.id].def || 0)) * x.q;
+    const score = (x) => ((ITEMS[x.id].atk || 0) + (ITEMS[x.id].def || 0)) * x.q * (((x.dur ?? 1) >= 0.5) ? 1 : 0.6 + (x.dur ?? 1) * 0.8);
     const best = cands.sort((a, b) => score(b) - score(a))[0];
     if (best) p.eq[slot] = best;
   }
   const tool = (p.inv || []).find((x) => ITEMS[x.id]?.type === 'tool' && ITEMS[x.id].jobs.includes(p.job));
   p.eq.tool = tool || null;
 }
+const wearMul = (it) => { const d = it?.dur ?? 1; return d >= 0.5 ? 1 : 0.6 + d * 0.8; }; // 傷んだ品は性能が落ちる（gear.js と同じ式）
 export function equipBonus(p) {
   let atk = 0, def = 0;
   const eq = p.eq || {};
-  if (eq.weapon) atk += ITEMS[eq.weapon.id].atk * eq.weapon.q;
-  for (const s of ['armor', 'shield', 'accessory']) if (eq[s]) def += (ITEMS[eq[s].id].def || 0) * eq[s].q;
+  if (eq.weapon) atk += ITEMS[eq.weapon.id].atk * eq.weapon.q * wearMul(eq.weapon);
+  for (const s of ['armor', 'shield', 'accessory']) if (eq[s]) def += (ITEMS[eq[s].id].def || 0) * eq[s].q * wearMul(eq[s]);
   return { atk: Math.round(atk), def: Math.round(def) };
 }
 

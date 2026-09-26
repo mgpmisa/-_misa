@@ -25,6 +25,7 @@ import { calendarHalfDay } from './calendar.js';
 import { pay, earn, spendable } from './property.js';
 import { debtsOf } from './finance.js';
 import { careerWorkPlace } from './career.js';
+import { T } from './world.js';
 
 // ---------- 小道具 ----------
 const hash01 = (a, b = 0) => { let x = (Math.imul((a | 0) + 0x9e37, 2654435761) ^ Math.imul(b + 1, 40503)) >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x ^= x >>> 13; return (x >>> 0) / 4294967296; };
@@ -46,7 +47,7 @@ const isRest = (sim, p) => sim.isRestDay() || calendarHalfDay(sim, p.s);
 export const LIFE = {
   family: {
     name: '家族を守る',
-    bias: { work: 1.0, home: 0.8, rest: 0.3, cook: 0.8, childcare: 1.0, nurse: 1.5, shop: 0.6, water: 0.4, tavern: -0.8, quest: -1.2, travel: -1, stroll: -0.3, grandkids: 1, garden: 0.5, errand: 0.8 },
+    bias: { work: 0.6, home: 0.8, rest: 0.3, cook: 0.8, childcare: 1.0, nurse: 1.5, shop: 0.6, water: 0.4, tavern: -0.8, quest: -1.2, travel: -1, stroll: -0.3, grandkids: 1, garden: 0.5, errand: 0.8 },
     why: { work: '家族を食べさせるため', home: '家族のそばにいたくて', cook: '家族の食事をこしらえるため', childcare: '子どもから目を離さないため', shop: '家の食べ物を切らさないため', nurse: '家族を看病するため', rest: '明日も家族のために働けるよう' },
     thoughts: ['家族さえ無事なら、それでいい。', 'あの子たちが腹をすかせないように、今日も働こう。', '何があっても、この家は自分が守る。'],
   },
@@ -64,7 +65,7 @@ export const LIFE = {
   },
   wealth: {
     name: '金持ちになる',
-    bias: { work: 1.4, trade: 1.8, collect: 1, peddle: 1, tavern: -0.8, stroll: -0.6, rest: -0.5, plaza: -0.4, festival: -0.3, nap: -0.5 },
+    bias: { work: 1.0, trade: 1.8, collect: 1, peddle: 1, tavern: -0.8, stroll: -0.6, rest: -0.5, plaza: -0.4, festival: -0.3, nap: -0.5 },
     why: { work: '一枚でも多く銅貨を稼ぐため', trade: 'ひと儲けするため', collect: '貸した金を取り返すため', peddle: '稼ぎを増やすため', shop: '安いうちに買っておくため' },
     thoughts: ['銅貨一枚を笑う者は、銅貨一枚に泣く。', 'いつか金貨の詰まった箱を開けてみたい。', 'もっとうまい儲け口はないものか。'],
   },
@@ -94,7 +95,7 @@ export const LIFE = {
   },
   homecoming: {
     name: '故郷に錦を飾る',
-    bias: { work: 1.3, trade: 1.2, tavern: -0.6, train: 0.3, pray: 0.2 },
+    bias: { work: 0.9, trade: 1.2, tavern: -0.6, train: 0.3, pray: 0.2 },
     why: { work: '一旗揚げて故郷へ帰るため', trade: '故郷へ持って帰る財を築くため', pray: '故郷の家族の無事を祈るため' },
     thoughts: ['{t}の母さんは、元気にしているだろうか。', '立派になって{t}に帰るんだ。', '{t}の丘の景色を、ふと思い出した。'],
   },
@@ -106,19 +107,19 @@ export const LIFE = {
   },
   craft: {
     name: '腕を極める',
-    bias: { work: 1.5, train: 0.2, tavern: -0.4, rest: -0.3 },
+    bias: { work: 1.0, train: 0.2, tavern: -0.4, rest: -0.3 },
     why: { work: '腕を磨くため', rest: '明日の仕事のために手を休めるため' },
     thoughts: ['今日の出来はまだまだだ。', '手が覚えるまで、何度でも。', 'いつか誰もがうなる品を作ってみせる。'],
   },
   duty: {
     name: '国と主君に仕える',
-    bias: { work: 1.3, train: 1.2, defend: 1.5, pray: 0.3, tavern: -0.5, rest: -0.4 },
+    bias: { work: 0.9, train: 1.2, defend: 1.5, pray: 0.3, tavern: -0.5, rest: -0.4 },
     why: { work: '務めを果たすため', train: 'いざというとき国を守れるよう', defend: '町を守る務めのため', pray: '国の安寧を祈るため' },
     thoughts: ['務めを果たす。それだけだ。', 'この国のために、恥ずかしくない働きを。', '主君の期待を裏切るわけにはいかない。'],
   },
   survive: {
     name: '今日を生き延びる',
-    bias: { work: 1.2, beg: 1, eat: 0.5, shop: 0.5, askfood: 0.8, tavern: -1.2, stroll: -0.5 },
+    bias: { work: 1.0, beg: 1, eat: 0.5, shop: 0.5, askfood: 0.8, tavern: -1.2, stroll: -0.5 },
     why: { work: '今日の食い扶持を稼ぐため', beg: '今日を食いつなぐため', askfood: '飢えをしのぐため', shop: '今日の食べ物を手に入れるため' },
     thoughts: ['明日のことなんて考えていられない。', 'まずは今夜の寝床と、ひと切れのパンだ。', '生きてさえいれば、なんとかなる。'],
   },
@@ -138,16 +139,16 @@ export const LIFE = {
 
 // ---------- いまの計画（数日〜数十日） ----------
 const PLAN = {
-  debt: { bias: { work: 1.6, tavern: -1.2, stroll: -0.4, plaza: -0.4, festival: -0.3 }, why: { work: '借金を返すため' } },
+  debt: { bias: { work: 1.2, tavern: -1.2, stroll: -0.4, plaza: -0.4, festival: -0.3 }, why: { work: '借金を返すため' } },
   nurse: { bias: { nurse: 2, work: -0.8, tavern: -1.5, stroll: -0.8, travel: -2, quest: -2 }, why: { nurse: '{t}を看病するため', work: '{t}の薬代を稼ぐため' } },
   revenge: { bias: { train: 1.5, revenge: 1.5, quest: 1, hunt: 1 }, why: { train: '{t}への仇討ちに備えるため', revenge: '{t}に報いを受けさせるため' } },
   court: { bias: { court: 2, plaza: 0.4, stroll: 0.2, visit: 0.3 }, why: { court: '{t}に想いを伝えるため', plaza: '{t}に会えるかもしれないので' } },
-  baby: { bias: { work: 1, home: 0.8, shop: 0.6, tavern: -1, quest: -1.5, travel: -1 }, why: { work: 'もうすぐ生まれる子のために蓄えるため', home: '身重の{t}のそばにいるため', shop: '生まれてくる子の支度のため' } },
-  save: { bias: { work: 1.2, tavern: -0.8, stroll: -0.3 }, why: { work: '{t}ための蓄えをつくるため' } },
-  appr: { bias: { work: 1.5, tavern: -0.4 }, why: { work: '{t}師匠のもとで一人前になるため' } },
+  baby: { bias: { work: 0.7, home: 0.8, shop: 0.6, tavern: -1, quest: -1.5, travel: -1 }, why: { work: 'もうすぐ生まれる子のために蓄えるため', home: '身重の{t}のそばにいるため', shop: '生まれてくる子の支度のため' } },
+  save: { bias: { work: 0.8, tavern: -0.8, stroll: -0.3 }, why: { work: '{t}ための蓄えをつくるため' } },
+  appr: { bias: { work: 1.0, tavern: -0.4 }, why: { work: '{t}師匠のもとで一人前になるため' } },
   quest: { bias: { quest: 1.5, gather: 1.5, hunt: 1.5, report: 1.5, guild: 0.8 }, why: { quest: '引き受けた依頼を果たすため', gather: '依頼の品を集めるため', hunt: '依頼の賞金首を追うため', report: '依頼の報告のため' } },
   mourn: { bias: { grave: 1.5, pray: 1, tavern: -0.5, festival: -1, plaza: -0.5 }, why: { grave: '亡き{t}を弔うため', pray: '亡き{t}の冥福を祈るため' } },
-  house: { bias: { work: 1.5, tavern: -1 }, why: { work: '住む家を手に入れるため' } },
+  house: { bias: { work: 1.2, tavern: -1 }, why: { work: '住む家を手に入れるため' } },
   study: { bias: { study: 1.5, school: 1 }, why: { study: '{t}ため' } },
   train: { bias: { train: 1.5, buygear: 0.5 }, why: { train: '腕を磨いて強くなるため' } },
   kids: { bias: { childcare: 1.2, home: 0.6, cook: 0.5, tavern: -0.6 }, why: { childcare: '幼い{t}を育てるため', home: '幼い{t}のそばにいるため' } },
@@ -160,8 +161,8 @@ const PLAN = {
 // ---------- 生活の癖 ----------
 // type：行動、kind：場所、days：'all' / 'work'（働く日） / 'rest'（休みの日） / 数（7日のうちその曜日）
 const HABITS = {
-  morningwalk: { txt: '朝の散歩', why: '毎朝の散歩が日課なので', type: 'stroll', kind: 'stroll', dur: [20, 40] },
-  dogwalk: { txt: '朝の犬の散歩', why: '犬を散歩させるのが朝の日課なので', type: 'stroll', kind: 'stroll', dur: [20, 35] },
+  morningwalk: { txt: '朝の散歩', why: '毎朝の散歩が日課なので', type: 'stroll', kind: 'walk', dur: [20, 40] },
+  dogwalk: { txt: '朝の犬の散歩', why: '犬を散歩させるのが朝の日課なので', type: 'stroll', kind: 'walk', dur: [20, 35] },
   morningtrain: { txt: '朝の素振り', why: '朝の素振りを欠かしたことがないので', type: 'train', kind: 'train', dur: [30, 50] },
   morningprayer: { txt: '朝の祈り', why: '朝いちばんに祈るのが習いなので', type: 'pray', kind: 'church', dur: [15, 30] },
   noondrink: { txt: '昼の一杯', why: '昼に一杯ひっかけるのが楽しみなので', type: 'tavern', kind: 'tavern', dur: [25, 40] },
@@ -223,7 +224,7 @@ function lifeOptions(sim, p) {
   }
   // 名を上げる
   {
-    const story = (p.memories || []).find((m) => m.k === 'story');
+    const story = (p.memories || []).find((m) => m.k === 'story' && /討|倒|勇|戦|騎士|竜|魔|守り|救/.test(m.txt));
     const why = dreamK === 'fame' ? `「${p.dream}」と心に決めているから` : story ? story.txt.replace(/と聞かされて育った$/, '') + 'と聞かされて育ったから' : FIGHT_JOBS.has(job) ? `${jobName(job)}として生きる以上は` : '人に認められたいから';
     push('fame', (v.ambition || 0.5) * 1.8 + (v.courage || 0.5) * 1.4 + (FIGHT_JOBS.has(job) ? 1 : 0) + (job === 'adventurer' ? 1.2 : 0) + (story ? 0.4 : 0) + dreamW('fame') - (age > 55 ? 1.5 : 0), why);
   }
@@ -397,7 +398,7 @@ function planOptions(sim, p) {
     const topic = ['wizard', 'courtmage'].includes(p.job) ? '新しい呪文の組み立てを確かめる' : p.job === 'doctor' || p.job === 'herbalist' ? '薬草の効き目を書き留める' : p.job === 'scholar' || p.job === 'sage' ? '古い書物を読み解く' : p.job === 'priest' ? '聖典を学び直す' : sim.rng.pick(['星の動きを書き留める', '古い言い伝えを調べる', '読み書きを身につける']);
     push('study', 2.8, topic, topic);
   }
-  if ((L === 'fame' || L === 'duty' || L === 'revenge') && age < 55) push('train', 2 + (L === 'fame' ? 0.8 : 0), '腕を磨いて強くなる');
+  if ((L === 'fame' || L === 'revenge' || (L === 'duty' && FIGHT_JOBS.has(p.job))) && age < 55) push('train', 2 + (L === 'fame' ? 0.8 : 0), '腕を磨いて強くなる');
   const small = kidsOf(sim, p, 6).filter((k) => k.hh === p.hh);
   if (small.length) push('kids', 2 + (p.values?.family || 0.5) * 1.5 + (L === 'family' ? 1 : 0), `幼い${small[0].given}を育てる`, small[0].given);
   if (L === 'faith') push('devotion', 2.2, '毎日欠かさず祈りを捧げる');
@@ -453,10 +454,10 @@ function planToday(sim, p) {
     opts.push({ w: 2.5 + (L === 'love' ? 1.5 : 0), k: 'court', type: 'court', kind: 'court', friend: q.id, h0: Math.min(19, we), h1: 21, cut: L === 'love' && R.chance(0.4) ? we - 1 : null, txt: `仕事が終わったら${q.given}に会いに行く`, why: `${q.given}に会うため` });
   }
   if (L === 'faith' || pk === 'devotion') opts.push({ w: 2, k: 'pray', type: 'pray', kind: 'church', h0: 6, h1: 8, txt: '朝いちばんに教会で祈る', why: '一日を祈りから始めるため' });
-  if (L === 'knowledge' || pk === 'study') opts.push({ w: 2.2, k: 'study', type: 'study', kind: 'study', h0: rest ? 9 : Math.min(19, we + 0.5), h1: rest ? 13 : 21.5, txt: `${rest ? '休みの日を使って' : '夜は'}${u.plan?.k === 'study' ? u.plan.txt : '書物を読む'}`, why: u.plan?.k === 'study' ? `${u.plan.txt}ため` : '学ぶため' });
+  if (L === 'knowledge' || pk === 'study') opts.push({ w: 2.2, k: 'study', type: 'study', kind: 'study', h0: rest ? 9 : Math.min(19, we + 0.5), h1: rest ? 13 : 21.5, txt: `${rest ? '休みの日を使って' : '仕事のあとで'}${u.plan?.k === 'study' ? u.plan.txt : '書物を読む'}`, why: u.plan?.k === 'study' ? `${u.plan.txt}ため` : '学ぶため' });
   if ((L === 'fame' || L === 'revenge' || pk === 'train' || (L === 'duty' && FIGHT_JOBS.has(p.job))) && age < 55) opts.push({ w: 2, k: 'train', type: 'train', kind: 'train', h0: rest ? 9 : Math.min(18.5, we), h1: rest ? 12 : 20, txt: rest ? '休みの日こそ鍛錬に打ち込む' : '仕事のあとに鍛錬する', why: L === 'revenge' ? '仇を討つ力をつけるため' : '腕を磨くため' });
   if ((L === 'freedom' || L === 'peace') && rest) opts.push({ w: 2, k: 'fish', type: 'fishing', kind: 'shore', h0: 8, h1: 14, txt: '休みだから、朝から釣りに出る', why: '休みの日をのんびり過ごすため' });
-  if (L === 'freedom' && !rest && !ESSENTIAL.has(p.job) && R.chance(0.35)) opts.push({ w: 1.6, k: 'earlyoff', type: 'stroll', kind: 'stroll', h0: we - 2, h1: 18.5, cut: we - 2, txt: '今日は仕事を早めに切り上げて、ぶらぶらする', why: '今日は早めに仕事を切り上げたので' });
+  if (L === 'freedom' && !rest && !ESSENTIAL.has(p.job) && R.chance(0.35)) opts.push({ w: 1.6, k: 'earlyoff', type: 'stroll', kind: 'walk', h0: we - 2, h1: 18.5, cut: we - 2, txt: '今日は仕事を早めに切り上げて、ぶらぶらする', why: '今日は早めに仕事を切り上げたので' });
   if (L === 'family') {
     const par = [p.fatherId, p.motherId].map((id) => alive(sim, id)).find((q) => q && q.hh !== p.hh && q.s === p.s && sim.ageOf(q) >= 60);
     if (par && R.chance(0.3)) opts.push({ w: 1.8, k: 'visitpar', type: 'visit', kind: 'friend', friend: par.id, h0: Math.min(19, we + 0.3), h1: 20.5, txt: `年老いた${kinName(sim, p, par)}の様子を見に行く`, why: `年老いた${kinName(sim, p, par)}の様子を見るため` });
@@ -466,7 +467,7 @@ function planToday(sim, p) {
   if (pk === 'mourn') opts.push({ w: 2, k: 'grave', type: 'grave', kind: 'church', friend: p.grief?.who, h0: 8, h1: 12, txt: `亡き${kinName(sim, p, sim.S.people[p.grief.who] || { given: '人' })}の墓に花を手向ける`, why: '亡き人を弔うため' });
   if (L === 'wealth' && !rest && p.job === 'merchant') opts.push({ w: 1.5, k: 'market', type: 'work', kind: 'work', h0: 6.5, h1: 8, txt: '朝市が開く前に店を開ける', why: '朝市の客を逃さないため' });
   // その日の気分で「何も決めない」日もある
-  opts.push({ w: 1.2 + (1 - (p.pers?.C || 0.5)), k: 'none', type: null, txt: rest ? '休みの日。のんびり過ごす' : 'いつもどおり働く', why: '' });
+  opts.push({ w: 1.2 + (1 - (p.pers?.C || 0.5)), k: 'none', type: null, txt: rest ? '休みの日。のんびり過ごす' : p.job ? 'いつもどおり働く' : 'いつもどおりに過ごす', why: '' });
   const o = R.weighted(opts, (x) => x.w * x.w);
   Object.assign(t, { k: o.k, type: o.type, kind: o.kind || null, friend: o.friend ?? null, h0: o.h0 || 0, h1: o.h1 || 0, cut: o.cut ?? null, txt: o.txt, why: o.why });
 }
@@ -476,6 +477,7 @@ function placeOf(sim, p, kind, friend) {
   const s = sim.townOf(p);
   switch (kind) {
     case 'stroll': return sim.strollSpot(p);
+    case 'walk': return sim.randomNear(s.x, s.z, Math.max(2, s.r - 1), (tt, x, z) => tt !== T.BLD && !sim.dangerous(p, x, z)) || sim.placeFor(p, 'plaza'); // 町の中の散歩道
     case 'train': { const b = sim.townBuilding(s, 'dojo') || sim.townBuilding(s, 'barracks') || sim.townBuilding(s, 'guild'); return b ? { x: b.door.x, z: b.door.z, bld: b.open ? null : b.id } : sim.placeFor(p, 'plaza'); }
     case 'study': { const b = sim.townBuilding(s, 'academy') || sim.townBuilding(s, 'school') || sim.townBuilding(s, 'magictower') || sim.townBuilding(s, 'church'); return b && sim.hour() < 19 ? { x: b.door.x, z: b.door.z, bld: b.open ? null : b.id } : sim.placeFor(p, 'home'); }
     case 'work': { const J = JOBS[p.job]; return J ? careerWorkPlace(sim, p) || sim.placeFor(p, J.place) : null; }
@@ -601,8 +603,12 @@ function whyOf(sim, p, c) {
     const place = JOBS[p.job]?.name ? `${JOBS[p.job].name}の仕事に` : '';
     if (P.why.work && pb >= lb) return fill(P.why.work, sim, p, planTarget(sim, p));
     if (L.why.work && lb > 0.3) return fill(L.why.work, sim, p, targetName(sim, p));
+    if (L.why.work) return fill(L.why.work, sim, p, targetName(sim, p));
     const wr = { family: '家族を養うため', debt: '借金を返すため', dream: '夢のために貯めるため', fame: '名を上げたくて', love: 'この仕事が好きだから', tax: '税を納めるため', survive: '食べていくため', duty: '務めだから' }[p.workReason];
-    return wr || (place ? '暮らしのため' : '暮らしのため');
+    if (wr) return wr;
+    if (DUTY_JOBS.has(p.job)) return '務めを果たすため';
+    if (kidsOf(sim, p).length) return '子どもたちを食べさせるため';
+    return `${place ? place.replace(/に$/, 'で') : ''}暮らしを立てるため`;
   }
   if (pb > 0.5 && pb >= lb && P.why[type]) return fill(P.why[type], sim, p, planTarget(sim, p));
   if (lb > 0.5 && L.why[type]) return fill(L.why[type], sim, p, targetName(sim, p));
@@ -833,8 +839,10 @@ function creaturePurposeKey(sim, c) {
   if (def.monster || c.hostile || def.kind === 'neutral' || def.kind === 'demon') {
     if (c.sp === 'unicorn') return 'sanctity';
     if (c.sp === 'golem') return 'sentinel';
+    if (c.sp === 'demonlord' || c.role === 'overlord') return 'expand';
     if (c.juv || c.role === 'young') return 'grow';
     if (c.avenge != null) return 'avenge';
+    if (c.role === 'parent' || c.young?.some((id) => S.creatures[id]?.hp > 0)) return 'raise';
     const band = c.band && S.bands?.[c.band];
     if (band?.grudge && band.grudge.sid != null && (band.grudge.count || 0) >= 2) return 'avenge';
     if (def.kind === 'demon' || c.general || c.role === 'aide' || c.role === 'castleguard' || c.role === 'herald') return 'serve';
@@ -847,7 +855,7 @@ function creaturePurposeKey(sim, c) {
   }
   if (c.master != null && sim.S.people[c.master]?.deathYear == null) return 'serve_master';
   if (c.juv) return 'grow';
-  if (c.young?.length) return 'raise';
+  if (c.young?.length || c.role === 'parent') return 'raise';
   if (def.kind === 'livestock') return 'graze';
   if (SOCIAL.has(c.sp) && c.role !== 'leader' && (c.rank || 1) > 1 && c.sex !== 'f') return 'climb';
   if (PRED.has(c.sp) && !c.juv) return 'territory';
@@ -899,8 +907,8 @@ export function creatureWhy(sim, c) {
       default:
         why = {
           hoard: '巣と宝を守るため、住処のまわりを離れない', expand: '群れの縄張りを広げる隙をうかがっている', serve: '長の命令を待ちながら、住処のまわりを見回っている',
-          avenge: '仲間の仇の人間を探している', feed: c.hunger < 50 ? '腹を満たすものを探している' : '住処のまわりをうろついている', sanctity: '森の清らかな泉のそばを守っている', sentinel: '遠い昔の主の命令どおり、遺跡を守り続けている',
-          raise: '子に食べさせるものを探している', territory: '縄張りを見回り、よそ者がいないか確かめている', climb: '群れの上の者の様子をうかがいながら、力を蓄えている',
+          avenge: '仲間の仇の人間を探している', feed: c.hunger < 50 ? '腹を満たすものを探している' : '腹が満ちているので、住処のまわりで次の獲物を待っている', sanctity: '森の清らかな泉のそばを守っている', sentinel: '遠い昔の主の命令どおり、遺跡を守り続けている',
+          raise: c.hunger < 60 ? '子に食べさせるものを探している' : '子のそばを離れず、住処のまわりを見張っている', territory: '縄張りを見回り、よそ者がいないか確かめている', climb: '群れの上の者の様子をうかがいながら、力を蓄えている',
           graze: '仲間と一緒に草を食んでいる', grow: '親のそばで生きる術を学んでいる', serve_master: '主人のそばにいる', survive: c.hunger < 50 ? '腹を満たすものを探している' : '天敵に気を配りながら、住処のまわりで過ごしている',
         }[pk];
     }
@@ -926,6 +934,8 @@ export function spreadSample(sim, acc) {
     const dd = w.days[d] || (w.days[d] = { first: null, last: null, kinds: new Set() });
     if (p.action?.type === 'work' && p.action.phase === 'do') { if (dd.first == null) dd.first = h; dd.last = h; }
     dd.kinds.add(k);
+    // 同じ人の、同じ時刻の行動（働く日だけ）
+    if (!sim.isRestDay() && h >= 6 && h < 22) { const slot = Math.floor(h * 2); (dd.slots || (dd.slots = {}))[slot] = k; }
   }
   if (h < 6 || h >= 22) return;
   let sum = 0, cnt = 0;
@@ -955,7 +965,16 @@ export function spreadReport(acc) {
   const allFirst = [], allLast = [];
   for (const j of Object.values(byJob)) { if (j.first.length < 6) continue; fs += sd(j.first) * j.first.length; ls += sd(j.last) * j.first.length; n += j.first.length; allFirst.push(...j.first); allLast.push(...j.last); }
   const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  // 同じ人を日をまたいで比べたときに、同じ時刻に違うことをしている確率（小さいほど、その人らしい決まった暮らし）
+  let wd = 0, wn = 0;
+  for (const w of Object.values(acc.work || {})) {
+    const ds = Object.values(w.days).filter((d) => d.slots);
+    for (let i = 0; i < ds.length; i++) for (let j = i + 1; j < ds.length; j++) for (const [sl, k] of Object.entries(ds[i].slots)) { const k2 = ds[j].slots[sl]; if (k2 == null) continue; wn++; if (k2 !== k) wd++; }
+  }
+  const within = wn ? wd / wn : 0, between = mean(acc.slots || []);
   return {
+    within: +within.toFixed(3),                              // 同じ人・同じ時刻・別の日で行動が違う確率
+    personal: +(between - within).toFixed(3),                // 人ごとの違い − 日ごとの揺らぎ（大きいほど「その人の暮らし方」がある）
     mismatch: +(mean(acc.slots || [])).toFixed(3),           // 同じ職業の2人が同じ時刻に違うことをしている確率
     workStartSD: +(n ? fs / n : 0).toFixed(2),                // 同じ職業での仕事の始まりの時刻のばらつき（時間）
     workEndSD: +(n ? ls / n : 0).toFixed(2),                  // 同じ職業での仕事の終わりの時刻のばらつき（時間）

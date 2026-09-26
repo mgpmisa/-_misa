@@ -11,11 +11,13 @@ import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
 import { elderCard, elderBuildingRows } from './elder.js';
+import { laborCard, laborNationHTML, LABOR_LABEL, LABOR_GO, LABOR_PREF } from './labor.js';
 import { monsterHtml } from './monsters.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
 import { UW_ACTION_LABEL, UW_ACTION_GO, underworldLabel } from './underworld.js';
 import { healthLabel } from './health.js';
 import { CIVIC_LABEL, CIVIC_GO, CIVIC_PREF } from './civic.js';
+import { GEAR_LABEL, GEAR_GO, GEAR_PREF, gearHtml, gearItemNote } from './gear.js';
 import { convoyOf, convoyLabel } from './logistics.js';
 import { taxNationHTML } from './taxes.js';
 import { expansionNationHTML, drawTerritory } from './expansion.js';
@@ -51,8 +53,10 @@ Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); 
 Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
 Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
 Object.assign(ACTION_LABEL, CIVIC_LABEL); Object.assign(ACTION_GO, CIVIC_GO); Object.assign(PREF_LABEL, CIVIC_PREF);
+Object.assign(ACTION_LABEL, GEAR_LABEL); Object.assign(ACTION_GO, GEAR_GO); Object.assign(PREF_LABEL, GEAR_PREF);
 Object.assign(ACTION_LABEL, { escort: '荷車を護衛している', sail: '船に乗り組んでいる' }); Object.assign(PREF_LABEL, { escort: '護衛', sail: '船旅' });
 Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '王に陳情している', riot: '暴動に加わっている' }); Object.assign(ACTION_GO, { levy: '税の取り立てに回っている', petition: '王都へ陳情に向かっている', riot: '広場へ押しかけている' }); Object.assign(PREF_LABEL, { levy: '徴税', petition: '陳情', riot: '暴動' });
+Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Object.assign(PREF_LABEL, LABOR_PREF);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -418,6 +422,7 @@ export class UI {
         ${expansionNationHTML(this.sim, k, esc) || ''}
         ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
         ${bankNationHTML(this.sim, k, esc) || ''}
+        ${laborNationHTML(this.sim, k, esc) || ''}
         <dt>技術</dt><dd>${k.techs.map((t) => esc(TECHS.find((x) => x.id === t)?.name)).join('、') || 'なし'}（研究${Math.round(k.research)}）</dd>
         <dt>関係</dt><dd>${rel}</dd>
         ${k.war ? `<dt>戦争</dt><dd class="up">${esc(k.war.name)}（${this.sim.today - k.war.since}日目）</dd>` : ''}</dl></div>`;
@@ -628,12 +633,13 @@ export class UI {
         <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
         </dl></div>`;
       if (p.deathYear == null) h += growthHtml(sim, p) || '';
+      if (p.deathYear == null) h += gearHtml(sim, p, esc);
       // 装備と所持品
       const eq = p.eq || {};
       const slotName = { weapon: '武器', armor: '防具', shield: '盾', accessory: '装身具', tool: '道具' };
       const inv = (p.inv || []).filter((it) => !Object.values(eq).includes(it));
       const worth = (p.inv || []).reduce((s2, it) => s2 + itemValue(it), 0);
-      h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}</dd>` : '').join('')}
+      h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}${gearItemNote(eq[k]) ? `<br><span class="sub">${esc(gearItemNote(eq[k]))}</span>` : ''}</dd>` : '').join('')}
         <dt>持ち物</dt><dd>${inv.map((it) => esc(itemName(it))).join('、') || 'なし'}</dd>${p.treasures?.length ? `<dt>宝物</dt><dd>${p.treasures.map(esc).join('、')}</dd>` : ''}
         <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
       if (isAdventurer(p)) {
@@ -646,6 +652,8 @@ export class UI {
       const skills = Object.entries(p.skill || {}).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
       const dangers = Object.entries(p.danger || {}).filter(([, v]) => v > 1.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
       const cc = careerCard(this.sim, p);
+      const lc = laborCard(this.sim, p);
+      if (lc.length) h += `<div class="section"><h4>働きぶりとお金の使い方</h4><dl class="kv">${lc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       const ec = elderCard(this.sim, p);
       if (ec.length) h += `<div class="section"><h4>老後の備え</h4><dl class="kv">${ec.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       if (cc.length) h += `<div class="section"><h4>人生の目標と修業</h4><dl class="kv">${cc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;

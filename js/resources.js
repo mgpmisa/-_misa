@@ -140,8 +140,15 @@ export function customersPay(sim, sid, amt, notHh = null) {
 export function importGoods(sim, sid, good, qty, mul = 1.3) {
   const t = town_(sim, sid), g = GOODS[good];
   if (!t || !g || qty <= 0) return 0;
-  const cost = qty * g.base * mul;
+  // 1日に外へ払える仕入れ代は、市場の金庫の5%まで（お金が国の外へ流れ出しすぎないように）
+  const E = E_(sim);
+  if (!E.imp || E.imp.d !== sim.today) E.imp = { d: sim.today, by: {} };
+  const room = Math.max(0, t.cash * 0.05 - (E.imp.by[sid] || 0));
+  const cost = Math.min(qty * g.base * mul, room);
+  if (cost <= 0) return 0;
+  qty = cost / (g.base * mul);
   const paid = marketPays(sim, sid, cost);
+  E.imp.by[sid] = (E.imp.by[sid] || 0) + paid;
   if (paid <= 0) return 0;
   moneyOut(sim, paid, '輸入（よその国からの仕入れ）');
   const got = qty * paid / cost;
@@ -185,6 +192,12 @@ export function moneyTotal(sim) {
     P.銀行の金庫 = 0; P.埋めた壺 = 0;
     for (const b of Object.values(S.bank.k || {})) P.銀行の金庫 += num(b.vault);
     for (const h of S.bank.hoards || []) if (!h.gone) P.埋めた壺 += num(h.amt);
+  }
+  // 老後の備え（elder.js）がつながっていれば、組合の箱と救貧院の箱も数える
+  if (S.elder) {
+    P.組合の箱 = 0;
+    for (const f of Object.values(S.elder.funds || {})) P.組合の箱 += num(f.bal);
+    for (const a of Object.values(S.elder.alms || {})) P.組合の箱 += num(a.bal);
   }
   const total = Object.values(P).reduce((a, b) => a + b, 0);
   return { total, parts: P };

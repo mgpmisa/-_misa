@@ -7,6 +7,7 @@
 //   choreHourly(sim)            … newHour で1時間ごとの処理（水を使う・保存食を出す・口論）
 //   choreDaily(sim)             … newDay で1日ごとの処理（分担決め・洗濯物・傷み）
 import { clamp } from './rng.js';
+import { restDayFor } from './labor.js';
 import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { T, tileAt, walkable } from './world.js';
 
@@ -131,7 +132,7 @@ function familyDoing(sim, hh, type, except) {
 export function choreOptions(sim, p, add) {
   const hh = sim.hh(p);
   const h = sim.hour(), age = sim.ageOf(p), n = p.needs, si = sim.seasonIdx(), R = sim.rng;
-  const rest = sim.isRestDay();
+  const rest = restDayFor(sim, p);
   const chores = doesChores(hh) ? ensureHh(hh).chores : null;
   const workHour = h >= 7 && h < 17 && p.job && age >= 14 && age <= 67 && p.workedToday < 9 * 60;
 

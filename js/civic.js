@@ -9,8 +9,10 @@
 //   civicFirstJob(sim, p)         … 14歳の誕生日の職選び
 //   musterOnAlarm(sim, q, s)      … 警鐘のとき、戦える者は逃げずに門と城壁を固める（true なら逃がさない）
 import { T, W, H, walkable, isWater, MOVE_COST, MinHeap, tileAt } from './world.js';
+import { restDayFor } from './labor.js';
 import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { chooseYouthJob } from './history.js';
+import { gearDutyBonus } from './gear.js';
 
 // ---------- ui.js に足すラベル ----------
 export const CIVIC_LABEL = {
@@ -122,7 +124,7 @@ export function civicPlace(sim, p, kind) {
       if (p.post != null && (p.postUntil || 0) > sim.today) { const f = bld(sim, p.post); if (f) return doorOf(f); }
       if (livesInBarracks(sim, p)) { const b = sim.townBuilding(s, 'barracks'); if (b) return doorOf(b); }
       // 開拓者は、ふだんは開拓地の小屋に寝泊まりする（休みの日は家族のもとへ）
-      if (p.job === 'pioneer' && !sim.isRestDay() && sim.isAdult(p)) { const c = campFor(sim, p); if (c) return doorOf(c); }
+      if (p.job === 'pioneer' && !restDayFor(sim, p) && sim.isAdult(p)) { const c = campFor(sim, p); if (c) return doorOf(c); }
       return null;
     }
     case 'barracks': {
@@ -200,7 +202,7 @@ export function civicOptions(sim, p, add) {
   const R = sim.rng, h = sim.hour(), age = sim.ageOf(p), job = p.job, n = p.needs;
   const s = sim.townOf(p);
   if (!s || p.jail != null) return;
-  const rest = sim.isRestDay();
+  const rest = restDayFor(sim, p);
   const occupied = sim.S.towns[p.s]?.occupied;
   // 交代勤務：昼番（7〜19時）と夜番（19〜7時）
   if (SHIFT_JOBS.has(job) && sim.isAdult(p) && !occupied) {
@@ -209,7 +211,7 @@ export function civicOptions(sim, p, add) {
     if (onDuty && !(rest && !night && (p.id + sim.today) % 3 === 0)) {
       const d = dutyPlace(sim, p, s, night);
       // 夜番は眠気に負けないよう強めに（そのぶん昼に眠る）
-      if (d) add(night ? 10.5 + p.pers.C : 7 + p.pers.C * 1.5, d.type, d.place, R.int(60, 120));
+      if (d) add((night ? 10.5 + p.pers.C : 7 + p.pers.C * 1.5) + gearDutyBonus(p), d.type, d.place, R.int(60, 120));
     } else if (night && h >= 8 && h < 16 && n.sleep < 85) {
       add(6 + (100 - n.sleep) / 18, 'sleep', sim.placeFor(p, 'home'), R.int(150, 300));
     }
