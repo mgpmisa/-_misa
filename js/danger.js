@@ -4,6 +4,7 @@ import { musterOnAlarm } from './civic.js';
 import { W, H, T } from './world.js';
 import { startFight } from './society.js';
 import { gearGuardMul, gearWillDefend } from './gear.js';
+import { creatureArray } from './lod.js';
 
 export const CH = 8;              // 区画の大きさ（マス）
 export const CW = W / CH, CHH = H / CH;
@@ -62,7 +63,7 @@ export function tooDangerous(sim, p, x, z) {
 // 町の守り：門番・衛兵・自警団が、近づいた魔物を町に入る前に迎え撃つ
 export function defendTowns(sim) {
   const S = sim.S;
-  const hostile = Object.values(S.creatures).filter((c) => c.hostile && !c.dormant && c.hp > 0 && !c.inDungeon && !c.fight);
+  const hostile = creatureArray(sim).filter((c) => S.creatures[c.id] === c && c.hostile && !c.dormant && c.hp > 0 && !c.inDungeon && !c.fight);
   if (!hostile.length) return;
   for (const s of S.world.settlements) {
     if (S.towns[s.id].occupied) continue;

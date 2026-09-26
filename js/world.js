@@ -2,7 +2,17 @@
 import { makeNoise } from './noise.js';
 import { KINGDOMS, DEMON_REALM } from './data.js';
 
-export const W = 160, H = 160;
+// 大陸は 512×512 マス（もとの 160×160 の約10倍の広さ）。
+// はじめの国は3つ。どの国も今と同じくらいの広さ（王都・村・港町）で、国どうしは中心で KK_MIN マス以上離す。
+// 国の外は未開の地（森・山・荒野・湿地・海岸・国に属さない村・奥地の民族の里・竜の巣・魔物の住処）。
+// はじめの道は国の中（王都と自国の町・村のあいだ）だけ。国と国をつなぐ街道は、のちに国がお金をかけて造る。
+export const W = 512, H = 512;
+export const CORE = 160;                 // もとの大陸の一辺（広さの倍率の基準。AREA = W*H / CORE^2）
+export const KK_MIN = 170;               // 王都どうしの最小距離
+export const KREACH = 40;                // 町の中心からこの距離（王都は ÷0.8）までを、はじめの国の領土とする
+export const FREE_FROM_K = 60;           // 国に属さない村・民族の里と、国の町とのあいだの最小距離（町の半径の外から）
+export const FREE_APART = 60;            // 国に属さない村・民族の里どうしの最小距離
+const WIDE = W > CORE;
 export const T = {
   DEEP: 0, SEA: 1, BEACH: 2, GRASS: 3, FOREST: 4, DENSE: 5, JUNGLE: 6, DESERT: 7, SNOW: 8, ROCK: 9, PEAK: 10,
   RIVER: 11, ROAD: 12, FIELD: 13, PLAZA: 14, BLD: 15, WASTE: 16, BRIDGE: 17, FENCE: 18, SAVANNA: 19, DOCK: 20,
@@ -59,11 +69,14 @@ export function generateWorld(rng, seed) {
   const nE = makeNoise(seed), nT = makeNoise(seed + 11), nM = makeNoise(seed + 23);
 
   // --- 標高・気温・湿度 ---
+  // 大陸全体：まん中ほど高く、ふちは海。大きなうねり（nR）で内海や入り江をつくり、国々が海に面せるようにする
+  const nR = makeNoise(seed + 37);
   for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
     const nx = x / W - 0.5, nz = z / H - 0.5;
     const d = Math.sqrt(nx * nx + nz * nz) * 2;
     let e = nE(x / 38, z / 38, 5);
     e = e * 1.2 - Math.pow(d, 3.2) * 0.5 + 0.07;
+    if (WIDE) e += (nR(x / 110, z / 110, 3) - 0.5) * 0.42;
     const ridge = 1 - Math.abs(nE(x / 22 + 40, z / 22 + 40, 3) - 0.5) * 2;
     e += Math.pow(ridge, 8) * 0.16 * (d < 0.85 ? 1 : 0);
     elev[idx(x, z)] = e;
@@ -90,7 +103,10 @@ export function generateWorld(rng, seed) {
   // --- 川：山から海へ ---
   const rivers = [];
   const sources = [];
-  for (let i = 0; i < 400 && sources.length < 8; i++) {
+  // 川の数は広さに比例（もとの 160 の大陸で約8本）
+  const AREA = (W * H) / (CORE * CORE);
+  const nSrc = Math.round(8 * AREA * 0.8);
+  for (let i = 0; i < 400 * AREA && sources.length < nSrc; i++) {
     const x = rng.int(8, W - 9), z = rng.int(8, H - 9);
     const t = get(x, z);
     if ((t === T.ROCK || elev[idx(x, z)] > 0.68) && t !== T.PEAK && sources.every((s) => Math.abs(s.x - x) + Math.abs(s.z - z) > 26)) sources.push({ x, z });
@@ -99,7 +115,7 @@ export function generateWorld(rng, seed) {
     let x = s.x, z = s.z;
     const path = [];
     const seen = new Set();
-    for (let step = 0; step < 260; step++) {
+    for (let step = 0; step < (WIDE ? 700 : 260); step++) {
       path.push({ x, z }); seen.add(idx(x, z));
       const t = get(x, z);
       if (t === T.SEA || t === T.DEEP) break;
@@ -141,25 +157,32 @@ export function generateWorld(rng, seed) {
     return flat - water * 3 + Math.min(river, 4) * 2;
   };
 
-  // --- 魔界 ---
-  let demon = null, bestD = -Infinity;
-  for (let z = 10; z < H * 0.42; z++) for (let x = Math.floor(W * 0.55); x < W - 10; x++) {
-    const t = get(x, z);
-    if (!walkable(t) || t === T.ROCK) continue;
-    const sc = (x - z) * 0.6 + landScore(x, z);
-    if (sc > bestD) { bestD = sc; demon = { x, z }; }
-  }
-  if (!demon) demon = { x: Math.floor(W * 0.78), z: Math.floor(H * 0.22) };
+  // --- 魔界（場所は国を置いたあとで決める。国から離れた未開の地） ---
+  let demon = null;
   const demonR = 20;
-  for (let z = demon.z - demonR - 4; z <= demon.z + demonR + 4; z++) for (let x = demon.x - demonR - 4; x <= demon.x + demonR + 4; x++) {
-    if (!inb(x, z)) continue;
-    const d = Math.hypot(x - demon.x, z - demon.z) + (nM(x / 6, z / 6, 2) - 0.5) * 8;
-    if (d > demonR) continue;
-    const t = get(x, z);
-    if (t === T.SEA || t === T.DEEP) continue;
-    if (t === T.RIVER) { if (rng.chance(0.7)) set(x, z, T.LAVA); continue; }
-    if (t === T.PEAK || t === T.ROCK) continue;
-    set(x, z, rng.chance(0.03) ? T.LAVA : T.WASTE);
+  function placeDemon() {
+    let bestD = -Infinity;
+    const caps = settlements.filter((q) => q.type === 'capital');
+    for (let z = 20; z < H - 20; z += 2) for (let x = 20; x < W - 20; x += 2) {
+      const t = get(x, z);
+      if (!walkable(t) || t === T.ROCK || !onMain(x, z)) continue;
+      const dc = Math.min(...caps.map((c) => Math.hypot(c.x - x, c.z - z)));
+      if (dc < 110 || dc > 190) continue;                 // 王都から遠すぎず近すぎず（魔王軍が攻めてこられる所）
+      if (settlements.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + demonR + 40)) continue;
+      const sc = (x - z) * 0.15 + landScore(x, z) + rng.next();
+      if (sc > bestD) { bestD = sc; demon = { x, z }; }
+    }
+    if (!demon) demon = { x: Math.floor(W * 0.8), z: Math.floor(H * 0.2) };
+    for (let z = demon.z - demonR - 4; z <= demon.z + demonR + 4; z++) for (let x = demon.x - demonR - 4; x <= demon.x + demonR + 4; x++) {
+      if (!inb(x, z)) continue;
+      const d = Math.hypot(x - demon.x, z - demon.z) + (nM(x / 6, z / 6, 2) - 0.5) * 8;
+      if (d > demonR) continue;
+      const t = get(x, z);
+      if (t === T.SEA || t === T.DEEP) continue;
+      if (t === T.RIVER) { if (rng.chance(0.7)) set(x, z, T.LAVA); continue; }
+      if (t === T.PEAK || t === T.ROCK) continue;
+      set(x, z, rng.chance(0.03) ? T.LAVA : T.WASTE);
+    }
   }
 
   // --- 陸続きの塊（川は橋を架ければ渡れるので同じ塊に数える。島の町を作らないため） ---
@@ -186,17 +209,39 @@ export function generateWorld(rng, seed) {
   const onMain = (x, z) => inb(x, z) && landComp[idx(x, z)] === mainComp;
 
   // --- 国と町の場所 ---
+  // 国は3つ。王都どうしは KK_MIN マス以上離し、それぞれ海（港町の置き場）に近い広い平地を選ぶ
   const settlements = [];
-  const farFromAll = (x, z, r) => onMain(x, z) && settlements.every((s) => Math.hypot(s.x - x, s.z - z) >= s.r + r + 5) && Math.hypot(demon.x - x, demon.z - z) > demonR + r + 6;
-  const targets = [{ x: W * 0.3, z: H * 0.34 }, { x: W * 0.7, z: H * 0.62 }, { x: W * 0.34, z: H * 0.76 }];
+  const farFromAll = (x, z, r) => onMain(x, z) && settlements.every((s) => Math.hypot(s.x - x, s.z - z) >= s.r + r + 5) && (!demon || Math.hypot(demon.x - x, demon.z - z) > demonR + r + 6);
+  const isSea = (x, z) => { const t = get(x, z); return t === T.SEA || t === T.DEEP; };
+  // 王都から 28〜55 マスの輪の中に、港を置けそうな海辺があるか（24方向×数段で見る）
+  const coastNear = (x, z) => {
+    let n = 0;
+    for (let a = 0; a < 24; a++) {
+      const ca = Math.cos(a * Math.PI / 12), sa = Math.sin(a * Math.PI / 12);
+      for (let r = 28; r <= 55; r += 3) { const px = Math.round(x + ca * r), pz = Math.round(z + sa * r); if (isSea(px, pz)) { if (walkable(get(px - Math.sign(Math.round(ca)), pz - Math.sign(Math.round(sa)))) || r > 28) n++; break; } }
+    }
+    return n;
+  };
+  // 北の国・東の国・南の砂漠の国のおおよその位置（大陸の中の割合）
+  const targets = [{ x: W * 0.34, z: H * 0.32 }, { x: W * 0.68, z: H * 0.5 }, { x: W * 0.36, z: H * 0.72 }];
   KINGDOMS.forEach((k, ki) => {
-    const tg = targets[ki];
+    const tg = targets[ki] || { x: W / 2, z: H / 2 };
     let best = null, bs = -Infinity;
-    for (let z = Math.floor(tg.z - 22); z <= tg.z + 22; z++) for (let x = Math.floor(tg.x - 22); x <= tg.x + 22; x++) {
-      if (x < 16 || z < 16 || x > W - 17 || z > H - 17) continue;
+    for (let z = Math.floor(tg.z - 70); z <= tg.z + 70; z += 2) for (let x = Math.floor(tg.x - 70); x <= tg.x + 70; x += 2) {
+      if (x < 40 || z < 40 || x > W - 41 || z > H - 41) continue;
       const t = get(x, z);
-      if (t === T.WASTE || t === T.LAVA) continue;
-      const sc = landScore(x, z) - Math.hypot(x - tg.x, z - tg.z) * 0.6 + (k.south ? (t === T.DESERT || t === T.SAVANNA ? 6 : 0) : 0);
+      if (t === T.WASTE || t === T.LAVA || !walkable(t)) continue;
+      if (settlements.some((q) => Math.hypot(q.x - x, q.z - z) < KK_MIN)) continue;
+      const cn = coastNear(x, z);
+      if (cn < 1) continue;
+      const sc = landScore(x, z) - Math.hypot(x - tg.x, z - tg.z) * 0.25 + Math.min(cn, 4) * 3 + (k.south ? (t === T.DESERT || t === T.SAVANNA ? 8 : 0) : 0);
+      if (sc > bs && farFromAll(x, z, 15)) { bs = sc; best = { x, z }; }
+    }
+    // 海辺が見つからなければ、海の条件をはずして探し直す
+    if (!best) for (let z = Math.floor(tg.z - 90); z <= tg.z + 90; z += 2) for (let x = Math.floor(tg.x - 90); x <= tg.x + 90; x += 2) {
+      if (x < 40 || z < 40 || x > W - 41 || z > H - 41 || !walkable(get(x, z))) continue;
+      if (settlements.some((q) => Math.hypot(q.x - x, q.z - z) < KK_MIN)) continue;
+      const sc = landScore(x, z) - Math.hypot(x - tg.x, z - tg.z) * 0.25;
       if (sc > bs && farFromAll(x, z, 15)) { bs = sc; best = { x, z }; }
     }
     if (!best) best = { x: Math.floor(tg.x), z: Math.floor(tg.z) };
@@ -210,6 +255,8 @@ export function generateWorld(rng, seed) {
         const a = rng.next() * Math.PI * 2, d = rng.range(28, 44);
         const x = Math.round(cap.x + Math.cos(a) * d), z = Math.round(cap.z + Math.sin(a) * d);
         if (x < 10 || z < 10 || x > W - 11 || z > H - 11) continue;
+        // ほかの国の王都より自国の王都に近い所だけ
+        if (settlements.some((q) => q.type === 'capital' && q.kingdom !== ki && Math.hypot(q.x - x, q.z - z) < d + 30)) continue;
         const sc = landScore(x, z);
         if (sc > bs && farFromAll(x, z, 9)) { bs = sc; best = { x, z }; }
       }
@@ -217,20 +264,22 @@ export function generateWorld(rng, seed) {
     }
     // 港町
     let best = null, bs = Infinity;
-    for (let z = 6; z < H - 6; z++) for (let x = 6; x < W - 6; x++) {
+    for (let z = Math.max(6, cap.z - 60); z < Math.min(H - 6, cap.z + 61); z++) for (let x = Math.max(6, cap.x - 60); x < Math.min(W - 6, cap.x + 61); x++) {
       const t = get(x, z);
       if (!walkable(t) || t === T.ROCK || t === T.WASTE) continue;
       const coast = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => get(x + dx * 2, z + dz * 2) === T.SEA || get(x + dx * 2, z + dz * 2) === T.DEEP);
       if (!coast) continue;
       const d = Math.hypot(x - cap.x, z - cap.z);
       if (d < 26 || d > 60) continue;
+      if (settlements.some((q) => q.type === 'capital' && q.kingdom !== ki && Math.hypot(q.x - x, q.z - z) < d + 30)) continue;
       const sc = d - landScore(x, z) * 0.3;
       if (sc < bs && farFromAll(x, z, 10)) { bs = sc; best = { x, z }; }
     }
     if (best) settlements.push({ id: settlements.length, name: k.port, type: 'port', kingdom: ki, x: best.x, z: best.z, r: 10 });
   });
+  placeDemon();
 
-  // 国の領土（最も近い町の国）
+  // 国の領土（最も近い町の国）。町から KREACH マス（王都は少し広く）までで、その外は未開の地
   for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
     const t = get(x, z);
     if (t === T.DEEP || t === T.WASTE || t === T.LAVA) continue;
@@ -239,7 +288,7 @@ export function generateWorld(rng, seed) {
       const d = Math.hypot(s.x - x, s.z - z) * (s.type === 'capital' ? 0.8 : 1);
       if (d < bd) { bd = d; best = s.kingdom; }
     }
-    if (bd < 55) kingdomOf[idx(x, z)] = best;
+    if (bd < KREACH) kingdomOf[idx(x, z)] = best;
   }
 
   // 町の土地をならす
@@ -249,6 +298,7 @@ export function generateWorld(rng, seed) {
     for (let z = s.z - s.r - 1; z <= s.z + s.r + 1; z++) for (let x = s.x - s.r - 1; x <= s.x + s.r + 1; x++) {
       if (!inb(x, z)) continue;
       const i = idx(x, z), t = tiles[i];
+      kingdomOf[i] = s.kingdom;   // 町の中は（もとが深い海でも）その国の領土
       const edge = Math.max(Math.abs(x - s.x), Math.abs(z - s.z)) > s.r;
       if (s.type === 'port' && (t === T.SEA || t === T.DEEP)) continue;
       if (edge) { if (walkable(t)) hgt[i] = Math.round((hgt[i] + h0) / 2); continue; }
@@ -320,20 +370,19 @@ export function generateWorld(rng, seed) {
   const roadLinks = [];
   const linked = new Set();
   const link = (a, b) => { const k = a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`; if (linked.has(k)) return; linked.add(k); roadLinks.push([a, b]); };
+  // はじめの道は国の中だけ：王都と自国の町・村、自国の村どうし。国と国をつなぐ街道は造らない（のちに国が造る）
   for (const s of settlements) if (s.type !== 'capital') link(settlements[s.kingdom], s);
-  const capLinks = [[settlements[0], settlements[1]], [settlements[1], settlements[2]], [settlements[0], settlements[2]]];
-  for (const [a, b] of capLinks) link(a, b);
-  // 村や港は、いちばん近いほかの町とも結ぶ（隣村へ抜ける街道）
   for (const s of settlements) {
     if (s.type === 'capital') continue;
-    const near = settlements.filter((q) => q !== s && q.kingdom === s.kingdom ? q.type !== 'capital' : q !== s).sort((a, b) => Math.hypot(a.x - s.x, a.z - s.z) - Math.hypot(b.x - s.x, b.z - s.z))[0];
+    const near = settlements.filter((q) => q !== s && q.kingdom === s.kingdom && q.type !== 'capital').sort((a, b) => Math.hypot(a.x - s.x, a.z - s.z) - Math.hypot(b.x - s.x, b.z - s.z))[0];
     if (near && Math.hypot(near.x - s.x, near.z - s.z) < 48) link(s, near);
   }
-  const capPaths = [];
+  // 道は国の領土の中だけを通す（どうしても通らなければ、外へ少しはみ出してもよい）
+  const outside = (j) => kingdomOf[j] < 0;
   for (const [a, b] of roadLinks) {
-    const path = roadPath(a, b);
+    let path = roadPath(a, b, null, outside);
+    if (!path.length) path = roadPath(a, b);
     layRoad(path);
-    if (a.type === 'capital' && b.type === 'capital') capPaths.push({ a, b, path: path.slice().reverse() });
   }
 
   // --- 町の中 ---
@@ -579,41 +628,19 @@ export function generateWorld(rng, seed) {
     }
   }
 
-  // 国境の砦：王都どうしを結ぶ街道が国境を越えるあたりに、それぞれの国が砦を置く
+  // 国境の砦：はじめは国と国のあいだに街道がないので置かない（のちに expansion.js が建てる）
   const forts = [];
   const specials = [];
-  // 国境を越える街道のそば（自国側）を探す
-  const nearOther = (x, z, other, r = 3) => { for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) if (inb(x + dx, z + dz) && kingdomOf[idx(x + dx, z + dz)] === other) return true; return false; };
-  for (let ka = 0; ka < KINGDOMS.length; ka++) for (let kb = 0; kb < KINGDOMS.length; kb++) {
-    if (ka === kb) continue;
-    const A = settlements[ka], B = settlements[kb];
-    const mx = (A.x + B.x) / 2, mz = (A.z + B.z) / 2;
-    const streets = [];
-    for (const rr of [3, 7, 11]) {
-      for (let z = 1; z < H - 1; z++) for (let x = 1; x < W - 1; x++) {
-        const i = idx(x, z);
-        if (tiles[i] !== T.ROAD || kingdomOf[i] !== ka) continue;
-        if (settlements.some((q) => Math.max(Math.abs(q.x - x), Math.abs(q.z - z)) <= q.r + 3)) continue;
-        if (!nearOther(x, z, kb, rr)) continue;
-        streets.push({ x, z, d: Math.hypot(x - mx, z - mz) + Math.hypot(x - A.x, z - A.z) * 0.3 });
-      }
-      if (streets.length >= 3) break;
-    }
-    if (!streets.length) continue;
-    streets.sort((p, q) => p.d - q.d);
-    const mid = streets[0];
-    const proxy = { x: mid.x, z: mid.z, r: 40, id: undefined, kingdom: ka };
-    const other = KINGDOMS[kb].name.replace('王国', '');
-    const f = tryPlace(world0(), proxy, streets.slice(0, 20), 'fort', `${KINGDOMS[ka].name.replace('王国', '')}の${other}国境砦`, 3, 3, { land: [T.GRASS, T.SAVANNA, T.FOREST, T.DESERT, T.SNOW, T.BEACH, T.DENSE, T.JUNGLE, T.ROCK], extra: { special: true, fort: true, faces: other, capital: A.id } }, rng);
-    if (f) { forts.push(f.id); specials.push(f.id); }
-  }
 
   // --- 特別な場所 ---
   const farFromTowns = (x, z, d) => settlements.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + d);
-  function findSite(pred, n = 3000) {
+  // 既定では国の町のまわり（町から 75 マス以内）から探す。wide なら大陸全体から
+  function findSite(pred, n = 3000, wide = false) {
     let best = null, bs = -Infinity;
     for (let i = 0; i < n; i++) {
-      const x = rng.int(6, W - 7), z = rng.int(6, H - 7);
+      let x, z;
+      if (wide) { x = rng.int(6, W - 7); z = rng.int(6, H - 7); }
+      else { const s0 = settlements[rng.int(0, settlements.length - 1)], a = rng.next() * Math.PI * 2, r = Math.sqrt(rng.next()) * 75; x = Math.round(s0.x + Math.cos(a) * r); z = Math.round(s0.z + Math.sin(a) * r); if (x < 6 || z < 6 || x > W - 7 || z > H - 7) continue; }
       const sc = pred(x, z);
       if (sc != null && sc > bs) { bs = sc; best = { x, z }; }
     }
@@ -727,6 +754,78 @@ export function generateWorld(rng, seed) {
     if (free(fx, fz, fx + 2, fz + 1, [T.GRASS, T.FOREST, T.SAVANNA, T.DENSE])) for (let z = fz; z < fz + 2; z++) for (let x = fx; x < fx + 3; x++) { set(x, z, T.FIELD); hgt[idx(x, z)] = hgt[idx(site.x, site.z)]; fields.push({ x, z, s: home.id, camp: b.id }); }
   });
 
+  // --- 未開の地の魔物の住処（広い世界だけ）：洞窟の巣窟・古い遺跡・竜の巣。道はつながず、国も知らない ---
+  const wildSites = [];
+  if (WIDE) {
+    // 国の町からの距離（町の半径の外から）
+    const wildD = (x, z) => Math.min(...settlements.map((q) => Math.hypot(q.x - x, q.z - z) - q.r));
+    const apart = (x, z, r) => specials.every((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) > r);
+    const wild = (type, name, w, d, land, minD, extra, score) => {
+      const site = findSite((x, z) => {
+        if (kingdomOf[idx(x, z)] >= 0 || wildD(x, z) < minD || !onMain(x, z)) return null;
+        if (demon && Math.hypot(demon.x - x, demon.z - z) < demonR + 12) return null;
+        if (!okBox(x, z, w, d, land) || !farFromTowns(x, z, 30) || !apart(x, z, 28)) return null;
+        return score(x, z) + rng.next() * 2;
+      }, 5000, true);
+      const b = addSpecial(type, name, site, w, d, { kingdom: -1, wild: true, ...extra });
+      if (b) wildSites.push(b.id);
+      return b;
+    };
+    const rocky = (x, z) => [[0, -1], [1, -1], [2, -1], [-1, 0], [3, 0]].filter(([dx, dz]) => get(x + dx, z + dz) === T.ROCK || get(x + dx, z + dz) === T.PEAK).length;
+    const CAVES = ['黒牙の巣窟', '霧の谷の洞穴', '骸の大穴', '蜘蛛の森の洞', '北の氷窟', '呻きの坑', '影の岩屋', '毒沼の洞'];
+    const nCave = Math.min(CAVES.length, Math.round(AREA * 0.6));
+    for (let k = 0; k < nCave; k++) wild('cave', CAVES[k], 3, 2, [T.GRASS, T.FOREST, T.DENSE, T.SNOW, T.SAVANNA, T.ROCK, T.JUNGLE, T.SWAMP], 50, {}, (x, z) => rocky(x, z) * 3 + elev[idx(x, z)] * 6);
+    const RUINS = ['沈んだ王国の遺跡', '巨人の石環', '苔むした古城', '星の神殿跡'];
+    const nRuin = Math.min(RUINS.length, Math.round(AREA * 0.35));
+    for (let k = 0; k < nRuin; k++) wild('ruins', RUINS[k], 3, 3, [T.GRASS, T.JUNGLE, T.FOREST, T.SAVANNA, T.DENSE, T.DESERT, T.SNOW], 50, {}, () => 0);
+    // 竜の巣：奥地のいちばん奥。北の雪嶺と南の火の山に1つずつ
+    const DRAGONS = [{ name: '北嶺の竜の巣', dragonName: '白き竜スカルディン', north: true }, { name: '火の山の竜の巣', dragonName: '黒き竜ゾルガレス', north: false }];
+    for (const D of DRAGONS) wild('cave', D.name, 3, 2, [T.GRASS, T.FOREST, T.DENSE, T.SNOW, T.SAVANNA, T.ROCK, T.DESERT, T.JUNGLE], 90, { dragon: true, dragonName: D.dragonName },
+      (x, z) => rocky(x, z) * 3 + elev[idx(x, z)] * 8 + (D.north ? (H / 2 - z) : (z - H / 2)) * 0.08);
+  }
+
+  // --- 国に属さない村と、奥地の民族の里（置き場所だけ。土地をならし、広場を置く。道は造らない） ---
+  // world.freeVillages に { id, name, type:'village', kingdom:null, x, z, r, indep:true } または { ..., tribe:true, tribal:true } で入れる。
+  // world.settlements にはまだ入れない（人・世帯・町の蓄えがないと、ほかの仕組みが s.kingdom を国の番号として読んで止まるため）。
+  const freeVillages = [];
+  if (WIDE) {
+    const kDist = (x, z) => Math.min(...settlements.map((q) => Math.hypot(q.x - x, q.z - z) - q.r));
+    const FREE_R = 7;
+    const makeFree = (name, extra, minK) => {
+      const site = findSite((x, z) => {
+        if (!onMain(x, z) || x < 20 || z < 20 || x > W - 21 || z > H - 21) return null;
+        const t = get(x, z);
+        if (!walkable(t) || t === T.ROCK || t === T.SWAMP || t === T.WASTE || t === T.BLD) return null;
+        const kd = kDist(x, z);
+        if (kd < minK || kingdomOf[idx(x, z)] >= 0) return null;
+        if (freeVillages.some((v) => Math.hypot(v.x - x, v.z - z) < FREE_APART)) return null;
+        if (Math.hypot(demon.x - x, demon.z - z) < demonR + 40) return null;
+        if (specials.some((id) => Math.hypot(buildings[id].x - x, buildings[id].z - z) < 14)) return null;
+        let ok = 0;
+        for (let dz = -FREE_R; dz <= FREE_R; dz += 2) for (let dx = -FREE_R; dx <= FREE_R; dx += 2) { const tt = get(x + dx, z + dz); if (walkable(tt) && tt !== T.BLD && tt !== T.ROCK) ok++; }
+        if (ok < 50) return null;
+        return landScore(x, z) - Math.abs(kd - minK - 30) * 0.1 + rng.next() * 3;
+      }, 6000, true);
+      if (!site) return null;
+      const h0 = Math.max(1, hgt[idx(site.x, site.z)]);
+      for (let dz = -FREE_R; dz <= FREE_R; dz++) for (let dx = -FREE_R; dx <= FREE_R; dx++) {
+        const x = site.x + dx, z = site.z + dz;
+        if (!inb(x, z)) continue;
+        const i = idx(x, z), t = tiles[i];
+        if (!walkable(t) || t === T.BLD) continue;
+        hgt[i] = h0;
+        if (t === T.FOREST || t === T.DENSE || t === T.JUNGLE || t === T.ROCK) tiles[i] = T.GRASS;
+      }
+      const v = { id: freeVillages.length, name, type: 'village', kingdom: null, x: site.x, z: site.z, r: FREE_R, h: h0, ...extra };
+      freeVillages.push(v);
+      return v;
+    };
+    const INDEP = ['自由村ヴァルトハイム', '渡り鳥の村', '灰川の村'];
+    for (const n of INDEP) makeFree(n, { indep: true }, FREE_FROM_K);
+    // 民族の里は、国からさらに奥（のちに tribes.js が民族の村として使える印）
+    for (const n of ['奥地の民の里', '霧の森の民の里']) makeFree(n, { tribe: true, tribal: true }, FREE_FROM_K + 30);
+  }
+
   // --- 道の網を仕上げる：町・特別な場所・砦を、すべて王都から道でたどれるようにする ---
   const roadNet = new Uint8Array(N);
   const ROADISH = (t) => t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK;
@@ -738,10 +837,12 @@ export function generateWorld(rng, seed) {
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, nz = z + dz; if (!inb(nx, nz)) continue; const j = idx(nx, nz); if (!roadNet[j] && ROADISH(tiles[j])) { roadNet[j] = 1; st.push(j); } }
     }
   };
-  growNet(idx(settlements[0].x, settlements[0].z));
+  // 国ごとの道の網（王都から）。国と国の網はつながない
+  for (const s of settlements) if (s.type === 'capital') growNet(idx(s.x, s.z));
   const connect = (x, z) => {
     if (roadNet[idx(x, z)]) return true;
-    const path = roadPath({ x, z }, null, (i) => roadNet[i] === 1);
+    let path = roadPath({ x, z }, null, (i) => roadNet[i] === 1, outside);
+    if (!path.length) path = roadPath({ x, z }, null, (i) => roadNet[i] === 1 && kingdomOf[i] === kingdomOf[idx(x, z)]);
     if (!path.length) return false;
     layRoad(path);
     for (const i of path) growNet(i);
@@ -757,7 +858,7 @@ export function generateWorld(rng, seed) {
     for (const g of s.gates) {
       const ox = g.x + g.dx, oz = g.z + g.dz;
       if (!inb(ox, oz) || !walkable(get(ox, oz)) && get(ox, oz) !== T.RIVER) continue;
-      const path = roadPath({ x: ox, z: oz }, null, (i) => roadNet[i] === 1 && cheb(i) > RR + 3, (j) => cheb(j) <= RR);
+      const path = roadPath({ x: ox, z: oz }, null, (i) => roadNet[i] === 1 && cheb(i) > RR + 3, (j) => cheb(j) <= RR || outside(j));
       if (path.length && path.length < 40) { layRoad(path); for (const i of path) growNet(i); }
     }
   }
@@ -771,15 +872,22 @@ export function generateWorld(rng, seed) {
       for (const g of s.gates) { const old = before.find((q) => q.x === g.x && q.z === g.z); if (old?.post != null) g.post = old.post; }
     }
   }
-  const unlinked = [];
+  const unlinked = [], offroad = [];
   for (const id of specials) {
     const b = buildings[id];
-    if (b.camp) continue; // 開拓地への道は、これから道普請が造る
+    if (b.camp || b.wild) continue; // 開拓地への道は、これから道普請が造る。未開の地の住処には道はない
+    // 国の外にある場所（洞窟・遺跡・魔王城など）には道を造らない（国の外は未開のまま）
+    if (kingdomOf[idx(b.door.x, b.door.z)] < 0) { offroad.push(b.id); continue; }
     if (!connect(b.door.x, b.door.z)) unlinked.push(b.name);
   }
 
   return {
-    W, H, tiles: Array.from(tiles), hgt: Array.from(hgt), kingdomOf: Array.from(kingdomOf), bldAt: Array.from(bldAt),
+    W, H,
+    // 国ごとのおおよその広がり（王都の位置と、町のいちばん外までの距離）
+    realms: KINGDOMS.map((_, k) => { const ss = settlements.filter((q) => q.kingdom === k), c = ss.find((q) => q.type === 'capital'); return { k, x: c.x, z: c.z, r: Math.round(Math.max(...ss.map((q) => Math.hypot(q.x - c.x, q.z - c.z) + q.r)) + KREACH) }; }),
+    settled: null,        // 開拓済みは四角ではなく kingdomOf（国の領土）で表す
+    wildSites, freeVillages, offroad,
+    tiles: Array.from(tiles), hgt: Array.from(hgt), kingdomOf: Array.from(kingdomOf), bldAt: Array.from(bldAt),
     buildings, settlements, specials, demon, demonR, fields, pastures, rivers: rivers.length, forts, camps, unlinked,
     placeHouse: null,
   };

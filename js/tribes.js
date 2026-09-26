@@ -694,8 +694,9 @@ export function tribesDaily(sim) {
   globalTriggers(sim);
   stepArcs(sim);
   if (sim.today % 5 === 0) {
-    X.hist.push({ d: sim.today, pop: X.villages.map((V) => sim.living().filter((p) => p.s === V.sid).length), faith: X.villages.map((V) => Math.round(V.faith)) });
-    if (X.hist.length > 200) X.hist.shift();
+    X.popHist = X.popHist || [];
+    X.popHist.push({ d: sim.today, pop: X.villages.map((V) => sim.living().filter((p) => p.s === V.sid).length), faith: X.villages.map((V) => Math.round(V.faith)) });
+    if (X.popHist.length > 200) X.popHist.shift();
   }
 }
 
@@ -1469,6 +1470,7 @@ const ACT = {
     },
     ally(sim, st, V) { return { delay: 3 }; },
     wake(sim, st, V) {
+      if (V.gstate !== 'sealed') return { to: 'end_resealed', silent: true };
       const c = guardianC(sim, V) || spawnGuardian(sim, V, gOfV(V), false);
       if (c) { c.dormant = false; c.calm = null; c.hostile = true; }
       V.gstate = 'woken'; V.lamps = 0;
@@ -2128,3 +2130,5 @@ export function tribesNationHTML(sim, esc) {
   if (pend.length) h += `<p class="small">まだ誰も知らない民：${pend.map(esc).join('、')}（大陸が広がれば見つかる）</p>`;
   return h + '</div>';
 }
+// 試験・デバッグ用：筋を手で始める（村番号 vid）
+export function startTribeArc(sim, arcId, vid, cast = {}, ctx = {}) { return startArc(sim, arcId, vOf(sim, vid), cast, ctx); }

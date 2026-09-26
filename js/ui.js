@@ -333,8 +333,9 @@ export class UI {
     const S = this.sim.S;
     for (const s of S.world.settlements) {
       g.fillStyle = S.towns[s.id].occupied ? '#5a1a2a' : '#fff';
-      g.fillRect(s.x - 2, s.z - 2, 4, 4);
-      g.strokeStyle = KINGDOMS[s.kingdom].color; g.strokeRect(s.x - 2.5, s.z - 2.5, 5, 5);
+      const mm = W > 200 ? 5 : 2;   // 広い大陸では小地図が縮むので、町の印を大きく
+      g.fillRect(s.x - mm, s.z - mm, mm * 2, mm * 2);
+      g.strokeStyle = KINGDOMS[s.kingdom].color; g.lineWidth = W > 200 ? 2 : 1; g.strokeRect(s.x - mm - 0.5, s.z - mm - 0.5, mm * 2 + 1, mm * 2 + 1); g.lineWidth = 1;
     }
     // 魔物の分布（危険区域）
     if (this.showDanger && S.dangerMap) {
@@ -356,7 +357,7 @@ export class UI {
       else if (p.mission?.type === 'march') { g.fillStyle = KINGDOMS[this.sim.townOf(p).kingdom].color; g.fillRect(p.pos.x - 1, p.pos.z - 1, 2, 2); }
     }
     const sel = this.selected != null ? this.sim.entity(this.selected) : null;
-    if (sel && sel.pos) { g.strokeStyle = '#ffe066'; g.strokeRect(sel.pos.x - 3, sel.pos.z - 3, 6, 6); }
+    if (sel && sel.pos) { const sm = W > 200 ? 8 : 3; g.strokeStyle = '#ffe066'; g.lineWidth = W > 200 ? 3 : 1; g.strokeRect(sel.pos.x - sm, sel.pos.z - sm, sm * 2, sm * 2); g.lineWidth = 1; }
     const v = this.r.viewInfo();
     g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 1;
     g.strokeRect(v.x - v.r, v.z - v.r * 0.7, v.r * 2, v.r * 1.4);

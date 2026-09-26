@@ -90,7 +90,7 @@ function scarce(sim, sp) {
     for (const c of Object.values(S.creatures)) if (c.hp > 0 && BEASTS.has(c.sp)) n[c.sp] = (n[c.sp] || 0) + 1;
   }
   const t = popTarget(sim, sp) || 0;
-  return (sim._rescueCnt[sp] || 0) <= Math.max(3, t * 0.7);
+  return (sim._rescueCnt[sp] || 0) <= Math.max(3, t * 0.85);
 }
 // 殺すか、追い払うか：人を襲っている・飢えている・畑を荒らす・人を殺したことのある獣と魔物は討つ。
 // ただうろついているだけの獣は、人が大勢で近づけば逃げるので追い払う（どの種も絶滅させない）
@@ -124,6 +124,8 @@ function nearestTown(sim, x, z) {
   for (const s of sim.S.world.settlements) { const d = Math.hypot(s.x - x, s.z - z) - s.r; if (d < bd) { bd = d; best = s; } }
   return best;
 }
+// 名前の並び：3人までは「AとBとC」、それより多ければ「AとBら5人」
+function names(list) { return list.length <= 3 ? list.join('と') : `${list.slice(0, 2).join('と')}ら${list.length}人`; }
 function say(sim, p, text) { if (sim.isWatched(p)) sim.events.push({ type: 'say', id: p.id, text }); }
 
 // ---------- 出来事（1頭の獣・魔物につき1件） ----------
@@ -158,8 +160,8 @@ export function rescueStep(sim, dt) {
       if (!scary || strong) continue;
       c = t;
     } else if (p.action?.type === 'flee' && sim._cgrid) {
-      let bd = 8;
-      for (const o of around(sim._cgrid, p.pos.x, p.pos.z, 8)) {
+      let bd = 6;   // 逃げていても、獣がすぐそばに迫ったときだけ叫ぶ
+      for (const o of around(sim._cgrid, p.pos.x, p.pos.z, 6)) {
         if (!isThreat(o)) continue;
         const d = Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z);
         if (d < bd) { bd = d; c = o; }
@@ -263,7 +265,7 @@ function hear(sim, victim, c, inc) {
     const lead = joined[0];
     say(sim, lead, rng.pick(['今行くぞ！', '持ちこたえろ！', `${victim.given}、待ってろ！`, 'みんな、手を貸してくれ！']));
     if (joined.length >= 2) for (const a of joined) for (const b of joined) if (a !== b) sim.relMut(a, b).a = Math.min(100, sim.rel(a, b).a + 2);
-    addLog(sim, `${victim.given}の「助けて！」を聞き、${joined.map((q) => q.given).join('と')}が${c.name}に立ち向かいに駆けつけた。`, joined.map((q) => q.id).concat(victim.id), c.pos);
+    addLog(sim, `${victim.given}の「助けて！」を聞き、${names(joined.map((q) => q.given))}が${c.name}に立ち向かいに駆けつけた。`, joined.map((q) => q.id).concat(victim.id), c.pos);
   }
 }
 
@@ -371,6 +373,12 @@ function stepIncident(sim, inc) {
       sim.remember(p, `${inc.name}に手傷を負わされ、引き下がるしかなかった`, { emo: -0.5, imp: 0.55, k: 'fight' });
       continue;
     }
+    // 行く手に竜のような相手がいたら引き返す
+    if (!p.fight && deadlyNear(sim, p.pos.x, p.pos.z, 12)) {
+      p.mission = null; p.action = null; (inc.out = inc.out || []).push(p.id); R.stats.tooStrong++;
+      sim.startAction(p, { type: 'flee', place: sim.placeFor(p, 'home'), dur: 60 });
+      continue;
+    }
     p.mission.until = Math.max(p.mission.until, S.t + 30);
     if (p.fight) continue;
     const d = dist(p, c);
@@ -446,9 +454,9 @@ function dispatch(sim, inc, c, starter, reporter) {
   for (const q of team) sendRescue(sim, q, c, inc);
   R.stats.dispatched += team.length;
   if (team.length >= 2) R.stats.groups++;
-  const names = team.map((q) => `${JOBS[q.job]?.name || ''}${q.given}`).join('と');
+  const who = names(team.map((q) => `${JOBS[q.job]?.name || ''}${q.given}`));
   const why = reporter ? `${reporter.given}の知らせを受け、` : '';
-  addLog(sim, `${why}${names}が${sim.placeName(c.pos.x, c.pos.z)}の${inc.name}の退治に向かった。`, team.map((q) => q.id), c.pos);
+  addLog(sim, `${why}${who}が${sim.placeName(c.pos.x, c.pos.z)}の${inc.name}の退治に向かった。`, team.map((q) => q.id), c.pos);
   if (team[0]) say(sim, team[0], rng.pick(['行くぞ！', '案内してくれ！', `${inc.name}か。任せておけ`]));
   return true;
 }
@@ -484,12 +492,12 @@ function finish(sim, inc, how) {
   if (how === 'killed') R.stats.killed++; else R.stats.drivenOff++;
   const verb = how === 'killed' ? '討ち取り' : '追い払い';
   const saved = inc.victims.map((id) => S.people[id]).filter((v) => alive(sim, v) && !heroes.includes(v));
-  const hn = heroes.map((p) => p.given).join('と');
+  const hn = names(heroes.map((p) => p.given));
   const where = sim.placeName(inc.x, inc.z);
   const pos = { x: inc.x, z: inc.z };
   if (saved.length) {
     R.stats.saved += saved.length;
-    const vn = saved.map((v) => v.given).join('と');
+    const vn = names(saved.map((v) => v.given));
     const text = `${hn}が${where}で${inc.name}を${verb}、${vn}を救った。`;
     if (['bear', 'tiger', 'polarbear'].includes(inc.sp) || heroes.length >= 3) sim.news(`${hn}が${inc.name}から${vn}を救った`, 1, pos);
     addLog(sim, text, heroes.map((p) => p.id).concat(saved.map((v) => v.id)), pos);

@@ -57,7 +57,7 @@ export function initMonsters(sim) {
 
 function bandBase(sim, band) {
   if (band.lair != null) { const b = sim.building(band.lair); if (b) return { x: b.door.x, z: b.door.z }; }
-  return band.camp || { x: 80, z: 80 };
+  return band.camp || { x: W >> 1, z: H >> 1 };
 }
 function bandMembers(sim, band) { return band.members.map((id) => sim.S.creatures[id]).filter((c) => alive(sim.S, c)); }
 function famOf(c) { return c.rebel ? 'demon' : FAMILY[c.sp] || null; }
@@ -95,7 +95,7 @@ function findNewHome(sim, from, fam, minD = 14, maxD = 32) {
   const S = sim.S, w = S.world, R = sim.rng;
   const usedLairs = new Set(Object.values(S.bands).map((b) => b.lair).filter((x) => x != null));
   if (fam !== 'demon') {
-    const lair = w.specials.map((id) => sim.building(id)).find((b) => ['cave', 'ruins', 'pyramid'].includes(b.type) && !usedLairs.has(b.id) && Math.hypot(b.door.x - from.x, b.door.z - from.z) < 45 && b.name !== '竜の巣穴');
+    const lair = w.specials.map((id) => sim.building(id)).find((b) => ['cave', 'ruins', 'pyramid'].includes(b.type) && !usedLairs.has(b.id) && Math.hypot(b.door.x - from.x, b.door.z - from.z) < 45 && b.name !== '竜の巣穴' && !b.dragon);
     if (lair) return { lair: lair.id, x: lair.door.x, z: lair.door.z };
   }
   const mask = townMask(sim);

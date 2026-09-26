@@ -1,6 +1,6 @@
 // 動物・魔物：それぞれの目的で動き、食べ、増え、進化し、危険を学ぶ
 import { SPECIES } from './data.js';
-import { T, W, H, walkable, tileAt, biomeOf, isWater } from './world.js';
+import { T, W, H, CORE, walkable, tileAt, biomeOf, isWater } from './world.js';
 import { findPath } from './path.js';
 import { findPathFar } from './pathfar.js';
 import { lodBegin, lodDue, lodCreatureGrid, creatureArray } from './lod.js';
@@ -18,6 +18,8 @@ const POP = {
   reindeer: 8, polarbear: 3, penguin: 8, seagull: 10, eagle: 4, dolphin: 8, whale: 3,
   slime: 12, unicorn: 2, golem: 3, goblin: 10, orc: 6, skeleton: 8, mummy: 6, spider: 6, wyvern: 2, imp: 8, demonsoldier: 4,
 };
+const WIDE_WORLD = W > CORE;
+const SPAWN_FRAC = 0.6;   // 広い世界で、はじめに放つ数（目安に対する割合）
 const PREY = new Set(['deer', 'boar', 'rabbit', 'squirrel', 'camel', 'reindeer', 'penguin', 'monkey', 'cow', 'sheep', 'pig', 'chicken', 'goat', 'horse', 'slime', 'rat', 'frog', 'duck', 'turtle', 'donkey']);
 const PREDATOR = new Set(['wolf', 'bear', 'fox', 'tiger', 'polarbear', 'croc', 'scorpion', 'eagle', 'snake', 'owl']);
 const TIER_XP = [0, 40, 130, 400];
@@ -140,9 +142,11 @@ export function spawnInitialCreatures(sim) {
     }
   }
   // 野生動物
-  for (const [sp, n] of Object.entries(POP)) {
+  for (let [sp, n] of Object.entries(POP)) {
     const def = SPECIES[sp];
     if (!def.biome || sp === 'rat') continue;
+    // 広い世界：数は生息地の広さに比例（fauna.js の目安）。はじめは目安の一部だけ放ち、あとは子を産んで増える
+    if (WIDE_WORLD) n = Math.max(n, Math.round((popTarget(sim, sp) || n) * SPAWN_FRAC));
     const spots = tilesOfBiome(w, def.biome, def.pack ? Math.ceil(n / 3) : n, R, (x, z, t) => (def.swims ? isWater(t) && t !== T.RIVER : walkable(t) || def.flies) && ((def.kind === 'wild' || def.kind === 'hostile') && !def.flies ? farFromTown(x, z) && w.settlements.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + (def.kind === 'hostile' ? 14 : 4)) : true));
     for (const sp0 of spots) {
       const count = def.pack ? 3 : 1;
@@ -158,9 +162,10 @@ export function spawnInitialCreatures(sim) {
       const p = sim.randomNear(b.door.x, b.door.z, 4);
       if (p) makeCreature(sim, sp, p.x, p.z, { lair: b.id, hx: b.door.x, hz: b.door.z, range: 7, lv: R.int(1, 4) });
     }
-    if (b.name === '竜の巣穴') {
+    if (b.name === '竜の巣穴' || b.dragon) {
+      // 未開の地の竜の巣（world.js が b.dragon と竜の名を付ける）は、国々の竜より少し強い
       const p = sim.randomNear(b.door.x, b.door.z, 3);
-      if (p) { const d = makeCreature(sim, 'dragon', p.x, p.z, { lair: b.id, hx: b.door.x, hz: b.door.z, range: 10, lv: 3 }); d.title = '赤き竜ヴァルグリム'; applyStats(d); d.named = true; }
+      if (p) { const d = makeCreature(sim, 'dragon', p.x, p.z, { lair: b.id, hx: b.door.x, hz: b.door.z, range: 10, lv: b.dragon ? 4 : 3 }); d.title = b.dragonName || '赤き竜ヴァルグリム'; applyStats(d); d.named = true; }
     }
   }
   // 魔界
@@ -212,7 +217,8 @@ export function stepCreatures(sim, dt) {
     if (c.fight) continue;
     c.think = (c.think || 0) - cdt;
     if (c.think <= 0) {
-      c.think = R.range(1.5, 3);
+      // 遠い荒野の生き物（LOD の段階1・2）は、考える間隔も長くする（誰も見ていない所で細かく迷わない）
+      c.think = R.range(1.5, 3) * (k > 1 ? k * 0.8 : 1);
       think(sim, c, def, around(cgrid, c.pos.x, c.pos.z, 12), around(hgrid, c.pos.x, c.pos.z, 9));
     }
     move(sim, c, def, cdt);

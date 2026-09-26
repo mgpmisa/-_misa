@@ -6,7 +6,7 @@
 //   c.bond（飼い主へのなつき）、c.master（主人の人id）、c.wary（覚えた狩人）、c.likes（餌をくれる人）、
 //   c.forage（人里へ降りている）、c.mig（季節移動・渡り）、c.hibernate（冬眠）、c.mourn（主人の墓守り）
 import { SPECIES, KINGDOMS, DAYS_PER_YEAR, DAYS_PER_SEASON } from './data.js';
-import { T, W, H, walkable, tileAt, biomeOf, isWater } from './world.js';
+import { T, W, H, CORE, walkable, tileAt, biomeOf, isWater } from './world.js';
 import { makeCreature, killCreature, applyStats, townMask } from './creatures.js';
 import { startFight } from './society.js';
 
@@ -1279,12 +1279,14 @@ function geeseGrounds(sim) {
   const S = sim.S, F = S.fauna, w = S.world, R = sim.rng, mask = townMask(sim);
   if (F.grounds) return F.grounds;
   // 北の国と南の国（町の平均の位置）
-  const kz = [0, 1, 2].map((k) => { const ss = w.settlements.filter((s) => s.kingdom === k); return ss.length ? ss.reduce((a, s) => a + s.z, 0) / ss.length : 80; });
+  const kz = [0, 1, 2].map((k) => { const ss = w.settlements.filter((s) => s.kingdom === k); return ss.length ? ss.reduce((a, s) => a + s.z, 0) / ss.length : H / 2; });
   const north = kz.indexOf(Math.min(...kz)), south = kz.indexOf(Math.max(...kz));
   const pick = (k, biomes) => {
     const out = [];
     for (let i = 0; i < 6000 && out.length < 3; i++) {
-      const x = R.int(3, W - 4), z = R.int(3, H - 4);
+      // 国の中だけを探す（広い世界では、その国の町のまわり 45 マス以内から選ぶ）
+      const ss = w.settlements.filter((s) => s.kingdom === k), s0 = ss.length ? ss[R.int(0, ss.length - 1)] : { x: W / 2, z: H / 2 };
+      const x = Math.min(W - 4, Math.max(3, Math.round(s0.x + R.range(-45, 45)))), z = Math.min(H - 4, Math.max(3, Math.round(s0.z + R.range(-45, 45))));
       if ((w.kingdomOf?.[z * W + x] ?? k) !== k || mask[z * W + x]) continue;
       const t = w.tiles[z * W + x];
       if (!walkable(t) || t === T.BLD || !biomes.includes(biomeOf(t))) continue;
@@ -1296,8 +1298,8 @@ function geeseGrounds(sim) {
     return out;
   };
   F.grounds = { north: pick(north, ['grass', 'forest', 'snow']), south: pick(south, ['grass', 'jungle', 'desert', 'forest']), nk: north, sk: south };
-  if (!F.grounds.north.length) F.grounds.north = [{ x: 80, z: 30 }];
-  if (!F.grounds.south.length) F.grounds.south = [{ x: 80, z: 130 }];
+  if (!F.grounds.north.length) F.grounds.north = [{ x: w.settlements[north]?.x ?? W / 2, z: w.settlements[north]?.z ?? H / 3 }];
+  if (!F.grounds.south.length) F.grounds.south = [{ x: w.settlements[south]?.x ?? W / 2, z: w.settlements[south]?.z ?? H * 2 / 3 }];
   return F.grounds;
 }
 
@@ -1658,11 +1660,15 @@ export function habitatArea(sim, sp) {
   return (SPECIES[sp]?.biome || []).reduce((s, b) => s + (cnt[b] || 0), 0);
 }
 // 数の目安：生息地の広さ × 密度（ガンは大陸の広さに比例）
+// 広い世界（W>CORE）では、ひとつの種が大陸じゅうにあふれて重くならないよう、
+// 「もとの 160 の大陸の目安 × 広さの倍率 × WIDE_CAP」を上限にする（密度の考え方はそのまま）
+const WIDE = W > CORE, AREA_X = (W * H) / (CORE * CORE), WIDE_CAP = 0.8;
 export function popTarget(sim, sp) {
-  if (sp === 'goose') return Math.max(10, Math.round(14 * W * H / 25600));
+  if (sp === 'goose') return Math.max(10, Math.round(14 * (WIDE ? AREA_X * WIDE_CAP : W * H / 25600)));
   const d = DENSITY[sp];
   if (d == null) return POP[sp] ?? null;
-  return Math.max(2, Math.round(habitatArea(sim, sp) * d / 1000));
+  const t = Math.max(2, Math.round(habitatArea(sim, sp) * d / 1000));
+  return WIDE && POP[sp] ? Math.min(t, Math.max(2, Math.round(POP[sp] * AREA_X * WIDE_CAP))) : t;
 }
 export function isRare(sim, sp) {
   const t = popTarget(sim, sp);

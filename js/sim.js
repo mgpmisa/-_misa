@@ -5,7 +5,7 @@ import { generateHistory, createPersonFactory } from './history.js';
 import { generateWorld, openGates, makeHousePlacer, T, W, H, walkable, tileAt, heightAt, TILE_NAME } from './world.js';
 import { findPath } from './path.js';
 import { findPathFar } from './pathfar.js';
-import { lodWalkMul } from './lod.js';
+import { lodWalkMul, creatureArray } from './lod.js';
 import { ancestors, kinTerm, isCloseKin, siblings } from './kin.js';
 import { composeConversation, innerThought, speechStyle } from './speech.js';
 import { spawnInitialCreatures, stepCreatures, creatureDaily, settleCreature } from './creatures.js';
@@ -92,6 +92,8 @@ export class Sim {
   async load() {
     const data = await loadWorld();
     if (!data || data.version !== 2) return false;
+    // 大陸の広さが違うセーブ（160×160 の古い世界など）は読み込まず、新しい世界を作る（main.js が clearSave して newWorld する）
+    if ((data.world?.W ?? 160) !== W || (data.world?.H ?? 160) !== H || data.world?.tiles?.length !== W * H) return false;
     this.S = data;
     this.rng = makeRng(data.seed);
     this.rng.state = data.rngState;
@@ -700,8 +702,8 @@ export class Sim {
     // 冒険者の目的：懸賞金のかかった魔物・ダンジョン・盗賊のアジト
     const w = this.S.world, s = this.townOf(p);
     const opts = [];
-    for (const c of Object.values(this.S.creatures)) {
-      if (!c.hostile || c.hp <= 0) continue;
+    for (const c of creatureArray(this)) {
+      if (!c.hostile || c.hp <= 0 || this.S.creatures[c.id] !== c) continue;
       const d = Math.hypot(c.pos.x - s.x, c.pos.z - s.z);
       if (d > 40) continue;
       const risk = c.lv * 3 + c.atk + c.maxhp / 10 - p.lv * 4 - p.atk - p.maxhp / 10;
@@ -963,7 +965,7 @@ export class Sim {
       case 'hunter': {
         if (!p.fight && this.rng.chance(0.05 * dt)) {
           let prey = null, bd = 9;
-          for (const c of Object.values(this.S.creatures)) {
+          for (const c of around(this._cgrid || new Map(), p.pos.x, p.pos.z, 9)) {
             if (c.kind !== 'wild' || c.hp <= 0 || c.atk > p.atk * 1.5 || !canHunt(this, 'human', c.sp)) continue;
             const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
             if (d < bd) { bd = d; prey = c; }
@@ -1010,7 +1012,7 @@ export class Sim {
       case 'priest': case 'elder': case 'jailer': case 'servant': case 'guard': case 'soldier': case 'knight': {
         const k = this.kingdomOf(p);
         const pay = ({ knight: 1.4, soldier: 1, guard: 1, jailer: 0.9, servant: 0.8, priest: 1, elder: 0.7 }[p.job]) * hr;
-        if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else { const town = S.towns[p.s]; const f = Math.min(pay * 0.5, town.fund || 0); town.fund -= f; hh.money += f; }
+        if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else { const town = this.S.towns[p.s]; const f = Math.min(pay * 0.5, town.fund || 0); town.fund -= f; hh.money += f; }
         if (['soldier', 'knight'].includes(p.job)) { p.xp = (p.xp || 0) + 0.3 * hr; this.levelCheck(p); }
         break;
       }
@@ -1105,7 +1107,7 @@ export class Sim {
       }
       case 'keeper': S.towns[p.s].lighthouse = S.t; break; // 灯台の火が船を守る（嵐の被害が減る）
       case 'stablehand': {
-        for (const c of Object.values(S.creatures)) if (c.sp === 'horse' && c.owner === p.s && Math.abs(c.pos.x - p.pos.x) + Math.abs(c.pos.z - p.pos.z) < 6) { c.hunger = 100; c.hp = Math.min(c.maxhp, c.hp + 2 * hr); }
+        for (const c of around(this._cgrid || new Map(), p.pos.x, p.pos.z, 6)) if (c.sp === 'horse' && c.owner === p.s && Math.abs(c.pos.x - p.pos.x) + Math.abs(c.pos.z - p.pos.z) < 6) { c.hunger = 100; c.hp = Math.min(c.maxhp, c.hp + 2 * hr); }
         break;
       }
       case 'watchman': case 'guard': {
@@ -1375,7 +1377,7 @@ export class Sim {
       // ダンジョン探索：中の魔物と戦い、宝を見つける
       const b = this.building(+q.target.slice(1));
       if (b.type !== 'hideout' && !p.inside && Math.hypot(p.pos.x - b.door.x, p.pos.z - b.door.z) < 2) { p.inside = b.id; }
-      const guards = Object.values(this.S.creatures).filter((c) => c.lair === b.id && c.inDungeon && c.hp > 0);
+      const guards = creatureArray(this).filter((c) => c.lair === b.id && c.inDungeon && c.hp > 0 && this.S.creatures[c.id] === c);
       if (guards.length && !a.explored) {
         if (!p.fight) startFight(this, p, guards.sort((x, y) => x.maxhp - y.maxhp)[0]);
         a.until = Math.max(a.until, this.S.t + 10);
