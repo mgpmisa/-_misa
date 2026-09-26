@@ -2,14 +2,32 @@
 // 王朝・戦争・歴代の魔王と勇者・町ごとの家系。住人たちは本物の過去を持つ。
 import { clamp } from './rng.js';
 import {
-  MALE_NAMES, FEMALE_NAMES, SOUTH_MALE, SOUTH_FEMALE, FAMILY_NAMES, SOUTH_FAMILIES, ORIGINS, JOBS, JOB_QUOTA,
+  MALE_NAMES, FEMALE_NAMES, SOUTH_MALE, SOUTH_FEMALE, FAMILY_NAMES, SOUTH_FAMILIES, ORIGINS, JOBS, JOB_QUOTA, JOB_PRIORITY,
   SAYINGS, DREAMS, HISTORY_YEARS, DAYS_PER_YEAR, KINGDOMS,
 } from './data.js';
 import { kinTerm } from './kin.js';
 
 // 要職は大人（21歳以上）だけ、14〜16歳は見習いでもできる仕事だけ
-const SENIOR_JOBS = new Set(['general', 'chancellor', 'treasurer', 'royalguard', 'courtmage', 'knight', 'guildmaster', 'paladin', 'elder', 'captain', 'doctor', 'priest', 'scholar', 'sage', 'teacher', 'midwife', 'jailer', 'changer', 'merchant', 'innkeeper', 'banditchief', 'swindler', 'storyteller', 'butler']);
-const YOUTH_JOBS = new Set(['farmer', 'fisher', 'sailor', 'shepherd', 'gatherer', 'maid', 'stablehand', 'laundress', 'messenger', 'servant', 'woodcutter', 'charcoal', 'miner', 'gardener', 'cook', 'baker', 'smith', 'carpenter', 'tailor', 'weaver', 'potter', 'cobbler', 'nanny', 'musician', 'dancer', 'hunter', 'rancher', 'beekeeper', 'miller', 'mason', 'diver', 'soldier', 'militia']);
+export const SENIOR_JOBS = new Set(['general', 'chancellor', 'treasurer', 'royalguard', 'courtmage', 'knight', 'guildmaster', 'paladin', 'elder', 'captain', 'doctor', 'priest', 'scholar', 'sage', 'teacher', 'midwife', 'jailer', 'changer', 'merchant', 'innkeeper', 'banditchief', 'swindler', 'storyteller', 'butler', 'overseer', 'swordmaster', 'magister']);
+export const YOUTH_JOBS = new Set(['farmer', 'fisher', 'sailor', 'shepherd', 'gatherer', 'maid', 'stablehand', 'laundress', 'messenger', 'servant', 'woodcutter', 'charcoal', 'miner', 'gardener', 'cook', 'baker', 'smith', 'carpenter', 'tailor', 'weaver', 'potter', 'cobbler', 'nanny', 'musician', 'dancer', 'hunter', 'rancher', 'beekeeper', 'miller', 'mason', 'diver', 'soldier', 'militia', 'roadworker', 'pioneer', 'coachman', 'peddler', 'troupe', 'ferryman']);
+const NO_QUOTA_FILL = new Set(['king', 'noble', 'thief', 'beggar']);
+
+// 町の職業の枠のうち、足りないもの（足りない割合の大きい順・同じなら欠かせない職から）
+export function lackingJobs(townType, counts, age = 30) {
+  const quota = JOB_QUOTA[townType] || {};
+  const pri = (j) => { const i = JOB_PRIORITY.indexOf(j); return i < 0 ? 99 : i; };
+  return Object.keys(quota)
+    .filter((j) => (counts[j] || 0) < quota[j] && !NO_QUOTA_FILL.has(j) && JOBS[j] && (age >= 21 || !SENIOR_JOBS.has(j)) && (age >= 17 || YOUTH_JOBS.has(j)))
+    .sort((a, b) => ((counts[a] || 0) / quota[a]) - ((counts[b] || 0) / quota[b]) || pri(a) - pri(b));
+}
+// 14歳の最初の仕事：親の仕事を継ぐか、町で足りない仕事に就くか、農夫・漁師
+export function chooseYouthJob(rng, p, townType, counts, parents = [], age = 14) {
+  const par = parents.find((q) => q && q.job && JOBS[q.job] && !['king', 'royal', 'noble', 'beggar', 'thief', 'banditchief'].includes(q.job) && (age >= 21 || !SENIOR_JOBS.has(q.job)) && (age >= 17 || YOUTH_JOBS.has(q.job)));
+  const lack = lackingJobs(townType, counts, age);
+  if (par && rng.chance(lack.length ? 0.45 : 0.6)) return par.job;
+  if (lack.length && rng.chance(0.7)) return lack[Math.min(lack.length - 1, Math.floor(rng.next() * Math.min(3, lack.length)))];
+  return townType === 'port' ? rng.pick(['fisher', 'sailor', 'farmer']) : 'farmer';
+}
 
 const HAIR = ['#e8c872', '#b07a3a', '#6b4226', '#2e1f16', '#c2542d', '#8a5a2b'];
 const HAIR_S = ['#2e1f16', '#1a1410', '#4a3020', '#6b4226'];
@@ -240,14 +258,10 @@ export function generateHistory(rng, world) {
       if (p.job || age(p, y) < 14) continue;
       const father = people[p.fatherId], mother = people[p.motherId];
       const st = S[p.s].type;
-      const quota = JOB_QUOTA[st];
       const cnt = {};
       for (const q of alive) if (q.s === p.s && q.job) cnt[q.job] = (cnt[q.job] || 0) + 1;
       const a0 = age(p, y);
-      const lacking = Object.keys(quota).filter((j) => (cnt[j] || 0) < quota[j] && !['king', 'noble', 'thief', 'beggar'].includes(j) && (a0 >= 21 || !SENIOR_JOBS.has(j)) && (a0 >= 17 || YOUTH_JOBS.has(j)));
-      if (father && father.job && !['king', 'royal'].includes(father.job) && (a0 >= 21 || !SENIOR_JOBS.has(father.job)) && (a0 >= 17 || YOUTH_JOBS.has(father.job)) && rng.chance(0.55)) p.job = father.job;
-      else if (lacking.length && rng.chance(0.6)) p.job = rng.pick(lacking);
-      else p.job = st === 'port' ? rng.pick(['fisher', 'sailor', 'farmer']) : 'farmer';
+      p.job = chooseYouthJob(rng, p, st, cnt, [father, mother], a0);
       const par = father && father.job === p.job ? father : mother && mother.job === p.job ? mother : null;
       note(p, y, par ? `14歳で${kinTerm(people, p, par)}のもとで${JOBS[p.job].name}の修業を始めた` : `14歳で${JOBS[p.job].name}の見習いになった`, { imp: 0.45, emo: 0.2 });
     }
@@ -435,8 +449,12 @@ export function generateHistory(rng, world) {
     const adults = residents.filter((p) => age(p, Y) >= 16 && age(p, Y) <= 66 && !p.rank);
     const cnt = {};
     for (const p of adults) if (p.job) cnt[p.job] = (cnt[p.job] || 0) + 1;
-    for (const [job, n] of Object.entries(quota)) {
-      if (job === 'king' || job === 'noble') continue;
+    // 枠は「どの職も1人目 → 2人目 → …」の順に、欠かせない職から埋める
+    const pri = (j) => { const i = JOB_PRIORITY.indexOf(j); return i < 0 ? 99 : i; };
+    const order = Object.keys(quota).filter((j) => j !== 'king' && j !== 'noble').sort((a, b) => pri(a) - pri(b));
+    const maxN = Math.max(...Object.values(quota));
+    for (let round = 1; round <= maxN; round++) for (const job of order) {
+      const n = Math.min(round, quota[job]);
       while ((cnt[job] || 0) < n) {
         let pool = adults.filter((p) => p.job !== job && (age(p, Y) >= 21 || !SENIOR_JOBS.has(job)) && (!p.job || p.job === 'farmer' || p.job === 'fisher' || p.job === 'sailor') && (cnt[p.job] || 0) > (quota[p.job] || 0) - (p.job === 'farmer' ? 0 : 0));
         if (job === 'thief' || job === 'beggar') pool = pool.filter((p) => p.pers.A < 0.5 || p.pers.C < 0.4);
@@ -449,12 +467,17 @@ export function generateHistory(rng, world) {
           painter: q.pers.O * 2, general: q.values.courage * 3 + age(q, Y) / 40, royalguard: q.values.courage * 2, pickpocket: 1 - q.pers.A, swindler: (1 - q.pers.A) + q.pers.E,
           pirate: (1 - q.pers.A) + q.values.courage, storyteller: age(q, Y) / 20, chancellor: q.pers.C + q.pers.O + age(q, Y) / 50, treasurer: q.pers.C * 2, paladin: q.values.faith + q.values.courage,
           cleric: q.values.faith * 2, nun: q.values.faith * 2, midwife: q.sex === 'f' ? 2 : 0.05, maid: q.sex === 'f' ? 2 : 0.1, nanny: q.sex === 'f' ? 2 : 0.1, laundress: q.sex === 'f' ? 2 : 0.2,
+          swordmaster: q.values.courage * 2 + age(q, Y) / 30, magister: q.pers.O * 2 + q.pers.C, pioneer: q.values.courage + q.pers.O, peddler: q.pers.E + q.pers.O,
+          overseer: q.pers.C * 2 + age(q, Y) / 50, roadworker: q.pers.C + (q.sex === 'm' ? 1 : 0.2), coachman: q.pers.C + 0.5,
         }[job] ?? 1) + 0.05);
         if (p.job) cnt[p.job]--;
         p.job = job; cnt[job] = (cnt[job] || 0) + 1;
         const flavor = {
           thief: '食うに困って、人の物に手を出すようになった', beggar: '仕事も家も失い、路上で暮らすようになった', knight: '騎士に叙任された',
           adventurer: '冒険者ギルドに登録した', wizard: '魔法の塔の門をたたいた', scholar: '学術院で学者として認められた', elder: '寄り合いで村長に選ばれた',
+          pioneer: '村はずれの森を切り開く開拓者になった', roadworker: '国の道普請に人夫として雇われた', overseer: '王城で普請奉行に任じられた',
+          swordmaster: '剣の腕を認められ、道場の師範になった', magister: '魔法学園の導師に迎えられた', peddler: '荷を背負って村々を回る行商人になった',
+          coachman: '駅馬車の御者になった', ferryman: '渡し舟の櫂を継いだ',
         }[job] || `${JOBS[job].name}の仕事についた`;
         note(p, Y - rng.int(1, 8), flavor, { imp: 0.75, emo: job === 'thief' || job === 'beggar' ? -0.6 : 0.5 });
       }
@@ -480,6 +503,20 @@ export function generateHistory(rng, world) {
     const w = makePerson({ family: famFor(south), birthYear: Y - rng.int(20, 55), s: rng.int(0, S.length - 1), south });
     w.job = i < 2 ? 'bard' : 'wanderer'; w.rank = 'wanderer'; w.origin = rng.pick(ORIGINS); w.homeless = true;
     note(w, Y - rng.int(2, 15), `${w.origin}を出て、あてのない旅を始めた`, { emo: 0.3, imp: 0.9 });
+  }
+  // 旅芸人の一座（町から町へ巡業する。一座の印 troupeId でまとまって動く）
+  {
+    const south = rng.chance(0.3);
+    const fam = famFor(south);
+    const s0 = rng.int(0, S.length - 1);
+    const acts = ['座長', '軽業師', '人形遣い'];
+    for (let i = 0; i < 3; i++) {
+      const w = makePerson({ family: i < 2 ? fam : famFor(south), birthYear: Y - rng.int(i === 0 ? 38 : 18, i === 0 ? 55 : 34), s: s0, south });
+      w.job = 'troupe'; w.rank = 'wanderer'; w.origin = rng.pick(ORIGINS); w.homeless = true; w.troupeId = 1; w.troupeRole = acts[i];
+      if (i === 0) w.troupeLead = true;
+      w.pers.E = Math.max(w.pers.E, 0.6);
+      note(w, Y - rng.int(1, 12), i === 0 ? '旅芸人の一座を旗揚げし、町から町へ巡業を始めた' : `旅芸人の一座に${acts[i]}として加わった`, { emo: 0.5, imp: 0.9 });
+    }
   }
   // 盗賊団（アジトに住む）
   const hideouts = world.buildings.filter((b) => b.type === 'hideout');

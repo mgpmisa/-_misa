@@ -562,6 +562,21 @@ export function generateWorld(rng, seed) {
         made++;
       }
     }
+    // 牧場のない村は、町はずれの草地を放牧地にする
+    if (s.type === 'village' && !s.ranch) {
+      for (let tries = 0; tries < 300 && !s.ranch; tries++) {
+        const a = rng.next() * Math.PI * 2, d = s.r + rng.range(1, 12);
+        const x0 = Math.round(s.x + Math.cos(a) * d), z0 = Math.round(s.z + Math.sin(a) * d);
+        if (!free(x0 - 1, z0 - 1, x0 + 4, z0 + 4, FIELD_LAND)) continue;
+        makePlot(s, x0, z0, 4, 4, true);
+      }
+      if (!s.ranch) {
+        for (let z0 = s.z - s.r; z0 <= s.z + s.r - 2 && !s.ranch; z0++) for (let x0 = s.x - s.r; x0 <= s.x + s.r - 2 && !s.ranch; x0++) {
+          if (Math.max(Math.abs(x0 + 1 - s.x), Math.abs(z0 + 1 - s.z)) < s.r - 3) continue;
+          if (free(x0, z0, x0 + 2, z0 + 2, [T.GRASS, T.SAVANNA])) { makePlot(s, x0, z0, 3, 3, true, false); s.ranch = { x0, z0, x1: x0 + 2, z1: z0 + 2 }; }
+        }
+      }
+    }
   }
 
   // 国境の砦：王都どうしを結ぶ街道が国境を越えるあたりに、それぞれの国が砦を置く

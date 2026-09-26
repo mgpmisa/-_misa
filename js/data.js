@@ -135,6 +135,17 @@ export const JOBS = {
   diver:      { name: '真珠採り',     place: 'shore',     rank: 'commoner', goods: 'gem' },
   pirate:     { name: '海賊',         place: 'dock',      rank: 'outlaw', combat: 2, crook: true },
   smuggler:   { name: '密輸人',       place: 'dock',      rank: 'citizen', crook: true, svc: 'trade' },
+  // 国の普請・開拓・旅の稼業（place の行き先は civic.js の civicPlace が決める）
+  overseer:   { name: '普請奉行',     place: 'castle',    rank: 'citizen', svc: 'works', pay: 1.6 },
+  roadworker: { name: '道普請の人夫', place: 'roadwork',  rank: 'commoner', svc: 'roads', pay: 0.9 },
+  pioneer:    { name: '開拓者',       place: 'frontier',  rank: 'commoner', goods: 'wood', svc: 'clear' },
+  coachman:   { name: '御者',         place: 'coach',     rank: 'commoner', svc: 'coach' },
+  peddler:    { name: '行商人',       place: 'peddle',    rank: 'commoner', svc: 'peddle' },
+  troupe:     { name: '旅芸人',       place: 'plaza',     rank: 'wanderer', svc: 'entertain' },
+  ferryman:   { name: '渡し守',       place: 'ferry',     rank: 'commoner', svc: 'ferry' },
+  // 学び舎の先生
+  swordmaster:{ name: '剣の師範',     place: 'dojo',      rank: 'citizen', combat: 3, svc: 'drill', pay: 0.8 },
+  magister:   { name: '魔法学園の導師', place: 'academy', rank: 'citizen', combat: 2, research: 0.5, svc: 'teach', pay: 1.2 },
   // 冒険者
   warrior:    { name: '戦士',         place: 'guild',     rank: 'adventurer', combat: 3 },
   archer:     { name: '弓使い',       place: 'guild',     rank: 'adventurer', combat: 2 },
@@ -286,17 +297,26 @@ export const SPECIES = {
 
 export const JOB_QUOTA = {
   capital: {
-    king: 1, beggar: 2, thief: 1, pickpocket: 1, swindler: 1, knight: 2, soldier: 3, guard: 2, jailer: 1, watchman: 1,
-    gatekeeper: 4, chancellor: 1, treasurer: 1, general: 1, royalguard: 2, courtmage: 1, butler: 1, maid: 2, cook: 1, gardener: 1, jester: 1,
+    king: 1, beggar: 2, thief: 1, pickpocket: 1, swindler: 1, knight: 2, soldier: 5, guard: 2, jailer: 1, watchman: 1,
+    gatekeeper: 3, chancellor: 1, treasurer: 1, general: 1, royalguard: 2, courtmage: 1, butler: 1, maid: 2, cook: 1, gardener: 1, jester: 1,
     scholar: 1, wizard: 1, alchemist: 1, scribe: 1, doctor: 1, herbalist: 1, midwife: 1, teacher: 1, nun: 1,
     adventurer: 1, warrior: 1, archer: 1, cleric: 1, sage: 1, paladin: 1, guildmaster: 1,
     merchant: 1, changer: 1, butcher: 1, brewer: 1, cobbler: 1, potter: 1, weaver: 1, jeweler: 1, tailor: 1,
     priest: 1, baker: 1, smith: 1, innkeeper: 1, carpenter: 1, fortune: 1, painter: 1, musician: 1, dancer: 1,
     stablehand: 1, messenger: 1, gravedigger: 1, laundress: 1, nanny: 1, barber: 1, noble: 2,
+    overseer: 1, roadworker: 2, coachman: 1, peddler: 1, swordmaster: 1, magister: 1,
   },
-  village: { elder: 1, militia: 3, farmer: 5, rancher: 1, shepherd: 1, beekeeper: 1, miller: 1, hunter: 1, woodcutter: 1, charcoal: 1, gatherer: 1, mason: 1, innkeeper: 1, priest: 1, smith: 1, miner: 1, storyteller: 1, midwife: 1 },
-  port: { militia: 2, fisher: 3, sailor: 2, captain: 1, shipwright: 1, keeper: 1, diver: 1, pirate: 1, smuggler: 1, merchant: 1, innkeeper: 1, priest: 1, guard: 2, baker: 1, laundress: 1, musician: 1 },
+  village: { elder: 1, militia: 2, farmer: 5, rancher: 1, shepherd: 1, beekeeper: 1, miller: 1, hunter: 2, woodcutter: 1, charcoal: 1, gatherer: 1, mason: 1, innkeeper: 1, priest: 1, smith: 1, miner: 1, storyteller: 1, midwife: 1, pioneer: 1, roadworker: 1, peddler: 1 },
+  port: { militia: 2, fisher: 3, sailor: 2, captain: 1, shipwright: 1, keeper: 1, diver: 1, pirate: 1, smuggler: 1, merchant: 1, innkeeper: 1, priest: 1, guard: 2, baker: 1, laundress: 1, musician: 1, coachman: 1, ferryman: 1 },
 };
+// 枠を埋める順番：町に欠かせない職から先に。どの職も1人目が決まってから2人目を決める（上から順に偏らない）
+export const JOB_PRIORITY = [
+  'farmer', 'fisher', 'priest', 'elder', 'innkeeper', 'baker', 'smith', 'merchant', 'doctor', 'teacher', 'guildmaster', 'midwife', 'miller', 'captain',
+  'general', 'chancellor', 'treasurer', 'knight', 'soldier', 'gatekeeper', 'militia', 'guard', 'jailer', 'courtmage',
+  'adventurer', 'warrior', 'archer', 'cleric', 'wizard', 'scholar', 'sailor', 'rancher', 'hunter', 'woodcutter', 'miner', 'shepherd',
+  'overseer', 'roadworker', 'pioneer', 'swordmaster', 'magister', 'royalguard', 'carpenter', 'herbalist', 'keeper',
+  'coachman', 'peddler', 'ferryman', 'watchman', 'butcher', 'brewer', 'tailor', 'weaver', 'gatherer', 'charcoal', 'mason', 'beekeeper', 'storyteller', 'shipwright',
+];
 
 // 性格の特徴ラベル
 export function traitLabels(p) {

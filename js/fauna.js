@@ -399,7 +399,8 @@ function protectYoung(sim, c, def, all, humans) {
     // 子を狙えるほどの相手だけ（小さな捕食者は大きな獣の子を狙わない）
     if (!o.hostile && SPECIES[o.sp].size * 1.4 < kidSize) continue;
     if (PRED.has(c.sp) && o.atk < c.atk * 0.8 && !o.hostile) continue;
-    if (d2(o, c) < 5) { th = o; break; }
+    if (!o.hostile && o.hunger >= 40) continue; // 腹の満ちた捕食者は子を狙わない
+    if (d2(o, c) < 4.5) { th = o; break; }
   }
   let human = false;
   if (!th && def.kind === 'wild' && (c._charge || 0) < S.t) {
@@ -616,6 +617,14 @@ function foodFactor(sim, c, def, si, drought) {
   return f;
 }
 
+function speciesCount(sim, sp) {
+  const S = sim.S;
+  if (!sim._faCount || sim._faCountT !== S.t) {
+    sim._faCount = {}; sim._faCountT = S.t;
+    for (const o of Object.values(S.creatures)) if (o.hp > 0) sim._faCount[o.sp] = (sim._faCount[o.sp] || 0) + 1;
+  }
+  return sim._faCount[sp] || 0;
+}
 function rankMul(c) {
   if (!c.rank || !c._gsize || c._gsize < 2) return 1;
   return 1.1 - 0.4 * (c.rank - 1) / (c._gsize - 1);
@@ -631,14 +640,14 @@ function feedHour(sim, c, si, h, drought) {
     const grazing = s?.ranch && c.range === 0 && si !== 3 && h >= 6 && h < 19 && def.diet !== 'meat';
     if (grazing) c.hunger = Math.min(100, c.hunger + 2.8 * rankMul(c));
     else if (c.fed) c.hunger = Math.min(100, c.hunger + 1.15 * rankMul(c));
-    else c.hunger = Math.min(100, c.hunger + 0.45);
+    else c.hunger = Math.min(100, c.hunger + (def.diet === 'meat' ? 0.95 : 0.6)); // 犬猫は残飯やネズミ、ほかは道ばたの草で食いつなぐ
   } else {
     const f = foodFactor(sim, c, def, si, drought);
     const active = !c.sleeping;
     let gain = 0;
     if (def.diet === 'grass') gain = active ? 3 * f : 0;
     else if (def.diet === 'both') gain = active ? 2.4 * f : 0;
-    else if (PRED.has(c.sp)) gain = (def.size <= 0.6 ? 1.5 : 0.55) * f; // 虫・ネズミ・死肉（本格的な狩りは creatures.js）。小さな捕食者は虫やネズミで食いつなげる
+    else if (PRED.has(c.sp)) gain = (def.size <= 0.6 ? 1.5 : 0.8) * f; // 虫・ネズミ・死肉（本格的な狩りは creatures.js）。小さな捕食者は虫やネズミで食いつなげる
     else gain = active ? 2.8 * f : 0.4; // 魚・虫を食べる鳥や海の生き物
     if (OMNI.has(c.sp) && def.diet !== 'grass' && active) gain += 0.8 * f;
     if (c.juv) gain *= 0.5;
@@ -651,9 +660,14 @@ function feedHour(sim, c, si, h, drought) {
     c.starveH = (c.starveH || 0) + 1;
     c.hp -= 2.2 + c.maxhp * 0.025;
     const limit = 70 + (c.age > lifeDays(c.sp) * 0.7 ? -30 : 0) + (c.juv ? -30 : 0);
-    if (c.hp <= 0 || c.starveH > limit) {
+    // 数が減った種は、最後の力で食いつなぐ（絶滅を防ぐ）。家畜は飼い主が見捨てない
+    const rare = !isLive(c) && speciesCount(sim, c.sp) <= Math.max(2, (POP[c.sp] || 6) * 0.6);
+    if (rare || isLive(c) && c.keeper != null) { c.hp = Math.max(c.hp, c.maxhp * 0.3); c.hunger = Math.max(c.hunger, 6); }
+    else if (c.hp <= 0 || c.starveH > limit) {
       c.hp = Math.max(c.hp, 0.1);
       S.fauna.stats.starved++;
+      S.fauna.stats.starvedBy = S.fauna.stats.starvedBy || {};
+      S.fauna.stats.starvedBy[c.sp] = (S.fauna.stats.starvedBy[c.sp] || 0) + 1;
       if (!isLive(c) && sim.rng.chance(0.35)) log(sim, `${sim.placeName(c.pos.x, c.pos.z)}で、痩せ細った${beastLabel(c)}が飢えて倒れていた。`, [], c.pos);
       kill(sim, c, null, 'starve');
       return;
@@ -1285,8 +1299,10 @@ function livestockCare(sim, animals, si, dos) {
     c.fed = false;
     if (cost === 0) { c.fed = true; }
     else if (c.stateOwned || c.keeper == null) {
+      // 国の厩舎・町の動物は町の蓄えから。蓄えが尽きても、馬丁が干し草を工面する
       const town = S.towns[c.owner];
-      if (town && town.fund > cost) { town.fund -= cost; c.fed = true; F.stats.feedCost += cost; }
+      if (town && town.fund > cost + 20) { town.fund -= cost; F.stats.feedCost += cost; }
+      c.fed = true;
     } else {
       const hh = S.households[c.keeper];
       if (hh) {
