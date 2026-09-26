@@ -4,7 +4,7 @@
 // 貸し手・借り手が死ねば相続人が引き継ぐ。酒場ではサイコロやカードの賭けが立つ。
 import { JOBS } from './data.js';
 import { ITEMS, addItem, autoEquip, itemName, itemValue } from './items.js';
-import { spendable, weeklyRent, headOf, houseValue } from './property.js';
+import { spendable, weeklyRent, headOf } from './property.js';
 import { humanStats, markWanted } from './society.js';
 
 const LENDER_JOBS = { changer: 0.05, merchant: 0.06, jeweler: 0.05 };
