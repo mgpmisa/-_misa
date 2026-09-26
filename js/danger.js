@@ -73,9 +73,13 @@ export function defendTowns(sim) {
       const power = (x) => (x.atk || 5) * Math.sqrt(x.maxhp || x.hp || 20);
       const avail = guards.filter((p) => !p.fight);
       const ours = avail.slice(0, 4).reduce((t, p) => t + power(p), 0);
-      if (ours < power(c) * 1.8) {
-        if (!c.alarmed || S.t - c.alarmed > 1440) {
-          c.alarmed = S.t;
+      const pack = near.filter((o) => Math.hypot(o.pos.x - c.pos.x, o.pos.z - c.pos.z) < 8).reduce((t, o) => t + power(o), 0);
+      if (ours < Math.max(power(c) * 1.8, pack * 1.3)) {
+        const town = S.towns[s.id];
+        const adults = sim.living().filter((q) => q.s === s.id && sim.isAdult(q) && q.jail == null).length;
+        const weak = power(c) < 60 && adults >= 6; // 町の大人が数人で追い払える相手なら鐘は鳴らさない
+        if (!weak && (!town.alarmAt || S.t - town.alarmAt > 720) && (!c.alarmed || S.t - c.alarmed > 1440)) {
+          c.alarmed = S.t; town.alarmAt = S.t;
           sim.pushLog(`${s.name}に${c.name}が迫り、警鐘が鳴らされた。人々は家に籠もり、衛兵は門を固めた。`, 'event', [], s);
           for (const q of sim.living()) if (q.s === s.id && q.inside == null && !q.fight && !q.quest && q.mission?.type !== 'crusade') { if (musterOnAlarm(sim, q, s)) continue; q.action = null; q.mission = null; sim.startAction(q, { type: 'flee', place: sim.placeFor(q, 'home'), dur: 90 }); }
           if (!S.quests?.some((x) => x.target === c.id && x.state !== 'done' && x.state !== 'failed')) c.quested = false;

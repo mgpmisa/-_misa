@@ -11,6 +11,21 @@ export const isAdventurer = (p) => p.job && (JOBS[p.job]?.rank === 'adventurer' 
 const QTYPE = { hunt: '討伐', gather: '採集', explore: '探索', bandits: '盗賊団退治', bounty: '賞金首', deliver: '配達' };
 export const QUEST_TYPE_NAME = QTYPE;
 
+// その場所の危なさ：近くにいる一番強い敵（名のある個体・群れの主は重く見る）
+const powerOf = (c) => (c.atk + c.maxhp / 8) * (c.named ? 1.6 : 1);
+export function threatNear(sim, x, z, r = 12) {
+  let best = 0;
+  for (const c of Object.values(sim.S.creatures)) {
+    if (c.hp <= 0 || c.dormant || !(c.hostile || c.named)) continue;
+    if (Math.abs(c.pos.x - x) > r || Math.abs(c.pos.z - z) > r) continue;
+    best = Math.max(best, powerOf(c));
+  }
+  return best;
+}
+const rankFor = (power) => Math.max(0, Math.min(6, Math.floor(power / 9)));
+// ギルドが「死地」と覚えた場所（依頼で人が死んだ所）には、しばらく依頼を出さない
+const isDeadly = (sim, x, z) => (sim.S.deadly || []).some((d) => d.until > sim.today && Math.hypot(d.x - x, d.z - z) < 14);
+
 function guildTown(sim, s) {
   // 村や港の依頼は、同じ国の王都のギルドに貼り出される
   const t = typeof s === 'number' ? sim.town(s) : s;
@@ -40,7 +55,16 @@ export function guildDaily(sim) {
     if (!alive.length || sim.today - (q.taken || q.posted) > 12) {
       for (const m of alive) { m.quest = null; m.action = null; sim.remember(m, `「${q.title}」をやり遂げられず、ギルドに断りを入れた`, { emo: -0.5, imp: 0.5, k: 'quest' }); }
       q.takenBy = []; q.party = null;
-      if (sim.today <= q.deadline + 7 && alive.length === 0) { q.state = 'open'; q.deadline = Math.max(q.deadline, sim.today + 7); }
+      if (alive.length === 0) {
+        // 担い手が全滅（または捕縛）した：難しさを上げて取り下げ、人が死んだ場所は死地として覚える
+        q.state = 'failed'; q.closed = sim.today; q.rank = Math.min(6, q.rank + 2);
+        const c = S.creatures[q.target]; if (c) c.quested = false;
+        if (q.where) {
+          S.deadly = (S.deadly || []).filter((d) => d.until > sim.today);
+          S.deadly.push({ x: q.where.x, z: q.where.z, until: sim.today + 20 });
+          sim.pushLog(`ギルドは「${q.title}」で冒険者を失い、その土地を死地として依頼を取り下げた。`, 'event', [], q.where);
+        }
+      }
       else { q.state = 'failed'; q.closed = sim.today; const c = S.creatures[q.target]; if (c) c.quested = false; }
     }
   }
@@ -53,11 +77,12 @@ export function guildDaily(sim) {
       if (!c.hostile || c.dormant || c.inDungeon || c.quested || SPECIES[c.sp].kind === 'demon' && c.sp === 'demonlord') continue;
       const near = towns.find((s) => Math.hypot(s.x - c.pos.x, s.z - c.pos.z) < s.r + 22);
       if (!near || !R.chance(0.35)) continue;
+      if (isDeadly(sim, c.pos.x, c.pos.z)) continue;
       const power = c.atk + c.maxhp / 8;
-      const rank = Math.min(6, Math.floor(power / 9));
+      const rank = rankFor(Math.max(power, threatNear(sim, c.pos.x, c.pos.z, 12)));
       const giver = R.pick(sim.living().filter((p) => p.s === near.id && sim.isAdult(p)));
       c.quested = true;
-      post(sim, { type: 'hunt', s: cap.id, from: near.id, target: c.id, rank, reward: Math.round(15 + power * 3 + (c.bounty || 0) + bandBounty(sim, c)), giver: giver?.id, title: `${sim.placeName(c.pos.x, c.pos.z)}の${c.name}を退治してほしい（${near.name}）` });
+      post(sim, { type: 'hunt', s: cap.id, from: near.id, target: c.id, rank, where: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) }, reward: Math.round(15 + power * 3 + (c.bounty || 0) + bandBounty(sim, c)), giver: giver?.id, title: `${sim.placeName(c.pos.x, c.pos.z)}の${c.name}を退治してほしい（${near.name}）` });
       if (open(cap.id) >= 9) break;
     }
     // 2) 素材の採集（医者・薬師・鍛冶屋・錬金術師から）
@@ -68,15 +93,19 @@ export function guildDaily(sim) {
       const giver = R.pick(idle);
       const want = { doctor: ['herb', 5], herbalist: ['herb', 6], smith: [R.pick(['fang', 'scale', 'iron']), 3], alchemist: [R.pick(['jelly', 'magicstone', 'silk']), 2], jeweler: ['magicstone', 1], tailor: ['silk', 2] }[giver.job];
       const [item, qty] = want;
-      const rank = Math.min(5, Math.floor(ITEMS[item].value * qty / 25));
-      post(sim, { type: 'gather', s: cap.id, from: giver.s, item, qty, rank, reward: Math.round(ITEMS[item].value * qty * 1.8 + 10), giver: giver.id, title: `${ITEMS[item].name}を${qty}つ集めてほしい（${JOBS[giver.job].name}の${giver.given}）` });
+      // 難しさ：素材の値打ちと、その素材を落とす魔物のうち一番安全に狩れる相手の危なさの大きいほう
+      const src = item === 'herb' ? [] : Object.values(S.creatures).filter((c) => c.hp > 0 && !c.dormant && !c.inDungeon && (DROPS[c.sp] || []).includes(item) && SPECIES[c.sp].kind !== 'demon' && Math.hypot(c.pos.x - cap.x, c.pos.z - cap.z) < 70);
+      const safest = src.map((c) => Math.max(powerOf(c), threatNear(sim, c.pos.x, c.pos.z, 12))).sort((a, b) => a - b)[0];
+      const rank = Math.max(Math.min(5, Math.floor(ITEMS[item].value * qty / 25)), safest != null ? rankFor(safest) : 0);
+      if (item === 'herb' || safest != null) post(sim, { type: 'gather', s: cap.id, from: giver.s, item, qty, rank, reward: Math.round(ITEMS[item].value * qty * 1.8 + 10), giver: giver.id, title: `${ITEMS[item].name}を${qty}つ集めてほしい（${JOBS[giver.job].name}の${giver.given}）` });
     }
     // 3) ダンジョン・遺跡の探索
     if (R.chance(0.25)) {
       const b = R.pick(S.world.specials.map((id) => sim.building(id)).filter((x) => ['cave', 'pyramid', 'ruins'].includes(x.type) && Math.hypot(x.x - cap.x, x.z - cap.z) < 70));
       if (b && !S.quests.some((q) => q.state === 'open' && q.target === 'b' + b.id)) {
         const giver = R.pick(sim.living().filter((p) => p.s === cap.id && ['scholar', 'courtmage', 'king', 'noble', 'sage'].includes(p.job)));
-        post(sim, { type: 'explore', s: cap.id, target: 'b' + b.id, rank: { ruins: 1, cave: 2, pyramid: 3 }[b.type], reward: { ruins: 50, cave: 90, pyramid: 140 }[b.type], giver: giver?.id, title: `${b.name}の奥を調べてきてほしい` });
+        const inside = Object.values(S.creatures).filter((c) => c.hp > 0 && (c.lair === b.id || Math.hypot(c.pos.x - b.door.x, c.pos.z - b.door.z) < 10)).reduce((m, c) => Math.max(m, powerOf(c)), 0);
+        if (!isDeadly(sim, b.door.x, b.door.z)) post(sim, { type: 'explore', s: cap.id, target: 'b' + b.id, where: { x: b.door.x, z: b.door.z }, rank: Math.max({ ruins: 1, cave: 2, pyramid: 3 }[b.type], rankFor(inside)), reward: { ruins: 50, cave: 90, pyramid: 140 }[b.type], giver: giver?.id, title: `${b.name}の奥を調べてきてほしい` });
       }
     }
     // 4) 盗賊団と賞金首
@@ -146,7 +175,17 @@ export function questPlace(sim, p) {
       // 素材は、それを落とす魔物を狩る
       const species = Object.entries(DROPS).filter(([, d]) => d.includes(q.item)).map(([k]) => k);
       let best = null, bd = 80;
-      for (const c of Object.values(S.creatures)) if (species.includes(c.sp) && !c.dormant && !c.inDungeon && c.hp > 0) { const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z); if (d < bd) { bd = d; best = c; } }
+      const mine = (p.atk || 5) * Math.sqrt(p.maxhp || 40) * (q.takenBy.length || 1);
+      let bestScore = Infinity;
+      for (const c of Object.values(S.creatures)) {
+        if (!species.includes(c.sp) || c.dormant || c.inDungeon || c.hp <= 0 || SPECIES[c.sp].kind === 'demon' || c.named) continue;
+        const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+        if (d > 80) continue;
+        const threat = Math.max(powerOf(c), threatNear(sim, c.pos.x, c.pos.z, 12));
+        if (threat * Math.sqrt(threat) > mine * 1.5 || isDeadly(sim, c.pos.x, c.pos.z)) continue; // 竜の縄張りのような所には近づかない
+        const sc = d + threat * 2;
+        if (sc < bestScore) { bestScore = sc; best = c; bd = d; }
+      }
       if (!best) return { type: 'gather', place: sim.placeFor(p, 'wild') };
       return { type: 'quest', place: { x: Math.round(best.pos.x), z: Math.round(best.pos.z) }, quest: { target: best.id } };
     }

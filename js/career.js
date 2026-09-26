@@ -185,7 +185,7 @@ export function initCareer(sim) {
     const years = clamp((age - 18) / 12, 0, 1.5);
     const want = Math.round(Math.min(plan.need * 0.95, plan.need * R.range(0.05, 0.85) * years));
     let got = Math.min(want * 0.3, Math.max(0, (p.purse || 0) - 3));
-    p.purse -= got;
+    p.purse = (p.purse || 0) - got;
     if (hh && hh.money > 80) { const x = Math.min(want * 0.2, (hh.money - 80) * 0.25); hh.money -= x; got += x; }
     plan.saved = Math.round(Math.max(got, want * R.range(0.6, 1)));
     plan.since = sim.today - R.int(0, DAYS_PER_YEAR * 2);

@@ -153,7 +153,7 @@ export const goodsHooks = { gather: null };
 // jobs：その職の人が作る。alt：その町に jobs の人がいないときだけ、片手間（半分の速さ）で作る
 // h：1回に要る仕事量（腕と道具を掛けた「はかどり」で、ふつうの職人の約1時間ぶん）
 // soft：あれば使う（なければ手間が1.5倍）
-const R = (id, jobs, inp, out, h, o = {}) => ({ id, jobs, inp, out, h, alt: o.alt || [], soft: o.soft || null, name: o.name || '' });
+const R = (id, jobs, inp, out, h, o = {}) => ({ id, jobs, inp, out, h, alt: o.alt || [], soft: o.soft || null, name: o.name || '', famine: o.famine || null });
 const MILL = ['miller'], BAKE = ['baker'], BREW = ['brewer', 'innkeeper'], DAIRY = ['shepherd', 'rancher'];
 const WOODW = ['carpenter', 'shipwright'], SAW = ['carpenter', 'shipwright', 'woodcutter'], CHAR = ['charcoal', 'woodcutter'];
 const MASON = ['mason', 'roadworker'], KILN = ['potter'], TEX = ['weaver', 'shepherd'], TAIL = ['tailor', 'weaver'];
@@ -164,7 +164,7 @@ export const RECIPES = [
   R('flour', MILL, { wheat: 1 }, { flour: 1 }, 0.4, { alt: ['baker', 'farmer'], name: '小麦をひいて粉にする' }),
   R('bread_f', BAKE, { flour: 1 }, { bread: 1.8 }, 0.6, { alt: ['cook', 'innkeeper'], soft: { firewood: 0.15 }, name: '粉からパンを焼く' }),
   R('bread_w', BAKE, { wheat: 1 }, { bread: 1.6 }, 1.1, { alt: ['cook', 'miller', 'innkeeper'], soft: { firewood: 0.15 }, name: '小麦をひいてパンを焼く' }),
-  R('ale', BREW, { wheat: 1 }, { ale: 3 }, 0.9, { name: '麦酒を仕込む' }),
+  R('ale', BREW, { wheat: 1 }, { ale: 3 }, 0.9, { famine: 'wheat', name: '麦酒を仕込む' }),
   R('wine', BREW, { fruit: 2 }, { wine: 2 }, 1.2, { alt: ['farmer', 'gardener'], soft: { pottery: 0.1 }, name: '葡萄酒を仕込む' }),
   R('mead', BREW, { honey: 1 }, { mead: 2 }, 1.0, { alt: ['beekeeper'], name: '蜂蜜酒を仕込む' }),
   R('cured_m', ['butcher', 'hunter'], { meat: 1, salt: 0.3 }, { cured: 1.3 }, 0.8, { alt: ['rancher', 'cook'], soft: { firewood: 0.3 }, name: '肉を塩漬けにして燻す' }),
@@ -327,10 +327,12 @@ function putGoods(sim, p, sid, g, n) {
 // ---------- 値段：在庫と需要（足りなかった分）で決まる ----------
 // 本体の updatePrices の代わりに呼ぶ。在庫が目安より多ければ安く、少なければ高く、
 // 買いに来て買えなかった人が多いほど、さらに高くなる
-export function goodsUpdatePrices(sim) {
+// level(sim, sid)：物価の水準（bank.js の priceLevel）。渡さなければ1
+export function goodsUpdatePrices(sim, level = null) {
   const S = sim.S, G = ensureGoods(sim);
   for (const [sid, m] of Object.entries(S.towns)) {
     const d = G.dem[sid] || {};
+    const L = level ? level(sim, +sid) || 1 : 1;
     for (const [k, g] of Object.entries(GOODS)) {
       if (m.stock[k] == null || !isFinite(m.stock[k])) m.stock[k] = 0;
       if (m.price[k] == null || !isFinite(m.price[k])) m.price[k] = g.base;
@@ -340,7 +342,7 @@ export function goodsUpdatePrices(sim) {
       if (short > 0) r *= 1 + Math.min(1, short / (t * 0.5 + 1)) * 0.6;
       const hi = g.rare ? 3 : 3.5;
       r = r < 0.4 ? 0.4 : r > hi ? hi : r;
-      m.price[k] += (g.base * r - m.price[k]) * 0.25;
+      m.price[k] += (g.base * L * r - m.price[k]) * 0.25;
     }
   }
 }
@@ -380,6 +382,7 @@ function gatherAmt(sim, p, s, g, n, src) {
 // 加工の値打ち：1はかどりあたりのもうけ（材料が足りない・作りすぎのときは null）
 function recipeValue(sim, m, r) {
   let cost = 0, rev = 0, h = r.h;
+  if (r.famine && m.price[r.famine] > GOODS[r.famine].base * 1.35) return null;   // 麦が高い（足りない）ときは酒にしない
   for (const [g, n] of Object.entries(r.inp)) { if (!(m.stock[g] >= n)) return null; cost += n * m.price[g]; }
   if (r.soft) for (const [g, n] of Object.entries(r.soft)) { if (m.stock[g] >= n) cost += n * m.price[g]; else h *= 1.5; }
   for (const [g, n] of Object.entries(r.out)) {
@@ -536,9 +539,74 @@ export function forgeSupply(sim, p) {
   }
 }
 
+// ---------- 穀物倉と麦の荷馬車（パンの値段が張り付かないように） ----------
+// ・町の穀物倉（m.granary）：秋の安い麦を町の蓄えで買い置き、麦が高い季節に市場へ放出する。
+//   世界が始まる春には、去年の秋の蓄えとして、町の人数×6の麦が入っている。
+// ・麦の荷馬車：同じ国の村に麦が余り、王都や港町に麦がないとき、翌日までに麦を運ぶ（運び賃は町の蓄え）
+function ensureGranary(sim) {
+  const S = sim.S;
+  for (const s of S.world.settlements) {
+    const m = S.towns[s.id];
+    if (!m || m.granary != null) continue;
+    m.granary = s.frontier ? 0 : popOf(sim, s.id) * 6;
+  }
+}
+function granaryHourly(sim) {
+  const S = sim.S, G = S.goods;
+  for (const s of S.world.settlements) {
+    const m = S.towns[s.id];
+    if (!m || m.occupied || !(m.granary > 0)) continue;
+    const W = GOODS.wheat;
+    const L = (m.price.bread / GOODS.bread.base + m.price.wheat / W.base) / 2;
+    if (L < 1.25 || m.stock.wheat > W.target * 0.6) continue;
+    const n = Math.min(m.granary, W.target * 0.05);
+    m.granary -= n; m.stock.wheat += n; noteMade(G, 'wheat', n);
+    m.fund += n * m.price.wheat * 0.9;   // 蓄えで買い置いた麦を売った代金は町の蓄えへ戻る
+    G.granaryOut = (G.granaryOut || 0) + n;
+  }
+}
+function granaryDaily(sim) {
+  const S = sim.S, G = S.goods, si = sim.seasonIdx();
+  // 秋（と夏の終わり）：安い麦を買い置く
+  for (const s of S.world.settlements) {
+    const m = S.towns[s.id];
+    if (!m || m.occupied || m.granary == null) continue;
+    const cap = popOf(sim, s.id) * 14;
+    if ((si === 2 || si === 1) && m.price.wheat < GOODS.wheat.base * 1.0 && m.stock.wheat > GOODS.wheat.target * 1.1 && m.granary < cap && m.fund > 60) {
+      const n = Math.min(cap - m.granary, (m.stock.wheat - GOODS.wheat.target) * 0.4, (m.fund - 40) / m.price.wheat);
+      if (n > 1) { const w = { money: m.fund }; if (takeGoods(sim, s.id, 'wheat', n, w)) { m.fund = w.money; m.granary += n; } }
+    }
+  }
+  // 荷馬車の着いた分
+  for (const c of G.carts || []) { const m = S.towns[c.to]; if (m) { m.stock[c.g] += c.n; noteMade(G, c.g, 0); } }
+  G.carts = [];
+  // 麦の荷馬車：村の余りを、同じ国の麦のない町へ
+  for (const k of S.kingdoms) {
+    const ts = S.world.settlements.filter((s) => s.kingdom === k.id && S.towns[s.id] && !S.towns[s.id].occupied);
+    const need = ts.filter((s) => S.towns[s.id].stock.wheat + (S.towns[s.id].stock.flour || 0) < GOODS.wheat.target * 0.35).sort((a, b) => S.towns[a.id].stock.wheat - S.towns[b.id].stock.wheat);
+    for (const to of need) {
+      const from = ts.filter((s) => s !== to && S.towns[s.id].stock.wheat > GOODS.wheat.target * 0.9).sort((a, b) => S.towns[b.id].stock.wheat - S.towns[a.id].stock.wheat)[0];
+      if (!from) break;
+      const a = S.towns[from.id], b = S.towns[to.id];
+      const n = Math.min(25, (a.stock.wheat - GOODS.wheat.target * 0.6) * 0.5);
+      if (n < 3) continue;
+      // 行き先の町の蓄えが、出発地の値段に運び賃1割を足して払う
+      const cost = n * a.price.wheat * 1.1;
+      if (b.fund < cost + 30) continue;
+      b.fund -= cost; if (a.cash != null) a.cash += cost; else a.fund += cost;   // 麦の代金と運び賃は出発地へ（お金は消えない）
+      a.stock.wheat -= n;
+      G.carts.push({ from: from.id, to: to.id, g: 'wheat', n });
+      G.cartsSent = (G.cartsSent || 0) + n;
+      if (sim.rng.chance(0.2)) sim.pushLog(`${from.name}から${to.name}へ、麦を積んだ荷馬車が出た。`, 'event', [], from);
+    }
+  }
+}
+
 // ---------- 需要（毎時：1日の需要を24に分けて少しずつ） ----------
 export function goodsHourly(sim) {
   ensureGoods(sim);
+  ensureGranary(sim);
+  granaryHourly(sim);
   const S = sim.S, hour = Math.floor(sim.hour());
   // 酒場の夜：葡萄酒と蜂蜜酒（麦酒は本体の酒場の処理）
   if (hour >= 18 && hour <= 22) for (const s of S.world.settlements) {
@@ -591,6 +659,8 @@ const HIGH = new Set(['noble', 'royal', 'king']);
 
 export function goodsDaily(sim) {
   const S = sim.S, G = ensureGoods(sim), R = sim.rng, si = sim.seasonIdx();
+  ensureGranary(sim);
+  granaryDaily(sim);
   // 前の日の帳簿を残して、新しい日を始める
   G.last = { made: G.day.made, used: G.day.used, pl: G.plDay, day: sim.today - 1 };
   G.day = { made: {}, used: {} }; G.plDay = {};
@@ -918,10 +988,10 @@ function nobleLife(sim) {
     // 使えるお金：家計が150を超えた分の一部（見栄を張られると増える）。王家は国庫にも頼る
     const purse = { money: hh.money };
     const royalTreasury = hh.royal && k && k.treasury > 1200;
-    let budget = Math.max(0, (hh.money - 150) * (0.05 + Math.min(0.06, c.envy * 0.01))) + (royalTreasury ? 40 : 0);
+    let budget = Math.max(0, (hh.money - 180) * (0.035 + Math.min(0.04, c.envy * 0.008))) + (royalTreasury ? 30 : 0);
     if (budget < 3) { unmetLux(sim, hh, c); continue; }
     const want = HOBBIES[c.hobby].goods.concat(['wine', 'spice', 'jewelry', 'furniture', 'finery', 'perfume', 'painting', 'book', 'statue', 'truffle', 'liver']);
-    const tries = R.int(1, 2);
+    const tries = R.chance(0.3) ? 2 : 1;
     for (let i = 0; i < tries; i++) {
       const hobbyPick = R.chance(0.65);
       const pool = (hobbyPick ? HOBBIES[c.hobby].goods : want).filter((g) => m.stock[g] >= 1 && m.price[g] <= budget * 4);

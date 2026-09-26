@@ -428,6 +428,7 @@ export class Sim {
   market(sid) { return this.S.towns[sid]; }
   price(g, sid = 0) { return Math.max(1, Math.round(this.S.towns[sid].price[g])); }
   priceRatio(g, sid = 0) { return this.S.towns[sid].price[g] / GOODS[g].base; }
+  marketHasFood(sid) { const m = this.S.towns[sid]; return ['bread', 'fish', 'wheat', 'meat'].some((g) => m.stock[g] >= 1); }
   updatePrices() {
     for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
       const L = priceLevel(this, +sid);
@@ -569,7 +570,7 @@ export class Sim {
       const sc = (100 - n.hunger) / 14 + (mealTime ? 2.5 : 0);
       const innMeal = this.price('bread', p.s) * 2 + 1;
       if (hh.food >= 1 && hh.house != null) add(sc, 'eat', this.placeFor(p, 'home'), 30);
-      else if (hh.money >= this.price('bread', p.s) && h >= 6 && h < 21) add(sc + 0.5, 'shop', this.placeFor(p, 'market'), 20, { food: true });
+      else if (hh.money >= this.price('bread', p.s) && h >= 6 && h < 21 && this.marketHasFood(p.s)) add(sc + 0.5, 'shop', this.placeFor(p, 'market'), 20, { food: true });
       else if (spendable(this, p) >= innMeal && this.townBuilding(this.town(p.s), 'tavern')) add(sc + 0.3, 'eat', this.placeFor(p, 'tavern'), 30, { food: 'inn' });
       else if (n.hunger < 35) add(sc + (job === 'beggar' ? 2 : 0), 'beg', this.placeFor(p, 'plaza'), 60);
     }
@@ -785,7 +786,20 @@ export class Sim {
     switch (a.type) {
       case 'shop': this.doShop(p); break;
       case 'eat':
-        if (a.food === 'inn') { const cost = this.price('bread', p.s) * 2 + 1; if (spendable(this, p) >= cost) { pay(this, p, cost); p.needs.hunger = Math.min(100, p.needs.hunger + 65); const keeper = this.living().find((q) => q.job === 'innkeeper' && q.s === p.s); if (keeper && this.hh(keeper)) this.hh(keeper).money += cost * 0.8; } }
+        if (a.food === 'inn') {
+          // 宿の食事：宿屋が市場から材料を仕入れて料理する（材料がなければ出せない）
+          const m = this.market(p.s);
+          const g = ['bread', 'fish', 'meat'].find((x) => m.stock[x] >= 1);
+          const keepers = this.living().filter((q) => q.job === 'innkeeper' && q.s === p.s);
+          const keeper = keepers.length ? keepers[(p.id + this.dayIndex) % keepers.length] : null;
+          const cost = g ? Math.round(m.price[g] * 1.6 + 1) : 0;
+          if (g && spendable(this, p) >= cost) {
+            pay(this, p, cost);
+            m.stock[g] -= 1;
+            if (keeper && this.hh(keeper)) this.hh(keeper).money += cost - m.price[g]; // 仕入れ値を引いた分が宿のもうけ
+            p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
+          }
+        }
         else if (hh.food >= 1) { hh.food -= 1; p.needs.hunger = Math.min(100, p.needs.hunger + 60); }
         break;
       case 'askfood': {
@@ -921,7 +935,7 @@ export class Sim {
     const toolMul = tool ? 0.7 + 0.35 * tool.q : 0.6;
     if (tool) { tool.dur -= 0.004 * hr; if (tool.dur <= 0) { p.inv.splice(p.inv.indexOf(tool), 1); p.eq.tool = null; this.remember(p, `長年使った${itemName(tool)}がとうとう壊れた`, { emo: -0.3, imp: 0.3 }); } }
     const si = this.seasonIdx();
-    const sm = [0.5, 0.9, 2.4, 0.08][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
+    const sm = [0.9, 1.3, 2.4, 0.25][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
     const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p);
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
@@ -1097,7 +1111,7 @@ export class Sim {
       const v = near(2).find((q) => (q.purse || 0) > 8 && q.hh !== p.hh);
       if (v) {
         const loot = Math.min(20, v.purse * 0.6);
-        v.purse -= loot; p.purse = (p.purse || 0) + loot;
+        v.purse = (v.purse || 0) - loot; p.purse = (p.purse || 0) + loot;
         if (R.chance(0.25 + v.pers.C * 0.3)) {
           this.remember(v, `人ごみで${p.given}に財布をすられかけた`, { emo: -0.6, imp: 0.6, about: [p.id], k: 'theft' });
           markWanted(this, p, 'スリ', 6);
@@ -1596,6 +1610,8 @@ export class Sim {
   unstick() {
     const w = this.S.world;
     for (const c of Object.values(this.S.creatures)) settleCreature(this, c);
+    for (const p of this.living()) if (!Number.isFinite(p.purse)) p.purse = 0;
+    for (const h of Object.values(this.S.households)) if (!Number.isFinite(h.money)) h.money = 0;
     for (const p of this.living()) {
       if (p.inside != null || p.jail != null) continue;
       const x0 = Math.round(p.pos.x), z0 = Math.round(p.pos.z);
@@ -1968,7 +1984,7 @@ export class Sim {
     delete c.notes; delete c.anc2;
     c.needs = { survival: 90, sleep: 80, hunger: 80, lust: 100, sloth: 80, pleasure: 80, esteem: 80 };
     c.mood = 70; c.memories = []; c.rel = {}; c.gk = {}; c.talkedToday = {}; c.recent = []; c.tool = 0; c.workedToday = 0; c.pregnant = 0; c.cooldown = 0; c.q = {}; c.skill = {}; c.danger = {}; c.fame = 0; c.lv = 1;
-    c.style = 'child'; c.traits = traitLabels(c); c.inv = []; c.eq = {};
+    c.style = 'child'; c.traits = traitLabels(c); c.inv = []; c.eq = {}; c.purse = 0;
     c.rank = ['king', 'royal'].includes(w.rank) || (h && ['king', 'royal'].includes(h.rank)) ? 'royal' : w.rank === 'noble' ? 'noble' : ['homeless', 'prisoner', 'outlaw'].includes(w.rank) ? 'commoner' : w.rank || 'commoner';
     Object.assign(c, humanStats(this, c)); c.hp = c.maxhp;
     c.hh = w.hh; this.hh(w).members.push(c.id);

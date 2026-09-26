@@ -80,7 +80,11 @@ export function politicsHourly(sim) {
       if (FIGHTERS.has(p.job) || p.job === 'guard' || p.job === 'hunter') {
         const c = raiders.reduce((best, r) => (Math.hypot(r.pos.x - p.pos.x, r.pos.z - p.pos.z) < Math.hypot(best.pos.x - p.pos.x, best.pos.z - p.pos.z) ? r : best), raiders[0]);
         const pw = (x) => (x.atk || 5) * Math.sqrt(x.maxhp || 20);
-        const outmatched = pw(c) > pw(p) * 4;
+        // 群れ全体と守り手全体の力を比べる。敵が町のすぐ外（半径＋6マス）に来るまでは門と町の中を固めて待つ
+        const theirs = raiders.filter((r) => Math.hypot(r.pos.x - c.pos.x, r.pos.z - c.pos.z) < 8).reduce((t, r) => t + pw(r), 0);
+        const ours = people.filter((q) => q.s === +sid && (FIGHTERS.has(q.job) || q.job === 'guard' || q.job === 'hunter') && !q.fight && q.jail == null).slice(0, 8).reduce((t, q) => t + pw(q), 0);
+        const close = Math.hypot(c.pos.x - s.x, c.pos.z - s.z) < s.r + 6;
+        const outmatched = !close || theirs > ours * 1.2;
         if (Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) < 2) startFight(sim, p, c);
         // 格の違う相手には打って出ず、町の中を固める
         else if (outmatched) p.mission = { type: 'defend', x: s.x, z: s.z, until: S.t + 60 };
@@ -252,7 +256,7 @@ function failParty(sim, party) {
   sim.chron(`${S.demon.name}討伐隊が全滅した`);
   S.demon.power += 20;
   const k = S.kingdoms[party.kingdom];
-  if (k) { k.fame -= 15; k.heroCall = null; }
+  if (k) { k.fame -= 15; k.heroCall = null; k.heroCooldown = sim.today + 20; }
   for (const p of sim.living()) if (sim.rng.chance(0.5)) sim.remember(p, '勇者さまたちが魔王に敗れたと聞いて、目の前が暗くなった', { emo: -0.9, imp: 0.8, k: 'demon' });
 }
 
@@ -447,12 +451,20 @@ function endWar(sim, winner, loser) {
 function callHeroes(sim, k) {
   const S = sim.S, R = sim.rng;
   const king = S.people[k.kingId];
-  const cands = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && (FIGHTERS.has(p.job) || p.job === 'priest' || p.job === 'cleric') && p.jail == null && sim.ageOf(p) >= 16 && sim.ageOf(p) < 60 && p.values.courage > 0.35)
+  if (k.heroCooldown && sim.today < k.heroCooldown) return; // 全滅のあとしばらくは次の討伐隊を出さない
+  const cands = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && (FIGHTERS.has(p.job) || p.job === 'priest' || p.job === 'cleric') && p.jail == null && !p.quest && !p.mission && sim.ageOf(p) >= 16 && sim.ageOf(p) < 60 && p.values.courage > 0.35)
     .sort((a, b) => (b.lv * 3 + b.fame / 10 + b.values.courage * 5) - (a.lv * 3 + a.fame / 10 + a.values.courage * 5));
   const members = [];
   for (const job of ['paladin', 'knight', 'warrior', 'adventurer', 'sage', 'wizard', 'cleric', 'priest']) { const p = cands.find((q) => q.job === job && !members.includes(q)); if (p) members.push(p); }
   for (const p of cands) if (members.length < 4 && !members.includes(p)) members.push(p);
   if (members.length < 2) return;
+  // 勝ち目がなければ出さない（一行の力の合計が魔王の3割に届くまで待ち、そのあいだは鍛錬と聖剣の研究を急ぐ）
+  const lord = S.creatures[S.demon.lordId];
+  const pw = (x) => (x.atk || 5) * Math.sqrt(x.maxhp || 40);
+  if (lord && members.reduce((t, p) => t + pw(p), 0) < pw(lord) * 0.3) {
+    if (!k.heroWait || sim.today - k.heroWait > 10) { k.heroWait = sim.today; sim.news(`${k.name}は魔王に挑める勇者がまだ育っていないとして、討伐隊の派遣を見送った`, 1); }
+    return;
+  }
   const hero = members.sort((a, b) => b.lv - a.lv)[0];
   const bounty = Math.min(k.treasury * 0.4, 500);
   k.treasury -= bounty;

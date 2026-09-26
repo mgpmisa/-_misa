@@ -839,6 +839,13 @@ function kingRestPolicy(sim, k) {
 // ---------- ストライキ ----------
 function employerOf(sim, st) {
   const S = sim.S, s = sim.town(st.sid), k = S.kingdoms[s.kingdom];
+  // 始まったときに決めた相手と、最後まで交渉する
+  if (st.empKind) {
+    const who = S.people[st.empId];
+    if (st.empKind === 'crown') return { kind: 'crown', who: S.people[k.kingId], name: title(S.people[k.kingId]), wealth: k.treasury / 1500, k };
+    if (st.empKind === 'master' && alive(who) && S.households[st.empHh]) return { kind: 'master', who, hh: S.households[st.empHh], name: st.emp, wealth: S.households[st.empHh].money / 400, k };
+    if (st.empKind === 'town') return { kind: 'town', who: alive(who) ? who : null, name: st.emp, wealth: S.towns[st.sid].fund / 400, k };
+  }
   if (st.demand === 'tax' || st.group === 'mine') return { kind: 'crown', who: S.people[k.kingId], name: `${title(S.people[k.kingId])}`, wealth: k.treasury / 1500, k };
   if (st.group === 'labor') {
     const boss = sim.living().find((q) => q.s === st.sid && ['overseer', 'elder'].includes(q.job)) || sim.living().find((q) => q.s === s.id && q.rank === 'noble');
@@ -864,7 +871,7 @@ function strikesDaily(sim) {
       const lead = S.people[st.leader];
       const s = sim.town(st.sid);
       const emp = employerOf(sim, st);
-      st.emp = emp.name; st.empKind = emp.kind;
+      st.emp = emp.name; st.empKind = emp.kind; st.empId = emp.who?.id ?? null; st.empHh = emp.hh?.id ?? null;
       sim.news(`${s.name}の${GROUP_NAME[st.group]}がストライキに入った！${lead ? sim.fullName(lead) + 'らが' : ''}${emp.name}に${DEMAND_JP[st.demand]}を求めている`, 2, s);
       LS.stats.strikes = (LS.stats.strikes || 0) + 1;
       for (const id of st.ids) { const q = S.people[id]; if (alive(q)) sim.remember(q, `仲間と仕事を止めて、${emp.name}に${DEMAND_JP[st.demand]}を求めた`, { emo: 0.1, imp: 0.75, k: 'strike', about: lead ? [lead.id] : [] }); }
@@ -1081,7 +1088,7 @@ export function laborTopic(api, A, B) {
   const st = striking(api, A);
   if (st) return { w: 3, fn: (api2, A2, B2, v) => ({ kind: 'opinion', text: v.s(st.demand === 'tax' ? '税が下がるまで、みんなで仕事を止めている' : st.demand === 'rest' ? '休みの日をよこせって、みんなで仕事を止めている' : '給金を上げろって、みんなで仕事を止めている', 'v'), sentiment: 0.1 }) };
   const hot = api.S.labor?.strikes?.find((x) => x.state === 'on' && x.sid === A.s);
-  if (hot) return { w: 1.6, fn: (api2, A2, B2, v) => ({ kind: 'news', text: v.s(`${GROUP_NAME[hot.group]}が仕事を止めているらしい`, 'raw') + '。', sentiment: -0.1 }) };
+  if (hot) return { w: 0.9, fn: (api2, A2, B2, v) => ({ kind: 'news', text: v.s(`${GROUP_NAME[hot.group]}が仕事を止めているらしい`, 'raw') + '。', sentiment: -0.1 }) };
   if ((A.fatigue || 0) > 70) return { w: 1.8, fn: (api2, A2, B2, v) => ({ kind: 'complain', text: v.s(api2.rng.pick(['もう何日も休んでいない', 'このところ働きづめで、体がきしむ', '休みの日も働かないと、税が払えない']), 'v'), sentiment: -0.5 }) };
   if (L.restY && api.ageOf(A) >= 16) return { w: 1, fn: (api2, A2, B2, v) => ({ kind: 'happy', text: v.s(api2.rng.pick(['今日は休みの日だから、のんびりする', '休みの日くらい、家族と過ごしたい', '休みだし、広場で見世物でも見に行こうと思う']), 'v'), sentiment: 0.4 }) };
   const recent = A.memories?.filter((m) => m.k === 'spend' && api.today - m.t < 3 && m.emo > 0 && m.imp >= 0.45);

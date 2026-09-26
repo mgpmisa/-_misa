@@ -112,7 +112,7 @@ export function propertyDaily(sim) {
     const allowance = age < 14 ? 0.3 : p.job && JOBS[p.job]?.pay != null || JOBS[p.job]?.goods ? 1.5 : 0.6;
     if (hh.money > 40 && (p.purse || 0) < 60) { const a = Math.min(allowance, hh.money * 0.01); hh.money -= a; p.purse = (p.purse || 0) + a; }
     // 財布が膨らみすぎたら家計に入れる（家族思いの人ほど）
-    if ((p.purse || 0) > 150 && p.pers.A > 0.4 && !['adventurer'].includes(p.rank)) { const x = p.purse * 0.3; p.purse -= x; hh.money += x; }
+    if ((p.purse || 0) > 150 && p.pers.A > 0.4 && !['adventurer'].includes(p.rank)) { const x = p.purse * 0.3; p.purse = (p.purse || 0) - x; hh.money += x; }
   }
   // 宿住まい：毎日宿代を払う。払えなければ追い出される
   for (const hh of Object.values(S.households)) {
@@ -125,7 +125,7 @@ export function propertyDaily(sim) {
     const keeper = sim.living().find((q) => q.job === 'innkeeper' && q.s === hh.s);
     if (cash >= fee) {
       let need = fee; const t = Math.min(need, hh.money); hh.money -= t; need -= t;
-      for (const p of mem) { const x = Math.min(need, p.purse || 0); p.purse -= x; need -= x; }
+      for (const p of mem) { const x = Math.min(need, p.purse || 0); p.purse = (p.purse || 0) - x; need -= x; }
       if (keeper && sim.hh(keeper)) sim.hh(keeper).money += fee * 0.9;
     } else {
       hh.inn = false; hh.street = true; hh.house = null;
@@ -146,7 +146,7 @@ export function propertyDaily(sim) {
       const purses = tenant.members.map((id) => S.people[id]).filter((p) => p && p.deathYear == null);
       let need = b.rent;
       const take = Math.min(need, Math.max(0, tenant.money)); tenant.money -= take; need -= take;
-      for (const p of purses) { if (need <= 0) break; const t = Math.min(need, p.purse || 0); p.purse -= t; need -= t; }
+      for (const p of purses) { if (need <= 0) break; const t = Math.min(need, p.purse || 0); p.purse = (p.purse || 0) - t; need -= t; }
       lord.money += b.rent - need;
       if (need <= 0.5) { b.arrears = 0; continue; }
       b.arrears = (b.arrears || 0) + 1;
@@ -210,7 +210,7 @@ function settle(sim, hh, b, mem, buy) {
   if (buy) {
     let need = b.value;
     const t = Math.min(need, hh.money); hh.money -= t; need -= t;
-    for (const p of mem) { const x = Math.min(need, p.purse || 0); p.purse -= x; need -= x; }
+    for (const p of mem) { const x = Math.min(need, p.purse || 0); p.purse = (p.purse || 0) - x; need -= x; }
     S.towns[hh.s].fund += b.value - need;
     b.owner = hh.id; b.rent = 0;
   } else { b.rent = weeklyRent(sim, b); b.arrears = 0; }

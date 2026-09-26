@@ -473,7 +473,7 @@ function playGame(sim, players, bld) {
     st(sim, 'cheats');
     const gain = Math.max(0, net.get(caught.id));
     const back = Math.min(gain, Math.max(0, caught.purse || 0));
-    caught.purse -= back;
+    caught.purse = (caught.purse || 0) - back;
     const losers = players.filter((p) => p !== caught && net.get(p.id) < 0);
     const tot = losers.reduce((s, p) => s - net.get(p.id), 0) || 1;
     for (const p of losers) { const share = back * (-net.get(p.id)) / tot; p.purse = (p.purse || 0) + share; net.set(p.id, net.get(p.id) + share); }
