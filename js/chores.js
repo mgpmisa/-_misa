@@ -8,7 +8,7 @@
 //   choreDaily(sim)             … newDay で1日ごとの処理（分担決め・洗濯物・傷み）
 import { clamp } from './rng.js';
 import { JOBS, GOODS, KINGDOMS } from './data.js';
-import { T, tileAt } from './world.js';
+import { T, tileAt, walkable } from './world.js';
 
 export const CHORE_TYPES = ['water', 'laundry', 'nap', 'preserve', 'cook', 'childcare', 'help'];
 
@@ -45,7 +45,7 @@ export function ensureHh(hh) {
   Object.defineProperty(hh, '_ch', { value: true, enumerable: false }); // 保存されない印
   return hh;
 }
-const doesChores = (hh) => hh && hh.house != null && !hh.wander && !hh.bandits;
+const doesChores = (hh) => hh && hh.house != null && !hh.wander && !hh.bandits && !hh.royal; // 王家は召使いが家事をする
 
 function hash01(n) {
   let x = (n * 2654435761) >>> 0;
@@ -92,17 +92,23 @@ function wellSpot(sim, p) {
     const b = sim.townBuilding(s, 'well');
     if (b) spot = { x: b.door.x, z: b.door.z, well: true };
     else {
-      // 井戸のない町：川辺・湖畔を探す（家からの経路は町の近くに限る）
-      const w = sim.S.world;
-      spot = sim.randomNear(s.x, s.z, s.r + 8, (t, x, z) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b2]) => { const tt = tileAt(w, x + a, z + b2); return tt === T.RIVER || tt === T.SEA; }));
-      if (spot) spot.well = false;
-      else spot = null;
+      // 井戸のない町：いちばん近い川辺（海水は飲めないので川だけ）。それもなければ広場の水場
+      const w = sim.S.world, R = s.r + 12;
+      let bd = 1e9;
+      spot = null;
+      for (let z = s.z - R; z <= s.z + R; z++) for (let x = s.x - R; x <= s.x + R; x++) {
+        const t = tileAt(w, x, z);
+        if (!walkable(t) || t === T.BLD || t === T.RIVER || t === T.WALL) continue;
+        if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b2]) => tileAt(w, x + a, z + b2) === T.RIVER)) continue;
+        const d = Math.hypot(x - s.x, z - s.z);
+        if (d < bd) { bd = d; spot = { x, z, well: false, river: true }; }
+      }
+      if (!spot) spot = { x: s.x, z: s.z, well: false, plaza: true };
     }
     sim._chWell.set(s.id, spot);
   }
-  if (!spot) return null;
   // 井戸のまわりに少し散らばる
-  const near = sim.randomNear(spot.x, spot.z, 1.5);
+  const near = spot.plaza ? sim.placeFor(p, 'plaza') : sim.randomNear(spot.x, spot.z, 1.5);
   return near ? { x: near.x, z: near.z, well: spot.well } : { x: spot.x, z: spot.z, well: spot.well };
 }
 

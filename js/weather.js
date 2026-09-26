@@ -76,7 +76,7 @@ export function regionGeo(sim) {
   if (g && g.rev === (sim.S.wx?.tileRev || 0)) return g;
   const regs = [];
   for (let rz = 0; rz < GRID; rz++) for (let rx = 0; rx < GRID; rx++) {
-    const c = { land: 0, sea: 0, desert: 0, snow: 0, jungle: 0, forest: 0, rock: 0, waste: 0, river: 0 };
+    const c = { land: 0, sea: 0, savanna: 0, desert: 0, snow: 0, jungle: 0, forest: 0, rock: 0, waste: 0, river: 0 };
     for (let z = rz * CH; z < (rz + 1) * CH; z++) for (let x = rx * CW; x < (rx + 1) * CW; x++) {
       const t = w.tiles[z * W + x];
       if (t === T.SEA || t === T.DEEP) { c.sea++; continue; }
@@ -88,20 +88,33 @@ export function regionGeo(sim) {
       else if (t === T.ROCK || t === T.PEAK) c.rock++;
       else if (t === T.WASTE || t === T.LAVA) c.waste++;
       else if (t === T.RIVER) c.river++;
+      else if (t === T.SAVANNA) c.savanna++;
     }
-    const L = Math.max(1, c.land), all = CW * CH;
-    let climate = 'temperate';
-    if (c.land < all * 0.1) climate = 'sea';
-    else if (c.waste > L * 0.3) climate = 'waste';
-    else if (c.snow > L * 0.25) climate = 'snow';
-    else if (c.desert > L * 0.22) climate = 'desert';
-    else if (c.jungle > L * 0.22) climate = 'jungle';
-    else if (c.rock > L * 0.3) climate = 'mountain';
-    else if (c.sea > all * 0.35) climate = 'coast';
+    // 気候は「混ぜ合わせ」：砂漠が2割ある地域は砂漠らしさも2割以上持つ
+    const all = CW * CH, L = Math.max(1, c.land);
+    const mix = {
+      desert: Math.min(1, (c.desert + c.savanna * 0.4) / L * 2.5),
+      snow: Math.min(1, c.snow / L * 2.5),
+      jungle: Math.min(1, c.jungle / L * 2.5),
+      mountain: Math.min(1, c.rock / L * 1.5),
+      waste: Math.min(1, c.waste / L * 2.5),
+      coast: Math.min(0.6, c.sea / all),
+    };
+    const special = Object.values(mix).reduce((a, b) => a + b, 0);
+    mix.temperate = Math.max(0.15, 1 - special);
+    const tot = Object.values(mix).reduce((a, b) => a + b, 0);
+    for (const k of Object.keys(mix)) mix[k] /= tot;
+    let climate = c.land < all * 0.1 ? 'sea' : Object.keys(mix).sort((a, b) => mix[b] - mix[a])[0];
+    const table = [0, 1, 2, 3].map((si) => {
+      const t = {};
+      for (const [k, m] of Object.entries(mix)) for (const [w, v] of Object.entries(TABLE[k][si])) t[w] = (t[w] || 0) + v * m;
+      return t;
+    });
+    const OFF = { desert: 7, snow: -8, mountain: -4, jungle: 3, waste: 2, coast: 0, temperate: 0 };
     const cz = (rz + 0.5) * CH;
-    const base = -2 + 30 * (cz / H) + ({ desert: 6, snow: -6, mountain: -5, jungle: 3, waste: 2 }[climate] || 0);
+    const base = 2 + 28 * (cz / H) + Object.entries(mix).reduce((a, [k, m]) => a + OFF[k] * m, 0);
     const i = rz * GRID + rx;
-    regs.push({ i, rx, rz, cx: (rx + 0.5) * CW, cz, climate, base, forest: c.forest + c.jungle, land: c.land, sids: [] });
+    regs.push({ i, rx, rz, cx: (rx + 0.5) * CW, cz, climate, mix, table, base, forest: c.forest + c.jungle, land: c.land, sids: [] });
   }
   for (const s of w.settlements) regs[regionIndex(s.x, s.z)].sids.push(s.id);
   // 川沿いの町（洪水の恐れ）・海沿いの町（大嵐の恐れ）
@@ -201,18 +214,18 @@ export function weatherDaily(sim) {
   const prev = wx.r.map((r) => r.w);
   for (const reg of g.regs) {
     const st = wx.r[reg.i];
-    const table = TABLE[reg.climate][si];
+    const table = reg.table[si];
     let w;
     const keep = 0.55 * Math.pow(0.82, st.streak - 1);
     // 前線は西から東へ流れる：西どなりの昨日の天気が来ることがある
     const west = reg.rx > 0 ? prev[reg.i - 1] : null;
     if (R.chance(keep)) w = st.w;
-    else if (west && table[west] && R.chance(0.25)) w = west;
+    else if (west && (table[west] || 0) >= 1 && R.chance(0.25)) w = west;
     else w = pickWeather(R, table, st.w);
     // 気温：季節の中で少しずつ移り変わる
     const nextSeasonT = SEASON_TEMP[(si + 1) % 4], blend = doy / DAYS_PER_SEASON * 0.5;
     const seasonT = SEASON_TEMP[si] * (1 - blend) + nextSeasonT * blend;
-    const seasonMul = reg.climate === 'desert' ? 0.6 : reg.climate === 'jungle' ? 0.4 : 1;
+    const seasonMul = 1 - (reg.mix.desert || 0) * 0.4 - (reg.mix.jungle || 0) * 0.6;
     let temp = reg.base + seasonT * seasonMul + R.gauss(0, 2);
     w = fixByTemp(w, temp + (WX_TEMP[w] || 0));
     temp += WX_TEMP[w] || 0;
@@ -408,29 +421,36 @@ function disastersDaily(sim, R, g) {
     }
   }
 
-  for (const reg of g.regs) {
+  // 大陸全体でも災害は続けて起きすぎない（年に数回）
+  let budget = (wx.cool.any ?? -999) > today ? 0 : 1;
+  const ok = (key, days) => {
+    if (budget <= 0 || !cooled(wx, key, days, today)) return false;
+    budget--; wx.cool.any = today + 6;
+    return true;
+  };
+  for (const reg of R.shuffle(g.regs.slice())) {
     const st = wx.r[reg.i];
     const sids = reg.sids.filter((id) => !S.towns[id]?.occupied);
     // 洪水：長雨で川があふれる
     if (st.wet >= 3.2 && (PRECIP[st.w] || 0) >= 1) {
       const hit = sids.filter((id) => g.river[id]);
-      if (hit.length && R.chance(0.3) && cooled(wx, 'flood' + reg.i, 20, today)) flood(sim, R, reg, hit);
+      if (hit.length && R.chance(0.3) && ok('flood' + reg.i, 30)) flood(sim, R, reg, hit);
     }
     // 日照り
-    if (si < 3 && st.dry >= 9 && !['desert', 'waste', 'sea'].includes(reg.climate)) {
+    if (si < 3 && st.dry >= 12 && !['desert', 'waste', 'sea'].includes(reg.climate) && (reg.mix.desert || 0) < 0.5) {
       const hit = sids.filter((id) => !wx.drought[id]);
-      if (hit.length && R.chance(0.3) && cooled(wx, 'drought' + reg.i, 25, today)) drought(sim, R, reg, hit);
+      if (hit.length && R.chance(0.2) && ok('drought' + reg.i, 60)) drought(sim, R, reg, hit);
     }
     // 山火事：乾いた夏・秋の森
-    if ((si === 1 || si === 2) && st.dry >= 4 && (st.w === 'sunny' || st.w === 'hot') && reg.forest > 40) {
-      if (R.chance(st.w === 'hot' ? 0.12 : 0.05) && cooled(wx, 'fire' + reg.i, 30, today)) wildfire(sim, R, reg);
+    if ((si === 1 || si === 2) && st.dry >= 6 && (st.w === 'sunny' || st.w === 'hot') && reg.forest > 40) {
+      if (R.chance(st.w === 'hot' ? 0.06 : 0.02) && ok('fire' + reg.i, 60)) wildfire(sim, R, reg);
     }
     // 吹雪で道が閉ざされる
-    if (st.w === 'blizzard' && st.streak >= 2 && sids.length && R.chance(0.6) && cooled(wx, 'snow' + reg.i, 8, today)) snowbound(sim, R, reg, sids);
+    if (st.w === 'blizzard' && st.streak >= 2 && sids.length && R.chance(0.5) && ok('snow' + reg.i, 20)) snowbound(sim, R, reg, sids);
     // 大嵐（海沿いの町）
     if (st.w === 'storm') {
       const hit = sids.filter((id) => g.coast[id]);
-      if (hit.length && R.chance(0.12) && cooled(wx, 'storm' + reg.i, 20, today)) gale(sim, R, reg, hit);
+      if (hit.length && R.chance(0.12) && ok('storm' + reg.i, 30)) gale(sim, R, reg, hit);
     }
   }
 }
@@ -439,7 +459,10 @@ function flood(sim, R, reg, sids) {
   const S = sim.S, w = S.world, today = sim.dayIndex;
   const houses = [];
   for (const sid of sids) {
-    const riverside = housesOf(sim, sid).filter((b) => nearTile(w, b.door.x, b.door.z, 4, (t) => t === T.RIVER));
+    // 川べりの家、なければ低い土地の家から水に浸かる
+    const all = housesOf(sim, sid);
+    let riverside = all.filter((b) => nearTile(w, b.door.x, b.door.z, 4, (t) => t === T.RIVER));
+    if (riverside.length < 2) riverside = all.slice().sort((a, b) => w.hgt[a.door.z * W + a.door.x] - w.hgt[b.door.z * W + b.door.x]).slice(0, 6);
     houses.push(...damageHouses(sim, R, riverside, R.int(2, 6), R.range(0.3, 0.7)));
     const fx = fxOf(S.wx, sid);
     fx.harvest = Math.min(fx.harvest, 0.6); fx.hUntil = Math.max(fx.hUntil, today + R.int(6, 10));
@@ -450,7 +473,7 @@ function flood(sim, R, reg, sids) {
   const s0 = w.settlements[sids[0]];
   const d = record(sim, { kind: 'flood', name: '洪水', region: reg.i, sids, x: s0.x, z: s0.z, houses: houses.length, cost: 60 + houses.length * 30 });
   const paid = relief(sim, d, houses);
-  d.text = `長雨で川があふれ、${names}の畑と${houses.length}軒の家が水に浸かった`;
+  d.text = `長雨で川があふれ、${names}の畑${houses.length ? `と${houses.length}軒の家` : ''}が水に浸かった`;
   sim.news(`${d.text}${paid ? `。国庫から復興費${paid}Gが出た` : ''}`, 2, { x: s0.x, z: s0.z });
   sim.chron(`${names}で大水。川があふれ、畑と家々が水に浸かった`, s0.kingdom);
   const vict = new Set(householdsInHouses(sim, houses.map((b) => b.id)).map((h) => h.id));
@@ -516,9 +539,9 @@ function wildfire(sim, R, reg) {
     const s = w.settlements[sid];
     if (Math.hypot(s.x - cx, s.z - cz) < s.r + 5) houses.push(...damageHouses(sim, R, housesOf(sim, sid), R.int(1, 3), R.range(0.3, 0.8)));
   }
-  const place = sim.placeName(Math.round(cx), Math.round(cz));
+  const place = forestName(sim, cx, cz);
   const d = record(sim, { kind: 'fire', name: '山火事', region: reg.i, sids: near, x: cx, z: cz, tiles: burned.length, houses: houses.length, cost: near.length ? 40 + houses.length * 35 : 0 });
-  const paid = near.length ? relief(sim, d, houses) : 0;
+  const paid = near.length ? relief(sim, d, houses) : (d.paid = 0);
   d.text = `乾いた森に火がつき、${place}の森が${burned.length}区画焼けた`;
   sim.news(`${d.text}${houses.length ? `。${houses.length}軒の家に火が移った` : ''}${paid ? `（国庫から${paid}G）` : ''}`, near.length ? 2 : 1, { x: cx, z: cz });
   sim.chron(`${place}で大きな山火事`, near.length ? w.settlements[near[0]].kingdom : undefined);
@@ -526,6 +549,15 @@ function wildfire(sim, R, reg) {
     const vict = new Set(householdsInHouses(sim, houses.map((b) => b.id)).map((h) => h.id));
     tellTown(sim, near, `${place}の森が燃え、空が赤く染まるのを見た`, -0.5, 0.6, vict, '山火事の火が家に燃え移り、必死で水をかけた');
   }
+}
+
+function forestName(sim, x, z) {
+  let best = null, bd = 1e9;
+  for (const s of sim.S.world.settlements) { const d = Math.hypot(s.x - x, s.z - z); if (d < bd) { bd = d; best = s; } }
+  const dx = x - best.x, dz = z - best.z;
+  if (bd <= best.r + 3) return `${best.name}の裏山`;
+  const dir = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? '東' : '西') : (dz > 0 ? '南' : '北');
+  return `${best.name.replace(/^(王都|港町)/, '').replace(/村$/, '')}の${dir}`;
 }
 
 function snowbound(sim, R, reg, sids) {
@@ -566,4 +598,19 @@ function gale(sim, R, reg, sids) {
 export function weatherSummary(sim) {
   const wx = ensureWx(sim), g = regionGeo(sim);
   return g.regs.filter((r) => r.sids.length).map((r) => ({ name: regionName(sim, r.i), climate: CLIMATE_NAME[r.climate], w: wx.r[r.i].w, label: WX_NAME[wx.r[r.i].w], temp: Math.round(wx.r[r.i].temp), streak: wx.r[r.i].streak }));
+}
+
+// 試験・演出用：指定した地域で災害を起こす（kind: flood|drought|fire|blizzard|storm）
+export function forceDisaster(sim, kind, regionIdx) {
+  const g = regionGeo(sim), wx = ensureWx(sim);
+  const R = makeRng((sim.S.seed + sim.S.t) >>> 0);
+  const reg = g.regs[regionIdx];
+  const sids = reg.sids.filter((id) => !sim.S.towns[id]?.occupied);
+  if (kind === 'fire') return wildfire(sim, R, reg);
+  if (!sids.length) return null;
+  if (kind === 'flood') return flood(sim, R, reg, sids);
+  if (kind === 'drought') { wx.r[reg.i].wet = 0; return drought(sim, R, reg, sids); }
+  if (kind === 'blizzard') return snowbound(sim, R, reg, sids);
+  if (kind === 'storm') return gale(sim, R, reg, sids);
+  return null;
 }
