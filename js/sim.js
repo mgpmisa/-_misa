@@ -1830,6 +1830,14 @@ export class Sim {
     expansionDaily(this);
     tribesDaily(this);
     diplomacyDaily(this);
+    // 市場の運上金と町の上納金：市場の金庫と町の蓄えにたまりすぎたお金を、町→国庫へ戻す（兵や役人の給金になって家計へ還る）
+    for (const st of this.S.world.settlements) {
+      if ((st.tribal || st.indep) && st.annexed == null) continue;
+      const t = this.S.towns[st.id], k = this.S.kingdoms[st.kingdom];
+      if (!t || t.occupied) continue;
+      if ((t.cash || 0) > 1000) { const x = (t.cash - 1000) * 0.08; t.cash -= x; t.fund += x; }
+      if (k && (t.fund || 0) > 350) { const x = (t.fund - 350) * 0.12; t.fund -= x; k.treasury += x; if (k.fisc?.cur) { k.fisc.cur.crown = (k.fisc.cur.crown || 0) + x; k.fisc.dayIn = (k.fisc.dayIn || 0) + x; } }
+    }
     for (const p of this.living()) this.trimMemories(p);
     this.save();
   }
