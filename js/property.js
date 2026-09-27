@@ -2,6 +2,7 @@
 // 家計（hh.money）は家族の共有財産、財布（p.purse）は一人ひとりの小遣いと稼ぎ。
 import { landlords as landlordList } from './perf.js';
 import { JOBS } from './data.js';
+import { lodgingKeeper } from './buildings.js';
 import { ITEMS, addItem, autoEquip, itemName, itemValue } from './items.js';
 
 const TOWN_MUL = { capital: 1.6, port: 1.2, village: 0.8 };
@@ -123,11 +124,11 @@ export function propertyDaily(sim) {
     const fee = 3 * mem.length;
     const cash = hh.money + mem.reduce((t, p) => t + (p.purse || 0), 0);
     const inn = sim.building(hh.house);
-    const keeper = sim.living().find((q) => q.job === 'innkeeper' && q.s === hh.s);
+    const keeper = lodgingKeeper(sim, hh.s);
     if (cash >= fee) {
       let need = fee; const t = Math.min(need, hh.money); hh.money -= t; need -= t;
       for (const p of mem) { const x = Math.min(need, p.purse || 0); p.purse = (p.purse || 0) - x; need -= x; }
-      if (keeper && sim.hh(keeper)) sim.hh(keeper).money += fee * 0.9;
+      if (keeper && sim.hh(keeper)) sim.hh(keeper).money += fee; else S.towns[hh.s].fund += fee;
     } else {
       hh.inn = false; hh.street = true; hh.house = null;
       for (const p of mem) { if (p.inside === inn?.id) { p.inside = null; p.pos = { ...inn.door }; } p.action = null; sim.remember(p, '宿代が払えず、宿屋を追い出された', { emo: -0.8, imp: 0.8, k: 'evicted' }); }

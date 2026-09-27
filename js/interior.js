@@ -14,6 +14,7 @@ import { SPECIES, KINGDOMS } from './data.js';
 import * as SPR from './sprites.js';
 import { makeRng } from './rng.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家の内装
+import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物の内装
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const DUNGEONS = new Set(['cave', 'pyramid', 'demoncastle']);
@@ -629,6 +630,7 @@ const F = {
 
 // ================================================================ 建物ごとの内装
 function sizeOf(b) {
+  const nz = BN.bldInteriorSize(b); if (nz) return nz;
   const t = b.type;
   const fix = { guardpost: [8, 7], camp: [7, 6], fort: [14, 11], dojo: [14, 10], academy: [16, 12], well: [6, 6], lighthouse: [8, 8], mill: [9, 9], observatory: [10, 9], mine: [16, 8], stable: [15, 9], market: [16, 10], hideout: [13, 11], ruins: [14, 12] };
   if (fix[t]) return fix[t];
@@ -1623,7 +1625,7 @@ export class InteriorView {
       const [W, D] = sizeOf(b);
       K = new Kit(W, D, seed, M);
       const ctx = { b, sim, hh: b.hh != null ? sim.S.households[b.hh] : null };
-      if (!(b.tribe && b.style && TH.tribalInterior(K, ctx, F))) (BUILD[type] || BUILD.house)(K, ctx);
+      if (!(b.tribe && b.style && TH.tribalInterior(K, ctx, F))) { if (BN.NEW_INTERIOR[type]) BN.NEW_INTERIOR[type](K, ctx, F); else (BUILD[type] || BUILD.house)(K, ctx); }
     }
     K.finish();
     this.K = K; this.G = G;
@@ -1784,6 +1786,7 @@ export class InteriorView {
     }
     if (e.jail === this.bid) return 'cell';
     if (this.dungeon) return 'explore';
+    { const nk = BN.newKindFor(t, e); if (nk) return nk; }
     const a = e.action?.type;
     switch (a) {
       case 'sleep': return 'bed';
@@ -2164,3 +2167,7 @@ export class InteriorView {
     }
   }
 }
+
+// 町の暮らしの建物（js/bldnew.js）：居場所の種類と題名
+Object.assign(InteriorView.FALLBACK, BN.NEW_FALLBACK);
+Object.assign(LABEL, BN.NEW_LABEL);

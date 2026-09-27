@@ -10,6 +10,7 @@ import { TerrainChunks } from './terrain_chunks.js';
 import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
 import { PartyRings } from './partyring.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家と里
+import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import { convoyViews } from './logistics.js';
 import { ShadowPool, CrowdDots, dotColor } from './crowd.js';
@@ -393,6 +394,7 @@ export class Renderer {
     const kcol = KINGDOMS[b.kingdom]?.color || '#c93a32';
     if (b.tribe && b.style && TH.tribalParts(this, b, add, M, W_, D_, face, door)) return parts; // 民族の家（js/tribehome.js）
     if (BG.styledParts(this, b, { add, M, W_, D_, face, south, kcol, door, windows, gable, flat, banner })) return parts; // 看板と種類ごとの形（js/bldgfx.js）
+    if (BN.NEW_TYPES.has(b.type)) { BN.newBldParts(this, b, add, M, W_, D_, face, door, { houseLike, gable, windows, banner, flat, south, kcol }); return parts; } // 町の暮らしの建物（js/bldnew.js）
     switch (b.type) {
       case 'house': houseLike(1.15, M.timber, b.roof === 'tile' ? M.tileRoof : M.thatch); break;
       case 'bakery': houseLike(1.2, M.timber, M.thatch); break;

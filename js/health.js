@@ -471,7 +471,7 @@ export function healthDecide(sim, p, cands, add) {
       else if (c.type === 'pray') c.score += g.lv / 40;
     }
     const anniv = g.anniv === sim.today;
-    if (h >= 8 && h < 18 && (anniv || sim.rng.chance(0.25))) add((anniv ? 7 : 1.5 + g.lv / 25) + p.values.faith, 'grave', sim.placeFor(p, 'church'), sim.rng.int(20, 45), { friend: g.who });
+    if (h >= 8 && h < 18 && (anniv || sim.rng.chance(0.25))) add((anniv ? 7 : 1.5 + g.lv / 25) + p.values.faith, 'grave', sim.placeFor(p, 'cemetery'), sim.rng.int(20, 45), { friend: g.who });
   }
   // 看病：同じ家の寝込んでいる人
   if (h >= 7 && h < 21 && age >= 10 && p.needs.hunger > 25) {

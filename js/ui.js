@@ -14,6 +14,7 @@ import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
 import { elderCard, elderBuildingRows } from './elder.js';
+import { BLD_LABEL, BLD_GO, BLD_PREF, BLD_TYPE_LABEL, buildingRows } from './buildings.js';
 import { laborCard, laborNationHTML, LABOR_LABEL, LABOR_GO, LABOR_PREF } from './labor.js';
 import { monsterHtml } from './monsters.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
@@ -67,6 +68,8 @@ Object.assign(ACTION_LABEL, { escort: '荷車を護衛している', sail: '船�
 Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '王に陳情している', riot: '暴動に加わっている' }); Object.assign(ACTION_GO, { levy: '税の取り立てに回っている', petition: '王都へ陳情に向かっている', riot: '広場へ押しかけている' }); Object.assign(PREF_LABEL, { levy: '徴税', petition: '陳情', riot: '暴動' });
 Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Object.assign(PREF_LABEL, LABOR_PREF);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
+Object.assign(ACTION_LABEL, BLD_LABEL); Object.assign(ACTION_GO, BLD_GO); Object.assign(PREF_LABEL, BLD_PREF);
+for (const t of Object.keys(BLD_TYPE_LABEL)) INTERIOR_TYPES.add(t);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const JA_ORDER = new Intl.Collator('ja');   // 名前の並べ替え（localeCompare を毎回作らない。並びは同じ）
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
@@ -764,7 +767,7 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    let typeLabel = { mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    let typeLabel = { mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || BLD_TYPE_LABEL[b.type] || '建物';
     typeLabel = bldTypeLabel(b, typeLabel); // 民族の集会所・祠、村の寄り合い所などを正しい呼び名に
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     if (INTERIOR_TYPES.has(b.type)) h += `<div class="row-btns"><button id="enterBtn">${['cave', 'pyramid', 'demoncastle', 'ruins', 'mine'].includes(b.type) ? '奥へ踏み込んで見る' : '中に入って見る'}</button></div>`;
@@ -784,6 +787,8 @@ export class UI {
       const qs = (S.quests || []).filter((q) => q.s === b.settlement && ['open', 'taken', 'report'].includes(q.state));
       h += `<div class="section"><h4>依頼掲示板</h4><ul class="rels">${qs.map((q) => `<li><span>［${RANKS_ADV[q.rank]}］${esc(q.title)}</span><span class="dead">${q.reward}銅貨</span></li>`).join('') || '<li>いまは依頼がない</li>'}</ul></div>`;
     }
+    const br = buildingRows(sim, b);
+    if (br.length) h += `<div class="section"><h4>${esc(BLD_TYPE_LABEL[b.type] || '')}</h4><dl class="kv">${br.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const er = elderBuildingRows(sim, b);
     if (er.length) h += `<div class="section"><h4>救貧院</h4><dl class="kv">${er.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const inside = sim.living().filter((q) => q.inside === b.id);

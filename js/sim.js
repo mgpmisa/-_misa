@@ -42,6 +42,7 @@ import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily,
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
 import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth } from './tribes.js';
+import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -97,6 +98,7 @@ export class Sim {
     this.slimDead();
     ensureExpansion(this);
     initTribes(this);
+    ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
     this.seedMarkets();
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
@@ -122,6 +124,7 @@ export class Sim {
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     ensureExpansion(this);
     ensureTribes(this);
+    ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
     this.seedMarkets();
     computeDanger(this);
     return true;
@@ -500,6 +503,7 @@ export class Sim {
     const tp = tribesPlace(this, p, kind); if (tp) return tp;
     const R = this.rng, s = this.townOf(p), w = this.S.world;
     const cp = civicPlace(this, p, kind); if (cp) return cp;
+    const bp = buildingsPlace(this, p, kind); if (bp) return bp;
     switch (kind) {
       case 'home': {
         const b = this.homeOf(p);
@@ -675,6 +679,7 @@ export class Sim {
 
     choreOptions(this, p, add);
     civicOptions(this, p, add);
+    buildingsOptions(this, p, add);
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
     gearCandidates(this, p, add);
@@ -873,7 +878,7 @@ export class Sim {
         break;
       }
       case 'sleep':
-        if (a.inn) { const cost = 3; if (spendable(this, p) >= cost) pay(this, p, cost); }
+        if (a.inn) { const cost = 3; if (spendable(this, p) >= cost) { pay(this, p, cost); const kp = lodgingKeeper(this, p.s); if (kp && this.hh(kp)) this.hh(kp).money += cost; else this.S.towns[p.s].fund += cost; } }
         break;
       case 'travel': {
         if (a.dest != null) {
@@ -913,6 +918,7 @@ export class Sim {
     underworldArrive(this, p);
     choreArrive(this, p, a);
     civicArrive(this, p, a);
+    buildingsArrive(this, p, a);
     gearArrive(this, p);
     laborArrive(this, p);
   }
@@ -1054,7 +1060,7 @@ export class Sim {
         // 貴族の収入は領地の地代（property.js の家賃・小作料）から入る
         break;
       }
-      default: this.genericWork(p, dt, eff); civicWork(this, p, dt, eff);
+      default: this.genericWork(p, dt, eff); civicWork(this, p, dt, eff); buildingsWork(this, p, dt, eff);
     }
   }
 
@@ -1411,6 +1417,7 @@ export class Sim {
     if (!p.action) return;
     choreDo(this, p, dt);
     civicDo(this, p, dt);
+    buildingsDo(this, p, dt);
     gearDo(this, p, dt);
     for (const k of NEED_KEYS) n[k] = clamp(n[k], 0, 100);
     const wakeEarly = a.type === 'sleep' && n.sleep >= 99 && this.hour() > 4 && this.hour() < 12;
@@ -1879,6 +1886,7 @@ export class Sim {
     propertyDaily(this);
     choreDaily(this);
     civicDaily(this);
+    buildingsDaily(this);
     careerDaily(this);
     elderDaily(this);
     financeDaily(this);
@@ -2031,7 +2039,7 @@ export class Sim {
     const town = this.townOf(p);
     const from = (this.dayIndex + 1) * 1440 + 10 * 60;
     const mourners = this.living().filter((q) => q.s === p.s && ((mayKin(q) && this.kinTerm(q, p)) || q.hh === p.hh || q.job === 'priest')).map((q) => q.id);
-    if (!S.towns[p.s].occupied) S.gatherings.push({ type: 'funeral', place: 'church', from, to: from + 90, ids: mourners, s: p.s, label: `${p.given}の弔い` });
+    if (!S.towns[p.s].occupied) S.gatherings.push({ type: 'funeral', place: 'cemetery', from, to: from + 90, ids: mourners, s: p.s, label: `${p.given}の弔い` });
     const important = ['king', 'royal', 'noble'].includes(p.rank) || p.hero || p.fame > 40;
     const line = `${this.fullName(p)}が${age}歳で亡くなった（${causeTxt}${killerName ? `・${killerName}の手にかかって` : ''}）`;
     this.chron(line, town.kingdom);
