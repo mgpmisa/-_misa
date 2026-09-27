@@ -38,6 +38,7 @@ import { monstersDaily, monstersHourly } from './monsters.js';
 import { spawnerDaily, spawnerHourly, spawnerDanger, spawnerExplored } from './spawner.js';
 import { elderDaily } from './elder.js';
 import { bankDaily, priceLevel, hhDeposit } from './bank.js';
+import { mintHourly, mintStep, mintDecide, mintDaily } from './mintflow.js';   // 造幣の流れ（鉱石を掘る→荷車で運ぶ→造幣所で打つ→国庫へ）
 import { laborDaily, laborRestDay, restDayFor, laborWork, laborWorkMul, laborCandidates, laborArrive, laborDo } from './labor.js';
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
@@ -704,6 +705,7 @@ export class Sim {
     matterCandidates(this, p, add);   // 世界の物を、欲求に合わせて選んで買う（matter.js）
     gearCandidates(this, p, add);
     carryDecide(this, p, add);   // 袋やかごを買う・荷を置きに戻る・倉庫に預ける・力を鍛える（carry.js）
+    mintDecide(this, p, add);   // 造幣の職人が造幣所へ硬貨を打ちに行く（mintflow.js）
     laborCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
     healthDecide(this, p, cands, add);
@@ -1400,6 +1402,7 @@ export class Sim {
     { const edt = encounterDt(this, dt); if (edt) this.checkEncounters(people, edt); }   // 広い世界では3歩に1回、3歩分まとめて（perf.js）
     diplomacyStep(this, dt);
     stepConvoys(this, dt);
+    mintStep(this, dt);   // 鉱石の荷車・硬貨の箱を進め、造幣所の中の仕事を進める（mintflow.js）
   }
 
   // 1時間を120の区切り（0.5分ずつ）に分け、sim.living() の並びで i 番目の人は区切り i % 120 に1時間ぶんの処理をする
@@ -1851,6 +1854,7 @@ export class Sim {
     partyLifeHourly(this);   // 絆・家族恋しさ・宿の数（partylife.js）
     tacticsHourly(this);   // 盾役のいないパーティの助っ人（騎士・兵士）の雇い入れと雇いの終わり（tactics.js）
     formationHourly(this);   // 職業による能力の補正を付け直し、務めの伸びを足す（formation.js）
+    mintHourly(this);   // 鉱石を掘って置き場へ・鉱石の荷車・硬貨の箱を国庫へ（mintflow.js。carryHourly より前）
     carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
   }
 
@@ -1964,6 +1968,7 @@ export class Sim {
     elderDaily(this);
     financeDaily(this);
     bankDaily(this, GOODS);
+    mintDaily(this);   // 造幣所の1日の締め・給料日の手間賃・預かり証（mintflow.js）
     marketDaily(this);
     matterDaily(this);   // 世界の物（matter.js）
     housingDaily(this);   // 手狭な家の建て増し・引っ越し・独り立ち（housing.js）

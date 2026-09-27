@@ -2171,6 +2171,7 @@ export function personAnimState(sim, p, moving = false) {
     if ((c.ss?.para || 0) > t || (c.ss?.stun || 0) > t) return 'hurt';
     if ((c.rout || 0) > t) return 'flee';
   }
+  for (const f of ANIM_EXT.STATE) { const r = f(sim, p, moving); if (r) return r; }   // 足した仕組みの動き（mintanim.js など）
   const age = sim?.ageOf ? sim.ageOf(p) : 30;
   const kid = age < 13;
   const a = p.action;
@@ -2236,3 +2237,6 @@ export function __walkSheet(p, opts = {}) {
   for (let dir = 0; dir < 4; dir++) for (let f = 0; f < 3; f++) S.blit(frames[dir][f], fx, y0, fw, fh, f * fw, dir * fh);
   return S.toCanvas({ frameW: fw, frameH: fh, cols: 3, rows: 4 });
 }
+
+// ================================================================ 足す口：ほかのファイルが仕事の動き・手に持つ小物・状態を足す（mintanim.js）
+export const ANIM_EXT = { WORK, TOOL, OBJ, STATE: [] };

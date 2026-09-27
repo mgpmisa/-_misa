@@ -1,7 +1,8 @@
 // 通貨と銀行：造幣所・硬貨の質（悪鋳と摩耗）・物価の水準・両替商の館（預金・貸付・為替手形・取り付け騒ぎ）・退蔵（壺に埋めた銅貨）
 //
 // お金の出どころと行き先（社長の決まり「お金には必ず出どころと行き先がある」）
-//   ・発行（issue）……造幣所が鉱山の銀と金を買い上げて打ち出した新しい硬貨。鉱夫の家計（地金の代金）・国庫（造幣益）・王都の蓄え（造幣職人の手間賃）へ。
+//   ・発行（issue）……造幣所が鉱山の銀と金を買い上げて打ち出した新しい硬貨。鉱石は鉱夫が掘り、荷車で造幣所へ運び、炉・鋳型・打刻で硬貨になる（js/mintflow.js）。
+//                      箱から出るとき（鉱夫と運び手の家計＝鉱石の代金・職人の家計＝手間賃・国庫＝造幣益）に発行として数える。
 //                      悪鋳のときの改鋳益（国庫へ）も発行。
 //   ・回収（recall）……良貨に戻す改鋳で鋳つぶした硬貨。国庫から出て地金に戻る（お金が減る）。
 //   ・埋蔵（bury）……けちな人が家計の硬貨を壺に入れて埋める。家計→埋蔵（S.bank.hoards）。
@@ -141,46 +142,8 @@ function ancientHoards(sim) {
 }
 
 // ---------- 造幣 ----------
-function mintDaily(sim, k, b) {
-  const S = sim.S, R = sim.rng, B = S.bank;
-  const cap = capital(sim, k); if (!cap || S.towns[cap.id]?.occupied) return;
-  const king = alive(sim, k.kingId);
-  const mines = kingdomTowns(sim, k.id).filter((s) => s.mine != null && !S.towns[s.id]?.occupied);
-  let ag = 0, au = 0;
-  const paid = [];
-  for (const s of mines) {
-    const miners = sim.living().filter((p) => p.job === 'miner' && p.s === s.id && p.jail == null && sim.ageOf(p) >= 14);
-    for (const p of miners) {
-      const skill = p.skill?.miner ?? 0.3;
-      let g = takeFromVein(sim, s.mine, 'ag', MINE_AG * (0.6 + skill) * R.range(0.5, 1.3));
-      let gold = R.chance(0.04) ? takeFromVein(sim, s.mine, 'au', R.int(10, 30)) : 0;
-      if (g + gold <= 0) continue;
-      ag += g; au += gold;
-      paid.push({ p, v: g + gold, gold });
-    }
-  }
-  if (!paid.length) { b.issuedToday = 0; return; }
-  // 造幣益：強欲な王ほど高く取る（5〜10%）
-  const greed = k.taxes?.greed ?? 0.5;
-  const seign = 0.05 + greed * 0.05;
-  const value = ag + au;                 // 地金の値打ち（良貨で数えた銅貨）
-  const face = value / Math.max(0.3, b.q); // 質を落としていれば、同じ地金から多くの硬貨ができる
-  let toMiners = 0;
-  for (const { p, v, gold } of paid) {
-    const pay = v * (1 - seign - MINTAGE);
-    const hh = sim.hh(p); if (hh) hh.money += pay; else p.purse = (p.purse || 0) + pay;
-    toMiners += pay;
-    if (gold > 0) { remember(sim, p, `坑道の奥で金の粒を見つけ、王立造幣所に${r1(gold * (1 - seign - MINTAGE))}銅貨で買い上げてもらった`, 0.7, 0.6); }
-  }
-  const toFund = value * MINTAGE;
-  const toCrown = face - toMiners - toFund;   // 造幣益（悪鋳していれば、その差益もここに入る）
-  S.towns[cap.id].fund += toFund;
-  k.treasury += toCrown;
-  if (k.fisc) { k.fisc.dayIn = (k.fisc.dayIn || 0) + toCrown; if (k.fisc.cur) k.fisc.cur.mint = (k.fisc.cur.mint || 0) + toCrown; }
-  b.bullion.ag += ag; b.bullion.au += au;
-  b.issued += face; b.issuedYear += face; b.issuedToday = face;
-  B.led.issue += face; B.led.mint += face;
-}
+// 以前の mintDaily（1日1回、鉱夫の家計に地金の代金を直接足していた）は、js/mintflow.js の流れに置き換えた。
+// 鉱脈（B.veins）はここで作り、mintflow.js が掘るときに減らす。
 
 // ---------- 悪鋳・良貨への改鋳・摩耗 ----------
 function coinPolicy(sim, k, b, M) {
@@ -641,7 +604,7 @@ export function bankDaily(sim, GOODS) {
   const Ms = moneyByKingdom(sim);
   for (const k of S.kingdoms) {
     const b = B.k[k.id], M = Ms[k.id] || { circ: 0, pop: 1, hoard: 0 };
-    mintDaily(sim, k, b);
+    // 造幣は js/mintflow.js（sim.newDay で bankDaily のあとに mintDaily）
     coinPolicy(sim, k, b, M);
     bankDailyOne(sim, k, b);
     if (GOODS) levelDaily(sim, k, b, M, GOODS);

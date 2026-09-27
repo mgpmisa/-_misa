@@ -16,6 +16,7 @@ import { makeRng } from './rng.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家の内装
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物の内装
 import * as CI from './castleint.js'; // 王城の中（いくつもの部屋・身分ごとの寝台）
+import * as MG from './mintgfx.js'; // 造幣所の中（炉・鋳型・金床・在庫）と、王城の宝物庫の国庫の硬貨
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const DUNGEONS = new Set(['cave', 'pyramid', 'demoncastle']);
@@ -1634,7 +1635,7 @@ export class InteriorView {
       const [W, D] = type === 'castle' ? CI.castleSize(b, sim) : sizeOf(b);
       K = new Kit(W, D, seed, M);
       const ctx = { b, sim, hh: b.hh != null ? sim.S.households[b.hh] : null };
-      if (!(b.tribe && b.style && TH.tribalInterior(K, ctx, F))) { if (BN.NEW_INTERIOR[type]) BN.NEW_INTERIOR[type](K, ctx, F); else (BUILD[type] || BUILD.house)(K, ctx); }
+      if (!(b.tribe && b.style && TH.tribalInterior(K, ctx, F))) { if (type === 'mint') MG.mintInterior(K, ctx, F); else if (BN.NEW_INTERIOR[type]) BN.NEW_INTERIOR[type](K, ctx, F); else (BUILD[type] || BUILD.house)(K, ctx); }
     }
     K.finish();
     this.K = K; this.G = G;
@@ -1696,10 +1697,12 @@ export class InteriorView {
     const n = this.countInside();
     sub += n.people || n.monsters ? `・中に${n.people ? `${n.people}人` : ''}${n.people && n.monsters ? '・' : ''}${n.monsters ? `魔物${n.monsters}体` : ''}` : '・誰もいない';
     if (town && type !== 'house') sub = `${town.name}の${sub}`;
+    MG.mintAttach(this, b);   // 造幣所の在庫・宝物庫の国庫（mintgfx.js）
     return { title: b.name || LABEL[type] || type, subtitle: sub };
   }
 
   close() {
+    MG.mintDetach(this);
     for (const id of [...this.ents.keys()]) this.drop(id);
     for (const r of this.decos || []) this.disposeSprite(r);
     this.decos = [];
@@ -1798,6 +1801,7 @@ export class InteriorView {
     if (e.jail === this.bid) return 'cell';
     if (this.dungeon) return 'explore';
     if (t === 'castle') { const ck = CI.castleKindFor(e, this.K); if (ck) return ck; }
+    if (t === 'mint') { const mk = MG.mintKindFor(e); if (mk) return mk; }   // 炉・鋳型・金床・数える台（mintgfx.js）
     { const nk = BN.newKindFor(t, e); if (nk) return nk; }
     const a = e.action?.type;
     switch (a) {
@@ -1995,6 +1999,7 @@ export class InteriorView {
     const now = this.time;
     this.syncEntities();
     this.animate(dt, now);
+    MG.mintTick(this, dt, now);   // 在庫の作り直し・炉の煙・造幣の職人の動き（mintgfx.js）
     this.light(now);
     this.cullWalls();
     for (const s of this.K.spin) {
@@ -2184,6 +2189,7 @@ export class InteriorView {
 
 // 町の暮らしの建物（js/bldnew.js）：居場所の種類と題名
 Object.assign(InteriorView.FALLBACK, BN.NEW_FALLBACK);
+Object.assign(InteriorView.FALLBACK, MG.MINT_FALLBACK); Object.assign(LABEL, MG.MINT_INT_LABEL); // 造幣所の工程の居場所
 Object.assign(InteriorView.FALLBACK, CI.CASTLE_FALLBACK); // 城の居場所（王妃の居間・執務机・厨房など）
 LABEL.castle = '王城の中';
 Object.assign(LABEL, BN.NEW_LABEL);

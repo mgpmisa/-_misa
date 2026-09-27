@@ -13,6 +13,8 @@ import * as TH from './tribehome.js'; // 奥地の民族の家と里
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import { convoyViews } from './logistics.js';
+import { mintViews } from './mintflow.js';   // 鉱石の荷車・硬貨の箱の手押し車
+import { mintCartMesh } from './mintgfx.js';
 import { ShadowPool, CrowdDots, dotColor } from './crowd.js';
 import { formationPos, formationFace } from './formation.js'; // パーティの隊列（見た目の位置だけ。開発部）
 import { spacingBegin, spacedPos, spacingFace, spacingSlideCorpse } from './spacing.js'; // 立ち止まった者どうしが重ならない立ち位置（技術部）
@@ -951,9 +953,9 @@ export class Renderer {
   updateConvoys(now) {
     const w = this.sim.S.world, seen = new Set(), away = new Set();
     this.convoyObjs = this.convoyObjs || new Map();
-    for (const v of convoyViews(this.sim)) {
+    for (const v of [...convoyViews(this.sim), ...mintViews(this.sim)]) {
       let o = this.convoyObjs.get(v.id);
-      if (!o) { o = this.makeConvoyMesh(v.kind); this.scene.add(o); this.convoyObjs.set(v.id, o); }
+      if (!o) { o = v.mf ? mintCartMesh(v) : this.makeConvoyMesh(v.kind); this.scene.add(o); this.convoyObjs.set(v.id, o); }
       seen.add(v.id);
       if (v.kind === 'ship') away.add(v.home);
       const x = Math.round(v.x), z = Math.round(v.z), t = w.tiles[z * W + x];

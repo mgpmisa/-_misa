@@ -558,8 +558,7 @@ export function buildCastle(K, ctx, F) {
         // 宝物庫
         const tx0 = r.doorX > r.x ? r.x : wx + 1;
         K.box(tx0, 0, r.z, tw, 0.012, r.d, M.darkStone);
-        F.chest(K, tx0 + 0.2, r.z + 0.2, { mat: M.darkWood }); F.chest(K, tx0 + 1.1, r.z + 0.2, { open: true, mat: M.darkWood }); F.chest(K, tx0 + 2.0, r.z + 0.2, { mat: M.brown });
-        F.goldPile(K, tx0 + 0.9, r.z + r.d - 1.0, 0.6);
+        K.vault = { x: tx0, z: r.z, w: tw, d: r.d }; // 国庫の硬貨は mintgfx.js が額に合わせて置く（硬貨の袋・硬貨の箱・宝箱・硬貨の山）
         // 冠の台
         const kx = tx0 + 2.2, kz = r.z + r.d - 1.0;
         K.box(kx - 0.3, 0, kz - 0.3, 0.6, 0.8, 0.6, M.white); K.box(kx - 0.32, 0.8, kz - 0.32, 0.64, 0.05, 0.64, velvet);

@@ -13,6 +13,7 @@ import { bldTypeLabel } from './bldgfx.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
+import { mintBuildingHTML, mintPersonHTML, MINT_LABEL, MINT_GO, MINT_PREF } from './mintflow.js';   // 造幣の流れの詳細欄
 import { elderCard, elderBuildingRows } from './elder.js';
 import { BLD_LABEL, BLD_GO, BLD_PREF, BLD_TYPE_LABEL, buildingRows } from './buildings.js';
 import { econFlowHTML } from './ledger.js';
@@ -58,7 +59,7 @@ const ACTION_LABEL = {
   guild: 'ギルドで依頼を探している', report: 'ギルドに依頼の報告をしている', buygear: '鍛冶場で装備を選んでいる', gather: '素材を集めている', hunt: '賞金首を追っている', quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
   march: '前線で戦っている', crusade: '魔王討伐の旅をしている', defend: '町を守っている', flee: '逃げている', court: '想い人に会いに来ている', trade: '商いをしている', travel: '旅をしている', visit: '知り合いの家を訪ねている',
 };
-const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle', 'guardpost', 'academy', 'dojo', 'fort', 'camp', 'shrine']);
+const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle', 'guardpost', 'academy', 'dojo', 'fort', 'camp', 'shrine', 'mint']);
 const ACTION_GO = {
   sleep: '寝床へ向かっている', eat: '食事をしに家へ向かっている', shop: '市場へ向かっている', tavern: '酒場へ向かっている', plaza: '広場へ向かっている',
   stroll: 'ぶらぶら歩いている', pray: '祈りに向かっている', play: '遊びに出かけるところ', rest: '家へ帰るところ', home: '家へ帰るところ', festival: '祭りの広場へ向かっている',
@@ -84,6 +85,7 @@ Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Ob
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 Object.assign(ACTION_LABEL, BLD_LABEL); Object.assign(ACTION_GO, BLD_GO); Object.assign(PREF_LABEL, BLD_PREF);
 Object.assign(ACTION_LABEL, MARKET_LABEL); Object.assign(ACTION_GO, MARKET_GO); Object.assign(PREF_LABEL, MARKET_PREF);
+Object.assign(ACTION_LABEL, MINT_LABEL); Object.assign(ACTION_GO, MINT_GO); Object.assign(PREF_LABEL, MINT_PREF);
 Object.assign(ACTION_LABEL, MATTER_LABEL); Object.assign(ACTION_GO, MATTER_GO); Object.assign(PREF_LABEL, MATTER_PREF);
 Object.assign(ACTION_LABEL, NEEDS_LABEL); Object.assign(ACTION_GO, NEEDS_GO); Object.assign(PREF_LABEL, NEEDS_PREF);
 Object.assign(ACTION_LABEL, CARRY_LABEL); Object.assign(ACTION_GO, CARRY_GO); Object.assign(PREF_LABEL, CARRY_PREF);
@@ -686,6 +688,7 @@ export class UI {
       h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}${gearItemNote(eq[k]) ? `<br><span class="sub">${esc(gearItemNote(eq[k]))}</span>` : ''}</dd>` : '').join('')}
 
         <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${wageText(sim, p) ? `<dt>給金</dt><dd>${esc(wageText(sim, p))}</dd>` : ''}${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
+      h += mintPersonHTML(sim, p, esc);   // 造幣所行きの鉱石・運んだ記録・造幣の仕事（mintflow.js）
       h += carryHtml(sim, p, esc);   // 持ち物：品・数・重さ、重さと枠、身に付けた袋、家の蔵、倉庫（carry.js）
       { const cr = combatRows(sim, p); if (cr) h += `<div class="section"><h4>戦い</h4><dl class="kv">${cr}</dl></div>`; }   // 戦い方・息・魔力・状態異常・大けが・苦手な相手（combat.js）
       if (isAdventurer(p)) {
@@ -819,6 +822,7 @@ export class UI {
     if (br.length) h += `<div class="section"><h4>${esc(BLD_TYPE_LABEL[b.type] || '店と持ち主')}</h4><dl class="kv">${br.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const er = elderBuildingRows(sim, b);
     if (er.length) h += `<div class="section"><h4>救貧院</h4><dl class="kv">${er.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
+    h += mintBuildingHTML(sim, b, esc, (x, l) => this.pLink(x, l));   // 造幣所：入荷・地金・打った枚数・誰に払ったか・硬貨の質／鉱山：鉱石置き場（mintflow.js）
     const inside = sim.living().filter((q) => q.inside === b.id);
     if (inside.length) h += `<div class="section"><h4>いま中にいる人</h4>${inside.map((q) => this.pLink(q)).join('、')}</div>`;
     const bandits = sim.living().filter((q) => q.hideout === b.id);
