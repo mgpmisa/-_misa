@@ -35,16 +35,14 @@ class JusticeFx {
   build(e) {
     const g = new THREE.Group();
     const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = true; o.receiveShadow = true; g.add(o); return o; };
-    // 台（低い木の舞台）と脚
-    box(2.6, 0.2, 2.6, this.mPlank, 0, 0.1, 0);
-    box(2.7, 0.05, 2.7, this.mDark, 0, 0.005, 0);
+    // 台：人のドット絵が隠れないよう、床板は薄く低くする（人は地面の高さに立つ）
+    box(2.6, 0.04, 2.6, this.mPlank, 0, 0.02, 0);
+    box(2.75, 0.02, 2.75, this.mDark, 0, 0.005, 0);
     for (const [x, z] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]]) box(0.12, 0.55, 0.12, this.mWood, x, 0.27, z);
     // 手すり（前を開けて、左右と奥だけ）
     box(2.5, 0.06, 0.06, this.mWood, 0, 0.52, -1.2);
     box(0.06, 0.06, 2.5, this.mWood, -1.2, 0.52, 0);
     box(0.06, 0.06, 2.5, this.mWood, 1.2, 0.52, 0);
-    // 前の段
-    box(0.8, 0.1, 0.4, this.mPlank, 0, 0.05, 1.5);
     // 奥の枠と鐘
     box(0.14, 2.0, 0.14, this.mWood, -0.9, 1.0, -1.3);
     box(0.14, 2.0, 0.14, this.mWood, 0.9, 1.0, -1.3);
@@ -55,8 +53,8 @@ class JusticeFx {
     // 黒い旗（刑の日のしるし）
     box(0.06, 1.4, 0.06, this.mWood, 1.35, 0.9, -1.35);
     const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.4), this.mFlag); flag.position.set(1.66, 1.4, -1.35); g.add(flag);
-    // 台の前に垂らした布
-    box(2.5, 0.16, 0.02, this.mCloth, 0, 0.12, 1.31);
+    // 台のふちの布（低く）
+    box(2.6, 0.05, 0.02, this.mCloth, 0, 0.03, 1.31);
     g.userData = { bellPivot, flag, id: e.id };
     const p = this.r.entityPos({ pos: { x: e.x, z: e.z } });
     g.position.set(p.x, p.y, p.z);

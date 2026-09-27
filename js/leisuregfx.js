@@ -5,11 +5,16 @@
 // 設定を切ると、館は取り壊され（js/leisure.js）、ここで描いたものも消える。
 // 館は render.js の建物のまとめ描き（buildBuildings）には入れず、ここで別に描く（あとから消せるように）。
 //
+// 娯楽の3D（設定に関係なく、そのときだけ描く）
+//   祭りの広場 …… 祭りの行事（calendar.js）のあいだ、町の広場に踊りの柱（リボン付き）・楽士の舞台・屋台2軒
+//   大道芸の台 …… 広場で見世物（labor.js の show）を見ている人が2人以上いるとき、小さな木の台と幟
+//
 // ■ 本体からの呼び方
 //   render.js の buildingParts の頭 … if (LG.skipBuilding(b)) return parts;
 //   render.js の update の頭       … LG.leisureGfxSync(this);
 import * as THREE from 'three';
-import { W, H } from './world.js';
+import { W, H, T } from './world.js';
+import './anim_leisure.js'; // 娯楽の人の動き（歌う・手をたたく・賭け事・湯に入る・逢い引き）をドット絵に登録する
 
 const wx = (x) => x - W / 2 + 0.5;
 const wz = (z) => z - H / 2 + 0.5;
@@ -30,6 +35,16 @@ function mats() {
     win: new THREE.MeshBasicMaterial({ color: '#e0a060' }),
     lantern: new THREE.MeshBasicMaterial({ color: '#ff5a3c' }),
     cap: new THREE.MeshLambertMaterial({ color: '#1e1410' }),
+    wood: new THREE.MeshLambertMaterial({ color: '#9a7048' }),
+    woodD: new THREE.MeshLambertMaterial({ color: '#6a4a2c' }),
+    pole: new THREE.MeshLambertMaterial({ color: '#e8dcc0' }),
+    green: new THREE.MeshLambertMaterial({ color: '#4a8a3a' }),
+    rib: ['#d83a3a', '#e8c030', '#3a7ad8', '#e87ab0', '#4ab870', '#f0f0f0'].map((c) => new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide })),
+    awnA: new THREE.MeshLambertMaterial({ color: '#c83a34' }),
+    awnB: new THREE.MeshLambertMaterial({ color: '#f2ead8' }),
+    awnC: new THREE.MeshLambertMaterial({ color: '#3a6ac0' }),
+    goods: ['#e0a040', '#d04040', '#80c050', '#f0e0b0', '#a06030'].map((c) => new THREE.MeshLambertMaterial({ color: c })),
+    banner: new THREE.MeshLambertMaterial({ color: '#8a3ac0', side: THREE.DoubleSide }),
   };
   return MATS;
 }
@@ -89,6 +104,7 @@ function buildHouse(sim, b) {
 export function leisureGfxSync(r) {
   const sim = r.sim, S = sim.S;
   r._lzT = (r._lzT || 0) + 1;
+  if (r._lzT % 30 === 1) syncProps(r);   // 祭りの広場・大道芸の台
   if (r._lzT % 20 === 0 || r._lzKey == null) {
     const on = S.settings?.matureCrimes === true;
     const ids = on ? S.world.buildings.filter((b) => b.type === HOUSE_TYPE && !b.gone).map((b) => b.id) : [];
@@ -109,4 +125,97 @@ export function leisureGfxSync(r) {
     const k = 0.85 + Math.sin(t * 3.1) * 0.08 + Math.sin(t * 7.3) * 0.05;
     MATS.lantern.color.setRGB(1 * k, 0.35 * k, 0.24 * k);
   }
+}
+
+// ================================================================ 祭りの広場・大道芸の台（3D）
+function meshAt(g, geo, mat, x, y, z, ry = 0) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; }
+// 広場の中心に近い、建物のないマス（広場の石畳か道）を選ぶ
+function plazaSpots(sim, s, n, taken) {
+  const w = sim.S.world, out = [];
+  const cands = [];
+  for (let z = s.z - 6; z <= s.z + 6; z++) for (let x = s.x - 6; x <= s.x + 6; x++) {
+    if (x < 1 || z < 1 || x >= W - 1 || z >= H - 1) continue;
+    const t = w.tiles[z * W + x];
+    if (t !== T.PLAZA && t !== T.ROAD) continue;
+    cands.push({ x, z, d: Math.hypot(x - s.x, z - s.z) + (t === T.ROAD ? 1.5 : 0) });
+  }
+  cands.sort((a, b) => a.d - b.d);
+  for (const c of cands) {
+    if (out.length >= n) break;
+    if ([...out, ...taken].some((o) => Math.abs(o.x - c.x) < 3 && Math.abs(o.z - c.z) < 3)) continue;
+    out.push(c);
+  }
+  taken.push(...out);
+  return out;
+}
+const posOf = (sim, c) => { const w = sim.S.world; return [wx(c.x), topY(w.hgt[c.z * W + c.x] ?? 0), wz(c.z)]; };
+// 踊りの柱：白い柱のてっぺんに緑の冠、6色のリボンが斜めに垂れる
+function maypole(sim, g, c) {
+  const M = mats(), [x, y, z] = posOf(sim, c);
+  meshAt(g, new THREE.CylinderGeometry(0.06, 0.08, 3.2, 8), M.pole, x, y + 1.6, z);
+  meshAt(g, new THREE.TorusGeometry(0.28, 0.07, 6, 12), M.green, x, y + 3.05, z).rotation.x = Math.PI / 2;
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * Math.PI * 2;
+    const L = 2.6, dx = Math.cos(a) * 1.1, dz = Math.sin(a) * 1.1;
+    const rib = meshAt(g, new THREE.PlaneGeometry(0.07, L), M.rib[i], x + dx / 2, y + 3.0 - L / 2 + 0.25, z + dz / 2);
+    rib.lookAt(x + dx * 2, y + 1.4, z + dz * 2);
+    rib.rotation.z += Math.atan2(1.1, L) * 0.9;
+    rib.castShadow = false;
+  }
+}
+// 楽士の舞台：低い木の台と、ふちの柱
+function stage(sim, g, c) {
+  const M = mats(), [x, y, z] = posOf(sim, c);
+  meshAt(g, new THREE.BoxGeometry(2.0, 0.28, 1.5), M.wood, x, y + 0.14, z);
+  meshAt(g, new THREE.BoxGeometry(2.05, 0.06, 1.55), M.woodD, x, y + 0.3, z);
+  for (const sx of [-1, 1]) meshAt(g, new THREE.BoxGeometry(0.08, 1.1, 0.08), M.woodD, x + sx * 0.95, y + 0.85, z - 0.7);
+  meshAt(g, new THREE.PlaneGeometry(1.9, 0.3), M.rib[1], x, y + 1.3, z - 0.7);
+}
+// 屋台：4本の柱、売り台、しま模様の日よけ、品物
+function stall(sim, g, c, k) {
+  const M = mats(), [x, y, z] = posOf(sim, c);
+  const awn2 = k % 2 ? M.awnC : M.awnA;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) meshAt(g, new THREE.BoxGeometry(0.07, 1.4, 0.07), M.woodD, x + sx * 0.6, y + 0.7, z + sz * 0.4);
+  meshAt(g, new THREE.BoxGeometry(1.3, 0.55, 0.5), M.wood, x, y + 0.28, z + 0.25);
+  meshAt(g, new THREE.BoxGeometry(1.4, 0.05, 0.6), M.woodD, x, y + 0.57, z + 0.25);
+  for (let i = 0; i < 5; i++) meshAt(g, new THREE.BoxGeometry(0.28, 0.05, 1.0), i % 2 ? M.awnB : awn2, x - 0.56 + i * 0.28, y + 1.42 + (i % 2 ? 0.02 : 0), z).rotation.x = -0.18;
+  for (let i = 0; i < 4; i++) meshAt(g, i % 2 ? new THREE.SphereGeometry(0.08, 6, 4) : new THREE.CylinderGeometry(0.08, 0.1, 0.12, 6), M.goods[(i + k) % M.goods.length], x - 0.45 + i * 0.3, y + 0.66, z + 0.3);
+}
+// 大道芸の台：小さな木箱の台と幟
+function streetStage(sim, g, c) {
+  const M = mats(), [x, y, z] = posOf(sim, c);
+  meshAt(g, new THREE.BoxGeometry(1.1, 0.4, 0.9), M.wood, x, y + 0.2, z);
+  meshAt(g, new THREE.BoxGeometry(0.05, 1.8, 0.05), M.woodD, x + 0.6, y + 0.9, z - 0.4);
+  meshAt(g, new THREE.PlaneGeometry(0.34, 0.9), M.banner, x + 0.6, y + 1.3, z - 0.4 + 0.02).position.x += 0.18;
+}
+
+function propsKey(sim) {
+  const S = sim.S;
+  const fest = [...new Set((S.gatherings || []).filter((g) => g.type === 'festival' && S.t >= g.from && S.t < g.to && g.s != null).map((g) => g.s))].sort((a, b) => a - b);
+  const cnt = {};
+  for (const p of sim.living()) if (p.action?.type === 'show' && p.action.phase === 'do' && !p.inside) cnt[p.s] = (cnt[p.s] || 0) + 1;
+  const show = Object.keys(cnt).filter((k) => cnt[k] >= 2).map(Number).sort((a, b) => a - b);
+  return { fest, show, key: `f${fest.join(',')}|s${show.join(',')}` };
+}
+function syncProps(r) {
+  const sim = r.sim;
+  const { fest, show, key } = propsKey(sim);
+  if (key === r._lzPropKey) return;
+  r._lzPropKey = key;
+  if (r._lzProps) { r.scene.remove(r._lzProps); r._lzProps.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+  const g = r._lzProps = new THREE.Group();
+  for (const sid of new Set([...fest, ...show])) {
+    const s = sim.town(sid);
+    if (!s) continue;
+    const taken = [];
+    if (fest.includes(sid)) {
+      const sp = plazaSpots(sim, s, 4, taken);
+      if (sp[0]) maypole(sim, g, sp[0]);
+      if (sp[1]) stage(sim, g, sp[1]);
+      if (sp[2]) stall(sim, g, sp[2], 0);
+      if (sp[3]) stall(sim, g, sp[3], 1);
+    }
+    if (show.includes(sid)) { const sp = plazaSpots(sim, s, 1, taken); if (sp[0]) streetStage(sim, g, sp[0]); }
+  }
+  r.scene.add(g);
 }

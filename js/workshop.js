@@ -315,6 +315,7 @@ function sellWs(sim, p) {
       const r = marketDeliver(sim, sid, g, n, hh);
       const sold = n - r.left;
       if (sold <= 1e-6) continue;
+      act(sim, p, 'out', g, 20);
       st[g] -= sold; if (st[g] < 1e-4) delete st[g];
       if (r.got > 0) logSold(sim, b, g, '市場の商人', '卸し', sold, r.got);
       else logSold(sim, b, g, '市場（店に預けた）', '預け', sold, 0);
@@ -366,10 +367,11 @@ export function shelfGoods(sim, b, hid = b.shop?.tenant) {
   return out;
 }
 function restock(sim, b) {
-  const hid = b.shop?.tenant; if (hid == null) return;
-  const st = b.ws?.st?.[hid]; if (!st) return;
-  if (!shelfOk(sim, b, hid)) return;
-  const sid = townOfB(sim, b), hh = sim.S.households[hid]; if (!hh || sid == null) return;
+  const hid = b.shop?.tenant; if (hid == null) return 0;
+  const st = b.ws?.st?.[hid]; if (!st) return 0;
+  if (!shelfOk(sim, b, hid)) return 0;
+  const sid = townOfB(sim, b), hh = sim.S.households[hid]; if (!hh || sid == null) return 0;
+  let moved = 0;
   const keep = WP[b.type].keep || {};
   for (const g of Object.keys(st)) {
     if (!gd(g) || !isProduct(b.type, g)) continue;
@@ -381,7 +383,9 @@ function restock(sim, b) {
     marketDeliver(sim, sid, g, n, hh, { shop: true });   // 店主の品として町の市場に並ぶ（お金は売れたときに客から）
     st[g] -= n; if (st[g] < 1e-4) delete st[g];
     logKey(sim, b, 'shelf', g, n);
+    moved += n; restock.g = g;
   }
+  return moved;
 }
 
 // ---------- 家族の食べる分を持ち帰る（自分の品なのでお金は動かない） ----------
@@ -406,15 +410,29 @@ function takeHome(sim, b, hh) {
 }
 
 // ---------- 仕事：仕入れ → 作る ----------
-function buyInto(sim, b, hh, sid, g, n) {
+function buyInto(sim, b, hh, sid, g, n, p = null) {
   if (!(n > 1e-4)) return 0;
   const P = pseudoHh(sim, b, hh);
   const got = marketBuy(sim, sid, g, n, P);   // 代金は品の持ち主へ（onBuy が仕入れを記録する）
-  if (got > 0) P.stock[g] = (P.stock[g] || 0) + got;
+  if (got > 0) { P.stock[g] = (P.stock[g] || 0) + got; if (p) act(sim, p, 'in', g, 25); }   // 運び込む（wsanim.js の動き）
   return got;
 }
+// 人の動き（ドット絵）のための、いまの職場での作業：in 運び込む・stock 棚に並べる・make 作る（sim の時間で数十分）
+function act(sim, p, k, g, min) {
+  const w = p.wsAct, t = sim.S.t;
+  if (w && w.k === k) { w.g = g; w.until = Math.max(w.until, t + min); return; }
+  if (w && t < w.until && (w.k === 'in' || w.k === 'stock') && k === 'make') return;   // 運び込み・並べるのが先
+  p.wsAct = { k, g, until: t + min };
+}
+// 市場へ運び出す品があるか（wsanim.js：かごを抱えて歩く）
+export function wsCarrying(sim, p) {
+  const hh = sim.hh(p); if (!hh) return false;
+  const b = workplaceOf(sim, p); const st = b?.ws?.st?.[hh.id]; if (!st) return false;
+  for (const g of Object.keys(st)) if (overflow(sim, b, hh.id, g, st) >= 0.2) return true;
+  return false;
+}
 // パン工房：小麦粉を用意する（粉を買うか、麦を買って粉ひき小屋でひいてもらう）
-function flourFor(sim, b, hh, sid, need, batch) {
+function flourFor(sim, b, hh, sid, need, batch, p) {
   const st = storeOf(b, hh.id), m = sim.S.towns[sid];
   if ((st.flour_wheat || 0) >= need) return;
   const want = batch - (st.flour_wheat || 0);
@@ -430,11 +448,11 @@ function flourFor(sim, b, hh, sid, need, batch) {
   // 2. 粉ひき小屋の小麦粉が市場にあり、麦からひくより高くなければ粉を買う
   const pw = m.price.wheat || 2, pf = m.price.flour_wheat;
   if ((m.stock.flour_wheat || 0) >= 0.5 && pf != null && pf <= pw * 16 / 15 * 1.25) {
-    buyInto(sim, b, hh, sid, 'flour_wheat', want);
+    buyInto(sim, b, hh, sid, 'flour_wheat', want, p);
     if ((st.flour_wheat || 0) >= need) return;
   }
   // 3. 麦を買って、粉ひき小屋でひいてもらう
-  const got = buyInto(sim, b, hh, sid, 'wheat', Math.max(0, want - (st.flour_wheat || 0)) * 16 / 15);
+  const got = buyInto(sim, b, hh, sid, 'wheat', Math.max(0, want - (st.flour_wheat || 0)) * 16 / 15, p);
   if (got > 0) {
     st.wheat -= got; if (st.wheat < 1e-4) delete st.wheat;
     const f = millToll(sim, sid, got, hh);
@@ -459,9 +477,9 @@ function produce(sim, p, b, hh, eff, dt) {
     const need = amount * u;
     if ((st[k] || 0) < need) {
       const batch = Math.max(need, u * R.rate * perHr * 2);
-      if (p.job === 'baker' && k === 'flour_wheat') flourFor(sim, b, hh, sid, need, batch);
-      else if (!R.fromStore) buyInto(sim, b, hh, sid, k, batch - (st[k] || 0));
-      else if ((m.stock[k] || 0) > (gd(k)?.target || 20) * 2) buyInto(sim, b, hh, sid, k, Math.min(10, batch - (st[k] || 0)));   // 粉屋は、町の麦がたっぷりあまっているときだけ少し買う（麦は食べ物なので取り上げすぎない）
+      if (p.job === 'baker' && k === 'flour_wheat') flourFor(sim, b, hh, sid, need, batch, p);
+      else if (!R.fromStore) buyInto(sim, b, hh, sid, k, batch - (st[k] || 0), p);
+      else if ((m.stock[k] || 0) > (gd(k)?.target || 20) * 2) buyInto(sim, b, hh, sid, k, Math.min(10, batch - (st[k] || 0)), p);   // 粉屋は、町の麦がたっぷりあまっているときだけ少し買う（麦は食べ物なので取り上げすぎない）
     }
     f = Math.min(f, (st[k] || 0) / need);
   }
@@ -471,7 +489,7 @@ function produce(sim, p, b, hh, eff, dt) {
   // 薪（パン窯）：あれば使う。なくても焚き付けを拾って焼く
   if (R.fuel) {
     const w = amount * f * R.fuel;
-    if ((st.wood || 0) < w && (m.stock.wood || 0) >= 1) buyInto(sim, b, hh, sid, 'wood', Math.max(w, 1.5));
+    if ((st.wood || 0) < w && (m.stock.wood || 0) >= 1) buyInto(sim, b, hh, sid, 'wood', Math.max(w, 1.5), p);
     if ((st.wood || 0) >= w) { st.wood -= w; if (st.wood < 1e-4) delete st.wood; }
   }
   // 2. 作る：材料を使い、できた品を職場の蔵へ
@@ -479,6 +497,7 @@ function produce(sim, p, b, hh, eff, dt) {
   const made = amount * f;
   st[R.out] = (st[R.out] || 0) + made;
   logMade(sim, b, R.out, made, sid);
+  act(sim, p, 'make', R.out, 20);
   if (R.out === 'ale') hh.brewDay = sim.today;   // 酒を売る許し（shops.js）
 }
 
@@ -500,7 +519,7 @@ export function workshopWork(sim, p, dt, eff) {
       if (di > 0) logKey(sim, b, 'home', '__iron', di);
     } else produce(sim, p, b, hh, eff, dt);
     p.wsT = (p.wsT || 0) + dt;
-    if (p.wsT >= 60) { p.wsT = 0; restock(sim, b); takeHome(sim, b, hh); }
+    if (p.wsT >= 60) { p.wsT = 0; if (restock(sim, b) > 0) act(sim, p, 'stock', restock.g, 15); takeHome(sim, b, hh); }
   } finally { CTX.b = null; CTX.hh = null; }
   return TAKEOVER.has(p.job);
 }

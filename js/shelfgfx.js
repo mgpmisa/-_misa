@@ -13,7 +13,8 @@
 //
 // ■ 本体からの呼び方（interior.js：patch_workshop.py）
 //   shelfAttach(view, b) … InteriorView.open の最後
-//   shelfTick(view, dt)  … InteriorView.update（3秒ごとに中身を見て、変わっていれば作り直す）
+//   shelfTick(view, dt, now) … InteriorView.update の animate のあと（3秒ごとに中身を見て、変わっていれば作り直す。
+//                          職場の中の人は、いまの動き（運び込む・並べる・こねる・焼く・打つ…）のドット絵に差し替える）
 //   shelfDetach(view)    … InteriorView.close
 import * as THREE from 'three';
 import { canvasTex } from './textures.js';
@@ -21,6 +22,8 @@ import { wsDisplay } from './workshop.js';
 import { MAT } from './matter.js';
 import { ITEMS } from './items.js';
 import { innPlan } from './buildings.js';
+import { drawPersonAnim, personAnimState, animFrameAt } from './anim_people.js';
+import './wsanim.js';   // 職場の人の動き（運び込む・棚に並べる・作る・運び出す）を anim_people.js に足す
 
 const TYPES = new Set(['bakery', 'smithy', 'genstore', 'tailorshop', 'apothecary', 'tavern', 'inn', 'mill', 'workshop', 'market']);
 const hashS = (s) => { s = String(s); let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
@@ -422,9 +425,52 @@ export function shelfAttach(view, b) {
   view.scene.add(group);
   view._shelf = { group, b, sig: signature(d), t: 0 };
 }
-export function shelfTick(view, dt) {
+// ---------- 職場の中の人の動き（ドット絵） ----------
+// 着いて立っている人（寝台・寝ている人は除く）を、personAnimState の動きのシートに差し替える。歩いている間は歩行シートに戻す
+const SHOW = new Set(['eat', 'drink', 'talk', 'pray', 'cry', 'cheer', 'wave', 'beg']);
+const texOf = new WeakMap();
+function sheetTex(sh) {
+  let t = texOf.get(sh);
+  if (!t) {
+    t = new THREE.CanvasTexture(sh.canvas);
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.colorSpace = THREE.SRGBColorSpace;
+    t.repeat.set(1 / sh.cols, 1 / sh.rows);
+    texOf.set(sh, t);
+  }
+  return t;
+}
+function restore(r) {
+  if (!r._ws0) return;
+  r.sprite.material.map = r._ws0.map; r.sprite.scale.set(r._ws0.sx, r._ws0.sy, 1); r.sprite.material.needsUpdate = true;
+  r._ws0 = null;
+}
+function posePeople(view, now) {
+  const sim = view.sim;
+  for (const r of view.ents.values()) {
+    if (!r.human) continue;
+    const e = sim.S.people[r.id];
+    let anim = null;
+    if (e && !r.path.length && !r.lie && !(r.slot && r.slot.lie) && e.deathYear == null) {
+      try { anim = personAnimState(sim, e, false); } catch (err) { anim = null; }
+      if (anim && !(anim.startsWith('work') || SHOW.has(anim))) anim = null;
+    }
+    if (!anim) { restore(r); continue; }
+    let sh = null;
+    try { sh = drawPersonAnim(e, { age: sim.ageOf(e) }, anim); } catch (err) { sh = null; }
+    if (!sh) { restore(r); continue; }
+    const tex = sheetTex(sh);
+    if (!r._ws0) r._ws0 = { map: r.sprite.material.map, sx: r.sprite.scale.x, sy: r.sprite.scale.y };
+    if (r.sprite.material.map !== tex) { r.sprite.material.map = tex; r.sprite.material.needsUpdate = true; }
+    const f = animFrameAt(sh, now + (r.id % 7) * 0.13);
+    const row = sh.rows >= 4 ? (r.dir ?? 0) : 0;
+    tex.offset.set(f / sh.cols, 1 - (row + 1) / sh.rows);
+    r.sprite.scale.set(sh.worldW || sh.frameW * (sh.worldH / sh.frameH), sh.worldH, 1);
+  }
+}
+export function shelfTick(view, dt, now) {
   const s = view._shelf;
   if (!s || !view.scene) return;
+  if (now != null) posePeople(view, now);
   s.t += dt || 0;
   if (s.t < 3) return;
   s.t = 0;

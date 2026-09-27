@@ -49,9 +49,9 @@ const EXILABLE = new Set(['詐欺', '故買', '偽金づくり', '密輸', '薬�
 const DROPPABLE = new Set(['work', 'plaza', 'stroll', 'rest', 'home', 'tavern', 'visit', 'shop', 'play', 'pray', 'train', 'storytell', 'beg', 'guild', 'perform']);
 const CRIME_ACTS = new Set(['steal', 'rob', 'revenge', 'uw_graverob', 'uw_poach', 'uw_deal', 'uw_stalk', 'uw_grow']);
 
-export const LAW_LABEL = { execwatch: '処刑を見物している', execduty: '刑場の役目についている', scaffold: '処刑台に立たされている', pillory: '広場でむち打ちの刑を受けている' };
-export const LAW_GO = { execwatch: '刑場の広場へ向かっている', execduty: '刑場へ向かっている', scaffold: '刑場へ引き立てられている', pillory: '広場へ引き立てられている' };
-export const LAW_PREF = { execwatch: '処刑の見物', execduty: '刑場の役目' };
+export const LAW_LABEL = { execwatch: '処刑を見物している', execduty: '刑場の役目についている', scaffold: '処刑台に立たされている', pillory: '広場でむち打ちの刑を受けている', dock: '裁きの場でひざまずいている', judgeseat: '裁きを言い渡している' };
+export const LAW_GO = { execwatch: '刑場の広場へ向かっている', execduty: '刑場へ向かっている', scaffold: '刑場へ引き立てられている', pillory: '広場へ引き立てられている', dock: '裁きの場へ引き立てられている', judgeseat: '裁きの場へ向かっている' };
+export const LAW_PREF = { execwatch: '処刑の見物', execduty: '刑場の役目', judgeseat: '裁き' };
 
 const alive = (p) => p && p.deathYear == null;
 const mature = (sim) => sim.S.settings?.matureCrimes !== false;
@@ -320,7 +320,46 @@ function trial(sim, p, L) {
     if (death) sim.remember(q, `身内の${p.given}に死罪の裁きが下った。目の前が真っ暗になった`, { emo: -1, imp: 1, about: [p.id], k: 'family' });
     else if (grave && sim.rng.chance(0.6)) sim.remember(q, `${p.given}が長い刑を言い渡された。帰りを待つしかなかった`, { emo: -0.7, imp: 0.8, about: [p.id], k: 'family' });
   }
-  return verdict;
+  return { verdict, jd };
+}
+
+// ---------- 裁きの場（朝） ----------
+// 牢の前に囚人を引き出してひざまずかせ、裁く人（同じ町にいれば本人、いなければ書記か騎士）が言い渡す。
+function courtSession(sim) {
+  const S = sim.S, j = J(sim), L = sim.living();
+  j.courts = j.courts || [];
+  const todo = L.filter((p) => p.jail != null && !p.jsTried && p.uwExecDay == null);
+  let i = 0;
+  for (const p of todo) {
+    const jail = sim.building(p.jail);
+    const r = trial(sim, p, L);
+    if (!jail || !alive(p) || p.jail == null) continue;
+    const last = j.cases[j.cases.length - 1];
+    // 裁きは王都の広場で、人々の前で行う（処刑台とは反対の側）
+    const d = jail.door, cap = prisonTown(sim, p), sc = scaffoldSpot(sim, cap);
+    const n = i++;
+    const spot = courtSpot(sim, cap, sc, n);
+    const jq = r?.jd?.q;
+    const jd = jq && alive(jq) && jq.jail == null && !jq.fight && jq.s === prisonTown(sim, p)?.id ? jq : null;
+    const reader = jd || L.find((q) => q.jail == null && !q.fight && q.s === prisonTown(sim, p)?.id && (q.job === 'scribe' || q.job === 'chancellor' || q.job === 'knight'));
+    const c = { pid: p.id, judge: reader?.id ?? null, x: spot.x, z: spot.z, jx: spot.jx, jz: spot.jz, day: sim.today, from: S.t, to: S.t + 100, verdict: last?.verdict };
+    j.courts.push(c);
+    p.inside = null; p.fight = null; p.path = null;
+    p.pos = { x: d.x, z: d.z };
+    p.action = { type: 'dock', dur: 70, until: null, bld: null, phase: 'walk', tx: spot.x, tz: spot.z, startNeeds: { ...p.needs }, startMood: p.mood };
+    if (reader && (!reader.action || DROPPABLE.has(reader.action.type))) { reader.action = null; reader.path = null; }
+  }
+}
+
+function courtSpot(sim, cap, sc, n) {
+  const w = sim.S.world;
+  const ok = (x, z) => { const t = tileAt(w, x, z); return walkable(t) && t !== T.BLD; };
+  for (let r = 3; r <= 7; r++) for (const [dx, dz] of [[-r, 1], [r, 1], [-r, -1], [r, -1], [0, r], [0, -r]]) {
+    const x = sc.x + dx + (n % 3) - 1, z = sc.z + dz;
+    if (ok(x, z) && ok(x, z - 2)) return { x, z, jx: x, jz: z - 2 };
+  }
+  const q = sim.randomNear(cap.x, cap.z, 4) || { x: cap.x, z: cap.z };
+  return { x: q.x, z: q.z, jx: q.x, jz: q.z - 1 };
 }
 
 // ---------- 公開処刑の段取り ----------
@@ -391,9 +430,11 @@ function leadOut(sim, e) {
   e.stage = 'led';
   const dayStart = sim.today * 1440;
   e.from = dayStart + 10 * 60; e.to = dayStart + 12 * 60 + 20;
-  p.fight = null; p.talk = null; p.path = []; p.inside = null;
-  p.pos = { x: e.x, z: e.z };
-  p.action = { type: 'scaffold', dur: 200, until: S.t + 200, bld: null, phase: 'do', tx: e.x, tz: e.z, startNeeds: { ...p.needs }, startMood: p.mood };
+  // 牢の戸口から刑場まで、処刑人と衛兵に引き立てられて歩く（連行）
+  const jail = sim.building(p.jail);
+  p.fight = null; p.talk = null; p.path = null; p.inside = null;
+  p.pos = jail ? { ...jail.door } : { x: e.x, z: e.z };
+  p.action = { type: 'scaffold', dur: 200, until: null, bld: null, phase: 'walk', tx: e.x, tz: e.z, startNeeds: { ...p.needs }, startMood: p.mood };
   // 役人：処刑人（看守）・読み上げ役（書記か宰相か騎士）・裁いた人（厳しい王は自ら臨む）
   const L = sim.living();
   const free = (q) => q.jail == null && !q.fight && q !== p && q.s === e.sid && sim.ageOf(q) >= 18;
@@ -730,7 +771,7 @@ export function lawDaily(sim) {
       continue;
     }
     if (p.jsTried) continue;
-    trial(sim, p, L);
+    p.uwTried = true;   // 朝の裁きの場まで待つ（underworld.js の夜の裁きとは二重にしない）
   }
   frameDaily(sim, L);
   policyDaily(sim);
@@ -748,6 +789,7 @@ export function lawDaily(sim) {
   // 片づけ
   j.execs = j.execs.filter((e) => !((e.stage === 'done' || e.stage === 'cancel') && sim.today - (e.doneDay ?? e.day) > 6));
   j.lashes = j.lashes.filter((l) => !l.done && sim.today - l.day < 3);
+  j.courts = (j.courts || []).filter((c) => sim.today - c.day < 1);
   j._mulDay = -1;
 }
 
@@ -756,6 +798,8 @@ export function lawHourly(sim) {
   const S = sim.S;
   if (!S.justice || !S.justice.v) { ensureJustice(sim); return; }
   const j = S.justice, h = Math.floor(sim.hour()), today = sim.today;
+  // 朝9時：裁きの場。牢の前に囚人を引き出し、裁く人が言い渡す
+  if (h >= 9 && h < 17 && j.trialDay !== today) { j.trialDay = today; courtSession(sim); }
   for (const e of j.execs) {
     if (e.stage === 'done' || e.stage === 'cancel') continue;
     if (!e.rumor && ((today === e.day - 1 && h >= 18) || today >= e.day)) spreadNotice(sim, e);
@@ -763,7 +807,7 @@ export function lawHourly(sim) {
     if ((e.stage === 'sched' || e.stage === 'built') && ((today === e.day && h >= 10) || today > e.day)) leadOut(sim, e);
     else if (e.stage === 'led' && ((today === e.day && h >= 11) || today > e.day)) execute(sim, e);
   }
-  if (h >= 9) for (const l of j.lashes) if (!l.done && today >= l.day) doLash(sim, l);
+  if (h >= 14) for (const l of j.lashes) if (!l.done && today >= l.day) doLash(sim, l);
 }
 
 // ---------- 行動の候補（sim.decide から） ----------
@@ -780,6 +824,12 @@ export function lawDecide(sim, p, cands, add) {
     const dur = Math.max(15, e.to - S.t);
     if (role && role !== 'guard') add(30, 'execduty', { x: spot.x, z: spot.z }, dur);
     else add(role === 'guard' ? 12 : 9.5, 'execwatch', { x: spot.x, z: spot.z }, dur);
+    break;
+  }
+  // 裁きの場：言い渡す人
+  if (j.courts && j.courts.length) for (const c of j.courts) {
+    if (c.judge !== p.id || S.t < c.from || S.t >= c.to) continue;
+    add(30, 'judgeseat', { x: c.jx, z: c.jz }, Math.max(10, c.to - S.t));
     break;
   }
   // 犯罪の抑え：悪事の候補がある人だけ

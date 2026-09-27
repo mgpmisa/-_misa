@@ -611,6 +611,7 @@ function leisureHourly_(sim) {
       for (const q of here) {
         if (q === pf || sim.ageOf(q) < 16) continue;
         bump(q, { pleasure: 6, lust: sim.ageOf(q) >= 17 ? 10 : 0 });
+        (q.lz || (q.lz = {})).songT = sim.S.t;   // 聞きほれて手をたたく絵にする（anim_leisure.js）
         L.stats.songHeard++;
         // 心づけ：聞き手の財布 → 奏でる人
         if (sim.hh(pf) && spendable(sim, q) >= 3 && R.chance(0.3)) { pay(sim, q, 1); earn(sim, pf, 1, 0.6); }
@@ -677,6 +678,7 @@ function pairUp(sim, list, max) {
 function danceTogether(sim, a, b, where) {
   const R = sim.rng;
   for (const [x, y] of [[a, b], [b, a]]) {
+    (x.lz || (x.lz = {})).danceT = sim.S.t;   // 踊っている絵にする（anim_leisure.js）
     relUp(sim, x, y, 4 + (x.pers?.E ?? 0.5) * 2);
     bump(x, { pleasure: 8, lust: sim.ageOf(x) >= 17 ? 8 : 0 });
   }
