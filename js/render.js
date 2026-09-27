@@ -12,6 +12,9 @@ import { PartyRings } from './partyring.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家と里
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
+import * as LG from './leisuregfx.js'; // 歓楽の館の外観（大人向けの設定のときだけ。まとめ描きには入れない）
+import { ConstructGfx } from './constructgfx.js'; // 普請場（縄張り・土台・骨組み・足場・資材の山・荷運び）（開発部）
+import { actGfxFrame } from './actgfx.js'; // 畝・切り株と薪・干し物・焚き火・浮き・露店の台など（グラフィック部）
 import { convoyViews } from './logistics.js';
 import { mintViews } from './mintflow.js';   // 鉱石の荷車・硬貨の箱の手押し車
 import { mintCartMesh } from './mintgfx.js';
@@ -64,6 +67,7 @@ export class Renderer {
     this.buildBuildings();
     TH.tribalExtras(this, wx, wz, topY); // 民族の里の柵・焚き火・守り柱
     this.buildMills();
+    this.cgfx = new ConstructGfx(this, { wx, wz, topY, SEA_Y });
     this.buildWeather();
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
     this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false;
@@ -416,6 +420,7 @@ export class Renderer {
 
   buildingParts(b) {
     const M = this.mats, parts = [];
+    if (LG.skipBuilding(b)) return parts; // 歓楽の館と取り壊した跡（js/leisuregfx.js が別に描く）
     const add = (geo, mat, x, y, z, ry = 0) => { const g = geo.index ? geo.toNonIndexed() : geo; g.rotateY(ry); g.translate(x, y, z); if (!g.attributes.uv) return; parts.push({ g, mat }); };
     const south = b.kingdom === 2;
     const face = { S: [0, 1], N: [0, -1], E: [1, 0], W: [-1, 0] }[b.face] || [0, 1];
@@ -664,6 +669,7 @@ export class Renderer {
     }
   }
   addBuildingParts(b, byMat) {
+    if (b.type === 'site') return;   // 工事中：本物の建物は完成してから描く（普請場の姿は constructgfx.js）
     const w = this.sim.S.world;
     const cx = wx(b.x) + (b.w - 1) / 2, cz = wz(b.z) + (b.d - 1) / 2;
     const y = topY(w.hgt[b.door.z * W + b.door.x]);
@@ -973,10 +979,12 @@ export class Renderer {
   // ---------- 毎フレーム ----------
   update(realDt, selectedId, followId) {
     const sim = this.sim;
+    LG.leisureGfxSync(this);
     const si = sim.seasonIdx();
     if (si !== this.lastSeason) { this.applySeason(si); this.lastSeason = si; }
     const now = performance.now() / 1000;
     this.updateEntities(realDt, now);
+    actGfxFrame(this, realDt, now); // 暮らしと仕事の跡（js/actgfx.js）
     // 選択・追従
     const sel = selectedId != null ? sim.entity(selectedId) : null;
     if (sel && (sel.deathYear == null) && sel.hp > 0) {
@@ -1015,6 +1023,7 @@ export class Renderer {
     for (const m of this.mills) m.rotation.z = now * 0.8 * (sim.S.weather === 'rain' ? 1.8 : 1);
     for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
     this.updateConvoys(now);
+    this.cgfx?.update(now, realDt);   // 普請場の姿と、資材を担いで歩く人の荷
     // 雨・雪（カメラの周りだけ）
     const precip = weather === 'rain' || weather === 'snow';
     this.precip.visible = precip;

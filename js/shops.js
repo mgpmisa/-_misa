@@ -23,7 +23,7 @@
 import { JOBS, GOODS } from './data.js';
 import { ITEMS, itemValue, addItem } from './items.js';
 import { weeklyRent, houseValue, headOf } from './property.js';
-import { acct, marketDeliver } from './market.js';
+import { acct, marketDeliver, MARKET_HOOK } from './market.js';
 import { flow, econState } from './ledger.js';
 
 export const SHOP_JOBS = {
@@ -130,11 +130,11 @@ export function millToll(sim, sid, qty, payerHh) {
   if (!(qty > 0)) return qty;
   const S = sim.S;
   const s = sim.town(sid); if (!s) return qty;
-  let miller = null;
-  for (const id of s.buildings) { const b = sim.building(id); if (b?.type === 'mill' && b.shop?.tenant != null && S.households[b.shop.tenant]) { miller = S.households[b.shop.tenant]; break; } }
+  let miller = null, millB = null;
+  for (const id of s.buildings) { const b = sim.building(id); if (b?.type === 'mill' && b.shop?.tenant != null && S.households[b.shop.tenant]) { miller = S.households[b.shop.tenant]; millB = b; break; } }
   if (!miller || miller === payerHh) return qty;   // 水車のない村は、家の石うすでひく
   const toll = qty / 16;
-  const st = miller.stock || (miller.stock = {}); st.wheat = (st.wheat || 0) + toll;
+  if (!(MARKET_HOOK.toll && MARKET_HOOK.toll(sim, millB, miller, toll, payerHh))) { const st = miller.stock || (miller.stock = {}); st.wheat = (st.wheat || 0) + toll; }   // 粉ひき小屋の蔵へ（workshop.js）
   S_(sim).stats.toll += toll;
   return qty - toll;
 }

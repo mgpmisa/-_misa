@@ -31,6 +31,7 @@ import { houseValue, weeklyRent, headOf } from './property.js';
 import { marketBuy } from './market.js';
 import { matterWant } from './matter.js';
 import { flow, income, whoLabel } from './ledger.js';
+import { consHousing, registerConsAdapter } from './construct.js'; // 工事の段階（開発部）
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const MATS = { wood: 14, stone: 6, iron_nail: 1 };
@@ -170,7 +171,11 @@ function progressJobs(sim) {
       }
       continue;
     }
-    // 工事：その日の日当を払えた職人がいれば1日進む
+    // 工事：大工と石工が現場に通い、足場を組んで段階を追って建て増す（construct.js）。日当は給料日に施主の家計から
+    const cs = consHousing(sim, b, hh, payer, j, MATS, WAGE);
+    if (cs === 'done') { finishExpand(sim, b, hh, payer, j); continue; }
+    if (cs) continue;
+    // 工事：その日の日当を払えた職人がいれば1日進む（工事の仕組みに職人を渡せなかったとき）
     let worked = 0;
     for (const [k, pid] of [['carp', j.carp], ['mason', j.mason]]) {
       const w = pid != null ? S.people[pid] : null;
@@ -195,6 +200,8 @@ function progressJobs(sim) {
   }
 }
 
+// 工事の仕組みが建て終えたとき、すぐに二階建てにする
+registerConsAdapter('housingApi', { finish(sim, bid) { const j = HS(sim).jobs[bid]; const b = sim.building(bid); if (!j || !b) return; const hh = sim.S.households[j.hh], payer = sim.S.households[j.payer]; if (hh && payer) finishExpand(sim, b, hh, payer, j); } });
 function finishExpand(sim, b, hh, payer, j) {
   const S = sim.S, Hs = HS(sim);
   delete Hs.jobs[b.id];

@@ -33,7 +33,9 @@ import { T, W, H, tryPlace, walkable } from './world.js';
 import { spendable, pay, earn } from './property.js';
 import { restDayFor } from './labor.js';
 import { marketBuy, ownStock } from './market.js';
+import { wsTake } from './workshop.js';
 import { markTilesChanged } from './pathfar.js';
+import { consBegin, consPending } from './construct.js'; // 工事の段階（開発部）
 
 // 試験用のお金の見張り：sim._bAudit に総額を数える関数を入れると、この仕組みの中で増えた・減ったお金を sim._bLeak に記録する
 const audited = (name, fn) => function (sim, ...a) {
@@ -591,7 +593,7 @@ function arriveImpl(sim, p, a) {
       payTo(sim, p, cost, seller, p.s);
       const cp = Math.min(m.price[good] || 5, Math.max(0, sh.money));
       void cp;
-      if ((sh.stock?.[good] || 0) >= 1) sh.stock[good] -= 1; else marketBuy(sim, p.s, good, 1, sh, { force: true });   // 薬の代金は薬の持ち主へ
+      if (wsTake(sim, sh, good, 1, '薬屋の客', cost) < 1) marketBuy(sim, p.s, good, 1, sh, { force: true });   // 薬屋の蔵の薬か、市場で仕入れる（代金は薬の持ち主へ）
       if (p.ail) { p.ail.sev = Math.max(0, p.ail.sev - (good === 'medicine' ? 14 : 8)); p.ail.treated = (p.ail.treated || 0) + 1; }
       p.hp = Math.min(p.maxhp, p.hp + p.maxhp * (good === 'medicine' ? 0.25 : 0.12));
       p.needs.survival = Math.min(100, p.needs.survival + 10);
@@ -754,7 +756,7 @@ function moveLodgers(sim) {
 function buildMissing(sim, s, pop) {
   const S = sim.S, m = S.towns[s.id], B = B_(sim);
   const have = B.at[s.id] || {};
-  const need = wants(sim, s, pop).filter((t) => have[t] == null);
+  const need = wants(sim, s, pop).filter((t) => have[t] == null && !consPending(sim, s.id, t));   // 普請中の建物は二重に建てない
   if (!need.length) return;
   const type = need[0];
   const [bw, bd] = sizeOf(s, type);
@@ -764,6 +766,8 @@ function buildMissing(sim, s, pop) {
   if ((m.fund || 0) < mat + labor + 60) return;
   const b = placeInTown(sim, s, type, true);
   if (!b) return;
+  // 縄張りから段階を追って建てる（construct.js）：資材は町の蓄えで市場から買い、日当は給料日に町の蓄えから
+  if (consBegin(sim, b, { tag: 'town', sid: s.id, k: s.kingdom, payer: 't' + s.id, big: true })) return;
   // 材料は市場から、手間賃は町の大工・石工・人夫へ
   void mat;
   marketBuy(sim, s.id, 'wood', Math.min(m.stock.wood || 0, wood), 't' + s.id, { force: true });   // 材料の代金は材木・石材の持ち主へ

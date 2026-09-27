@@ -15,6 +15,7 @@ import { chooseYouthJob } from './history.js';
 import { gearDutyBonus } from './gear.js';
 import { marketBuy, marketDeliver } from './market.js';
 import { moneyOut, flow } from './ledger.js';
+import { consHalt } from './construct.js'; // 雨・嵐の日は工事を休む（開発部）
 
 // ---------- ui.js に足すラベル ----------
 export const CIVIC_LABEL = {
@@ -289,6 +290,7 @@ export function civicWork(sim, p, dt, eff) {
       if (!job) return;
       const i = job.tiles[job.next], x = i % W, z = (i / W) | 0;
       if (Math.abs(p.pos.x - x) + Math.abs(p.pos.z - z) > 3) return; // 現場にいないと進まない
+      if (consHalt(sim, x, z)) return; // 雨・嵐の日は止まる（construct.js）
       job.prog += eff * (0.8 + (p.skill[p.job] || 0.3));
       if (job.prog >= TILE_WORK) { job.prog -= TILE_WORK; layTile(sim, job, p); }
       break;

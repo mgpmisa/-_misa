@@ -35,6 +35,7 @@ import { sleepPlan } from './chores.js';
 import { tooDangerous } from './danger.js';
 import { GOODS, JOBS } from './data.js';
 import { marketBuy, personPayer } from './market.js';
+import { wsTake } from './workshop.js';
 
 // 試験用のお金の見張り：sim._nAudit に総額を数える関数を入れると、この仕組みの中で増えた・減ったお金を sim._nLeak に記録する
 const audited = (name, fn) => function (sim, ...a) {
@@ -321,7 +322,7 @@ function arriveEat(sim, p, a) {
       const keeper = keeperOf(sim, sid, ['innkeeper', 'hostkeeper']);
       const kh = keeper && sim.hh(keeper);
       pay(sim, p, cost);
-      if (kh) { kh.money += cost; if ((kh.stock?.[g] || 0) >= 1) kh.stock[g] -= 1; else marketBuy(sim, sid, g, 1, kh, { force: true }); }   // 客 → 主。主は材料を持ち主から仕入れる
+      if (kh) { kh.money += cost; if (wsTake(sim, kh, g, 1, '旅の客', cost) < 1) marketBuy(sim, sid, g, 1, kh, { force: true }); }   // 客 → 主。主は材料を持ち主から仕入れる
       else { m.fund = (m.fund || 0) + cost; marketBuy(sim, sid, g, 1, 't' + sid, { force: true }); }   // 主がいなければ町の炊き出し（町の蓄えで材料を買う）
       n.hunger = Math.min(100, n.hunger + 30 * GOODS[g].meals);
       n.pleasure = Math.min(100, n.pleasure + 4);

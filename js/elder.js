@@ -19,6 +19,7 @@
 // 世界の状態 S.elder = { v, funds: { key: { key, cat, sid, k, bal, in, out } }, alms: { sid: { hh, bal, cap, name, admitted } }, stats, today, graveIdx }
 import { JOBS, KINGDOMS, DAYS_PER_YEAR } from './data.js';
 import { marketBuy } from './market.js';
+import { wsHave, wsTake } from './workshop.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -432,7 +433,7 @@ function buyBread(sim, a, sid, qty) {
   let got = marketBuy(sim, sid, 'bread', qty, box);   // 代金はパンの持ち主（パン屋・商人）へ
   // 市場にパンがなければ、パン屋に焼いてもらう（パン屋の蔵から）
   const sl = seller(sim, sid), sh = sl && sim.hh(sl);
-  if (got < qty && sh && (sh.stock?.bread || 0) >= 1) { const n = Math.min(qty - got, sh.stock.bread, a.bal / price); if (n > 0) { sh.stock.bread -= n; a.bal -= n * price; sh.money += n * price; got += n; } }
+  if (got < qty && sh && wsHave(sim, sh, 'bread') >= 1) { const n = Math.min(qty - got, wsHave(sim, sh, 'bread'), a.bal / price); if (n > 0) { const t = wsTake(sim, sh, 'bread', n, '救貧院', n * price); a.bal -= t * price; sh.money += t * price; got += t; } }   // パン工房の蔵から
   st.today.market += got * price; st.today.almsFood += got * price;
   return got;
 }

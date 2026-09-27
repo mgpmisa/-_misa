@@ -238,11 +238,12 @@ function give(sim, hh, sid, id, q, how, p = null, ctx = null) {
 }
 
 // ---------- 仕事の1時間ごと：採る・作る ----------
+export const MATTER_HOOK = {};   // workshop.js：hh(sim, p) が職場の蔵の入れ物を返す
 export function matterWork(sim, p, dt, eff) {
   p.mw = (p.mw || 0) + dt / 60;
   if (p.mw < 1) return;
   p.mw -= 1;
-  const hh = sim.hh(p); if (!hh) return;
+  const hh = MATTER_HOOK.hh ? MATTER_HOOK.hh(sim, p) : sim.hh(p); if (!hh) return;
   const R = sim.rng;
   // 採る
   const hows = GATHER[p.job];

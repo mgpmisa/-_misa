@@ -46,6 +46,7 @@ import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth, tribeWork } from './tribes.js';
 import { initVillages, ensureVillages, villagesDaily, villagesHourly, villagesPlace } from './villages.js';
 import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
+import { constructOptions, constructDo, constructHourly, constructDaily } from './construct.js'; // 工事の段階・資材の運搬・普請場へ通う（開発部）
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
@@ -59,8 +60,10 @@ import { ensureFormation, formationHourly } from './formation.js';   // 隊列�
 import { combatStep, combatDaily } from './combat.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
+import { ensureWorkshop, workshopWork, wsOwnsWork, workshopHourly, workshopDaily, wsHave, wsTake, wsGearSold } from './workshop.js';   // 職場の蔵：仕入れ → 作る → 売る（経済部）
 import { housingDaily } from './housing.js';   // 手狭な家の建て増し・引っ越し・独り立ち
 import { discoveryHourly } from './discovery.js';   // 新しく見つかった物のお知らせ
+import { ensureLeisure, leisureDecide, leisureArrive, leisureDo, leisureHourly, leisureDaily } from './leisure.js';   // 酒場の踊り・恋歌・祭りの踊り・逢い引き・仲人、大人向けの館（設定が有効なときだけ）
 import { deadlyAt, deadlyCands, zoneAvoid, zoneClusters } from './deadly.js';   // 竜など手に負えない相手の縄張りには近づかない
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -117,6 +120,7 @@ export class Sim {
     initTribes(this);
     initVillages(this);
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
+    ensureLeisure(this, true); // 恋と楽しみの場（leisure.js）。大人向けの館は設定が有効なときだけ
     ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
     ensureFormation(this); // 隊列と職業の補正（formation.js）
     this.seedMarkets();
@@ -146,6 +150,7 @@ export class Sim {
     ensureTribes(this);
     ensureVillages(this);
     ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
+    ensureLeisure(this); // 古いセーブ：設定に合わせて館を建てる／消す
     ensureFormation(this); // 古いセーブ：隊列と職業の補正の記録（formation.js）
     ensureCarry(this); // 古いセーブ：持ち物の重さと枠・袋やかご
     this.seedMarkets();
@@ -480,7 +485,7 @@ export class Sim {
   // 市場の金庫：売り手への支払いはここから出て、買い手の代金はここに入る（お金は湧かず消えない）
   // 市場には「どこでもない金庫」を置かない。在庫には持ち主（商人・作り手・町・国）の札が付き、
   // 売り買いの代金は、買い手 → 品の持ち主へ動く（market.js）。古いセーブの金庫は町の商人へ返す
-  seedMarkets() { ensureMarket(this); ensureShops(this); ensureMatter(this); ensureLedger(this); }
+  seedMarkets() { ensureMarket(this); ensureShops(this); ensureMatter(this); ensureLedger(this); ensureWorkshop(this); }
   marketHasFood(sid) { const m = this.S.towns[sid]; return ['bread', 'fish', 'wheat', 'meat'].some((g) => m.stock[g] >= 1); }
   updatePrices() {
     for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
@@ -699,6 +704,7 @@ export class Sim {
     choreOptions(this, p, add);
     civicOptions(this, p, add);
     buildingsOptions(this, p, add);
+    constructOptions(this, p, add);   // 普請場へ通う・資材を運ぶ（construct.js）
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
     marketCandidates(this, p, add);
@@ -707,6 +713,7 @@ export class Sim {
     carryDecide(this, p, add);   // 袋やかごを買う・荷を置きに戻る・倉庫に預ける・力を鍛える（carry.js）
     mintDecide(this, p, add);   // 造幣の職人が造幣所へ硬貨を打ちに行く（mintflow.js）
     laborCandidates(this, p, add);
+    leisureDecide(this, p, add);   // 酒場の踊り・逢い引き・（大人向け）館（leisure.js）
     underworldDecide(this, p, cands, add);
     healthDecide(this, p, cands, add);
     divineDecide(this, p, cands, add);
@@ -849,6 +856,7 @@ export class Sim {
   arrive(p) {
     const a = p.action;
     a.phase = 'do';
+    if (a.bld != null && this.building(a.bld)?.type === 'site') a.bld = null;   // 工事中の建物には入れない（construct.js）
     if (a.bld != null) p.inside = a.bld;
     if (a.untilHour != null) {
       let add = (a.untilHour - this.hour()) * 60;
@@ -864,13 +872,13 @@ export class Sim {
           const m = this.market(p.s);
           const keeper = this.innkeeperOf(p.s, p.id), kh = keeper && this.hh(keeper);
           const FOODS = ['bread', 'fish', 'meat'];
-          const g = (kh && FOODS.find((x) => (kh.stock?.[x] || 0) >= 1)) || FOODS.find((x) => m.stock[x] >= 1);
+          const g = (kh && FOODS.find((x) => wsHave(this, kh, x) >= 1)) || FOODS.find((x) => m.stock[x] >= 1);
           if (g && kh && kh !== hh) {
             const cost = Math.round(m.price[g] * 1.6 + 1);
             if (spendable(this, p) >= cost) {
               pay(this, p, cost); kh.money += cost;
               flow(this, '宿の客', '宿屋の主人', cost, '宿の食事');
-              if ((kh.stock?.[g] || 0) >= 1) kh.stock[g] -= 1; else marketBuy(this, p.s, g, 1, kh, { force: true });
+              if (wsTake(this, kh, g, 1, '宿の客', cost) < 1) marketBuy(this, p.s, g, 1, kh, { force: true });   // 宿の蔵の品か、市場で仕入れる
               p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
               meal(this, 'inn', GOODS[g].meals);
             }
@@ -902,14 +910,14 @@ export class Sim {
         const m = this.market(p.s);
         const keeper = this.innkeeperOf(p.s, p.id), kh = keeper && this.hh(keeper);
         // 酒場の麦酒：主の蔵の酒か、市場の酒（酒造りの品）を主が仕入れて出す。客は主に払う
-        const have = (kh && kh !== hh ? (kh.stock?.ale || 0) : 0) + Math.floor(m.stock.ale || 0);
+        const have = (kh && kh !== hh ? wsHave(this, kh, 'ale') : 0) + Math.floor(m.stock.ale || 0);
         const served = Math.min(qty, Math.floor(have));
         const cost = served * (m.price.ale * 1.5 + 0.5);
         if (served >= 1 && spendable(this, p) > cost) {
           if (kh && kh !== hh) {
             pay(this, p, cost); kh.money += cost;
             flow(this, '酒場の客', '宿屋の主人', cost, '麦酒');
-            const own = Math.min(served, kh.stock?.ale || 0); if (own > 0) kh.stock.ale -= own;
+            const own = wsTake(this, kh, 'ale', served, '酒場の客', cost);   // 酒場の蔵の麦酒から出す
             if (served - own > 0) marketBuy(this, p.s, 'ale', served - own, kh, { force: true });
           } else if (hh) marketBuy(this, p.s, 'ale', served, hh, { whole: true });
           if (qty >= 3 && this.rng.chance(0.2 + p.pers.E * 0.2)) {
@@ -967,6 +975,7 @@ export class Sim {
     needsArrive(this, p, a);
     marketArrive(this, p, a);   // 市場で品を売る・市の露店（market.js）
     matterArrive(this, p, a);
+    leisureArrive(this, p, a);
   }
 
   doShop(p) {
@@ -1037,6 +1046,7 @@ export class Sim {
     matterWork(this, p, dt, eff);   // 世界の物を採る・作る（matter.js）
     if (tribeWork(this, p, dt, eff)) return; // 民族の里：とれた物は家の蔵と里の蓄えへ（売らない・お金は動かない）
     if (carryWork(this, p, dt, eff)) return; // かご編み・縄ない・袋縫い・革細工・荷運びと、麻・藁・柳などの素材（carry.js）
+    if (workshopWork(this, p, dt, eff)) return; // 職場を持つ職人：材料を職場の蔵へ仕入れ、職場の蔵で作り、店先の棚に並べる（workshop.js）
     switch (p.job) {
       case 'farmer': {
         // 収穫した麦は家の蔵へ（小作は地主に麦で納める）。家の食べ物が足りなければ、そのまま自炊にまわす
@@ -1121,7 +1131,7 @@ export class Sim {
     if (J.pay) accrueWage(this, p, hr);   // 給金は給料日に雇い主から（payday.js）
     if (J.research && k) { const pts = 0.3 * J.research * (0.5 + (p.skill[p.job] || 0.3)) * hr; k.research += pts; k.contrib[p.id] = (k.contrib[p.id] || 0) + pts; }
     if (J.combat && !J.pay) { p.xp = (p.xp || 0) + 0.2 * hr; this.levelCheck(p); }
-    if (J.goods) {
+    if (J.goods && !wsOwnsWork(this, p)) {   // 職場で作る人は workshop.js が作る
       const rate = { medicine: 0.12, jewelry: 0.03, gem: 0.02, shoes: 0.15, pottery: 0.3, cloth: 0.25, wool: 0.4, honey: 0.35, herbs: 0.6, stone: 0.8, meat: 0.3, ale: 0.8, wood: 1.2, fish: 0.6, furniture: 0.08 }[J.goods] ?? 0.3;
       // 材料は市場で買う（代金は材料の持ち主へ）。作った品は蔵へ。売れ残りが多ければ作らない
       const G = J.goods, tgt = GOODS[G]?.target || 10;
@@ -1302,6 +1312,7 @@ export class Sim {
     town.shop.splice(town.shop.indexOf(it), 1);
     const smith = this.S.people[it.maker];
     if (smith && smith.deathYear == null && this.hh(smith)) this.hh(smith).money += price; else town.fund += price;   // 作り手が亡くなっていれば町の蓄えへ
+    wsGearSold(this, p, it, price);   // 鍛冶場の売り上げの記録（workshop.js）
     // 古い装備は下取りに出す
     const old = p.eq?.[ITEMS[it.id].type];
     addItem(p, it); autoEquip(p);
@@ -1473,6 +1484,8 @@ export class Sim {
     choreDo(this, p, dt);
     civicDo(this, p, dt);
     buildingsDo(this, p, dt);
+    leisureDo(this, p, dt);
+    constructDo(this, p, dt);   // 普請の手間を積む・荷を積む／下ろす（construct.js）
     gearDo(this, p, dt);
     for (const k of NEED_KEYS) n[k] = clamp(n[k], 0, 100);
     const wakeEarly = a.type === 'sleep' && n.sleep >= 99 && this.hour() > 4 && this.hour() < 12;
@@ -1845,10 +1858,12 @@ export class Sim {
     choreHourly(this);
     gearHourly(this);
     healthHourly(this);
+    leisureHourly(this);   // 酒場の踊りと恋歌・祭りの踊りの輪
     faunaHourly(this);
     rescueHourly(this);
     financeHourly(this);
     marketHourly(this);   // 終わった市の露店を片づける
+    workshopHourly(this);   // 職場の蔵から店先の棚へ品を並べる
     discoveryHourly(this);   // 新しく見つかった物のお知らせ（discovery.js）
     divineHourly(this);
     partyLifeHourly(this);   // 絆・家族恋しさ・宿の数（partylife.js）
@@ -1856,6 +1871,7 @@ export class Sim {
     formationHourly(this);   // 職業による能力の補正を付け直し、務めの伸びを足す（formation.js）
     mintHourly(this);   // 鉱石を掘って置き場へ・鉱石の荷車・硬貨の箱を国庫へ（mintflow.js。carryHourly より前）
     carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
+    constructHourly(this);   // 普請の段階を進める・雨と夜は休む（construct.js）
   }
 
   newDay() {
@@ -1964,6 +1980,8 @@ export class Sim {
     choreDaily(this);
     civicDaily(this);
     buildingsDaily(this);
+    leisureDaily(this);   // 仲人の縁組・（大人向け）館の決まりとお金
+    constructDaily(this);   // 普請の資材の買い付け・人集め・施主が世帯の普請の給料日・焼け跡の建て直し（construct.js）
     careerDaily(this);
     elderDaily(this);
     financeDaily(this);
@@ -1973,6 +1991,7 @@ export class Sim {
     matterDaily(this);   // 世界の物（matter.js）
     housingDaily(this);   // 手狭な家の建て増し・引っ越し・独り立ち（housing.js）
     shopsDaily(this);   // 店の借り賃・差し押さえ・酒を売る許し・町の負担
+    workshopDaily(this);   // 職場の蔵：記録を昨日へ・傷む品・店をやめた人の品を家へ
     paydayDaily(this);
     creatureDaily(this);
     faunaDaily(this);

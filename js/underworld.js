@@ -69,7 +69,7 @@ const dist = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z);
 export function initUnderworld(sim) {
   const S = sim.S;
   S.settings = S.settings || {};
-  if (S.settings.matureCrimes == null) S.settings.matureCrimes = true;
+  if (S.settings.matureCrimes == null) S.settings.matureCrimes = false;   // 公開版の初めの値は「切る」（社長の決定）
   if (S.uw && S.uw.v) return S.uw;
   const R = sim.rng;
   S.uw = {
@@ -86,7 +86,7 @@ export function initUnderworld(sim) {
 function U(sim) {
   const S = sim.S;
   if (!S.settings) S.settings = {};
-  if (S.settings.matureCrimes == null) S.settings.matureCrimes = true;
+  if (S.settings.matureCrimes == null) S.settings.matureCrimes = false;   // 公開版の初めの値は「切る」（社長の決定）
   return S.uw && S.uw.v ? S.uw : initUnderworld(sim);
 }
 

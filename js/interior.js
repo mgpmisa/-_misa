@@ -16,6 +16,7 @@ import { makeRng } from './rng.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家の内装
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物の内装
 import * as CI from './castleint.js'; // 王城の中（いくつもの部屋・身分ごとの寝台）
+import * as SG from './shelfgfx.js'; // 職場の蔵の中身に合わせて、棚・台・かご・たるに品物を並べる（経済部）
 import * as MG from './mintgfx.js'; // 造幣所の中（炉・鋳型・金床・在庫）と、王城の宝物庫の国庫の硬貨
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -435,6 +436,7 @@ const F = {
       const y = 0.05 + lv * 0.52;
       B(0, y, 0, len, 0.06, dp, M.wood);
       if (lv === 3) break;
+      if (!items || !items.length) continue;   // 空の棚（品は shelfgfx.js が蔵の中身に合わせて並べる）
       for (let i = 0; i < Math.floor(len / 0.42); i++) {
         const m = items[(i + lv) % items.length];
         if (hash2(i * 7 + lv, Math.floor(x * 13 + z * 7)) < 0.15) continue;
@@ -577,8 +579,9 @@ const F = {
     K.box(cx - 0.02, 1.38, cz - 0.02, 0.04, 0.14, 0.04, M.red);
     K.solid(cx - 0.3, cz - 0.3, 0.6, 0.6);
   },
-  weaponRack(K, x, z, w, side = 'N') { // 壁ぎわの武器掛け
+  weaponRack(K, x, z, w, side = 'N', o = {}) { // 壁ぎわの武器掛け（o.empty：枠だけ。武器は shelfgfx.js が蔵の中身に合わせて掛ける）
     const M = K.M;
+    if (o.empty) { if (side === 'N') { K.box(x, 0, z, w, 0.12, 0.35, M.darkWood); K.box(x, 1.1, z, w, 0.1, 0.35, M.darkWood); for (let i = 0; i <= w; i++) K.box(x + i * (w - 0.08) / w, 0, z + 0.12, 0.08, 1.9, 0.08, M.darkWood); K.solid(x, z, w, 0.5); } else { K.box(x, 0, z, 0.35, 0.12, w, M.darkWood); K.box(x, 1.1, z, 0.35, 0.1, w, M.darkWood); K.solid(x, z, 0.5, w); } return; }
     if (side === 'N') {
       K.box(x, 0, z, w, 0.12, 0.35, M.darkWood); K.box(x, 1.1, z, w, 0.1, 0.35, M.darkWood);
       for (let i = 0; i < w * 3 - 1; i++) {
@@ -784,8 +787,7 @@ const BUILD = {
     K.box(0.4, 0, 2.2, cw, 1.0, 0.6, M.wood); K.box(0.3, 1.0, 2.1, cw + 0.2, 0.1, 0.8, M.darkWood); K.solid(0.4, 2.2, cw, 0.8);
     for (let i = 0; i < 3; i++) K.cyl(1 + i * 1.2, 1.1, 2.5, 0.1, 0.2, M.brass, { seg: 6 });
     F.shelf(K, 0.4, 0, cw - 1, 'N', M.bottles, { h: 2.0 });
-    for (let i = 0; i < 2; i++) F.barrel(K, cw - 0.2 + i * 0.9, 0.5, { lying: true, h: 0.9, r: 0.38 });
-    F.barrel(K, cw + 0.25, 1.4, { h: 0.9 }); F.barrel(K, cw + 1.1, 1.4, { h: 0.9 });
+    // 酒だるは shelfgfx.js が蔵の麦酒の数だけ置く
     K.slot('work', 1.5, 1.4, { face: [0, 1] }); K.slot('work', 3.5, 1.4, { face: [0, 1] });
     for (let i = 0; i < Math.floor(cw / 1.3); i++) { const x = 1 + i * 1.3; F.stool(K, x, 3.35); K.slot('seat', x, 3.35, { face: [0, -1] }); }
     // 暖炉（北の壁の東寄り）
@@ -828,17 +830,15 @@ const BUILD = {
     K.box(ox + 3.2, 0, 0.3, 0.1, 1.8, 0.1, M.darkWood); K.box(ox + 3.1, 1.6, 0.25, 0.3, 0.3, 0.05, M.darkWood);
     K.slot('work', ox + 1.5, 2.6, { face: [0, -1] });
     // パン棚
-    F.openShelf(K, 0.02, 1.2, 3.4, 'W', [M.bread, M.orange, M.bread]);
-    F.openShelf(K, 0.6, 0.02, Math.min(2.6, ox - 0.8), 'N', [M.bread, M.bread, M.orange]);
+    F.openShelf(K, 0.02, 1.2, 3.4, 'W', []);   // パン棚（パンは shelfgfx.js が蔵の数だけ並べる）
+    F.openShelf(K, 0.6, 0.02, Math.min(2.6, ox - 0.8), 'N', []);
     // こね台と粉袋
     F.table(K, W / 2 - 1, D / 2 + 0.5, 2, 1, { top: M.planks });
     K.box(W / 2 - 0.8, 0.72, D / 2 + 0.7, 0.6, 0.08, 0.5, M.beige); K.box(W / 2 + 0.2, 0.72, D / 2 + 0.7, 0.35, 0.14, 0.3, M.bread);
     K.slot('work', W / 2, D / 2 + 1.9, { face: [0, -1] });
-    for (let i = 0; i < 4; i++) F.sack(K, 0.6 + (i % 2) * 0.55, D - 0.6 - Math.floor(i / 2) * 0.55);
-    F.sack(K, W - 0.6, D - 0.6);
+    // 粉袋と薪は shelfgfx.js が蔵の数だけ置く
     // 売り台
     K.box(W - 3.6, 0, D - 2.2, 2.2, 0.9, 0.6, M.wood); K.solid(W - 3.6, D - 2.2, 2.2, 0.6);
-    for (let i = 0; i < 4; i++) K.cyl(W - 3.3 + i * 0.5, 0.9, D - 1.9, 0.17, 0.14, i % 2 ? M.bread : M.orange, { seg: 7 });
     K.slot('work', W - 2.5, D - 2.8, { face: [0, 1] });
   },
 
@@ -861,12 +861,12 @@ const BUILD = {
     K.solid(ax - 0.5, az - 0.3, 1, 0.6);
     K.slot('work', ax, az + 0.8, { face: [0, -1] });
     // 武器掛け
-    F.weaponRack(K, W - 3.4, 0.1, 3);
+    F.weaponRack(K, W - 3.4, 0.1, 3, 'N', { empty: true });   // 武器は shelfgfx.js が店先の武具の数だけ掛ける
     F.wallPic(K, 'E', D / 2, 1.2, 0.7, 0.7, M.shield);
     // 水おけ
     K.box(0.3, 0, D / 2 + 0.2, 0.7, 0.5, 1.6, M.wood); K.box(0.38, 0.4, D / 2 + 0.28, 0.54, 0.05, 1.44, M.water); K.solid(0.3, D / 2 + 0.2, 0.7, 1.6);
     // 鉄材と炭
-    for (let i = 0; i < 4; i++) K.box(W - 1.5, i * 0.1, D - 1.5 + i * 0.03, 1.1, 0.1, 0.18, M.iron);
+    // 鉄の延べ棒の山は shelfgfx.js が蔵の数だけ積む
     F.barrel(K, W - 0.6, D - 2.4); F.crate(K, 0.3, D - 1.0, 0.7, 0, M.darkWood);
     K.cyl(W - 2.5, 0, D - 1.3, 0.4, 0.3, M.soot, { r2: 0.1 });
   },
@@ -886,8 +886,7 @@ const BUILD = {
       K.slot('work', x + 1.5, z + 1.6, { face: [0, -1] });
     }
     // 木材の山
-    for (let i = 0; i < 5; i++) for (let j = 0; j < 4 - (i >> 1); j++) K.box(W - 3.2 + j * 0.02, i * 0.2, D - 2.0 + j * 0.28 + (i % 2) * 0.12, 2.6, 0.2, 0.26, M.wood);
-    K.solid(W - 3.2, D - 2.0, 2.6, 1.3);
+    K.solid(W - 3.2, D - 2.0, 2.6, 1.3);   // 材木の山は shelfgfx.js が蔵の数だけ積む
     // 馬（ひき台）と丸太
     K.box(1.2, 0.5, D - 2, 1.4, 0.1, 0.25, M.darkWood); K.box(1.3, 0, D - 2, 0.1, 0.5, 0.25, M.darkWood); K.box(2.4, 0, D - 2, 0.1, 0.5, 0.25, M.darkWood);
     K.cyl(0.6, 0.25, D - 0.8, 0.25, 1.2, M.wood, { rz: Math.PI / 2, centered: true });
@@ -909,8 +908,7 @@ const BUILD = {
       for (const [px_, pz_] of [[x, z], [x + 3, z], [x, z + 1.4], [x + 3, z + 1.4]]) K.box(px_, 0, pz_, 0.12, 2.1, 0.12, M.darkWood);
       K.box(x - 0.2, 2.1, z - 0.3, 3.5, 0.12, 2.1, aw, { rx: 0.12 });
       K.box(x, 0, z + 0.9, 3.1, 0.85, 0.6, M.wood); K.solid(x, z, 3.1, 1.5);
-      const [g1, g2] = goods[(i + R.int(0, 5)) % goods.length];
-      for (let k = 0; k < 6; k++) K.sphere(x + 0.35 + k * 0.48, 0.97, z + 1.2, 0.13, k % 2 ? g1 : g2, { seg: 6, seg2: 4 });
+      void goods[(i + R.int(0, 5)) % goods.length];   // 屋台の品は shelfgfx.js が町の在庫に合わせて並べる
       F.crate(K, x + 0.2, z + 0.1, 0.55, 0, M.planks); F.crate(K, x + 2.3, z + 0.1, 0.55, 0, M.planks);
       K.slot('work', x + 1.5, z + 0.45, { face: [0, 1] });
     });
@@ -1223,7 +1221,7 @@ const BUILD = {
     gear.position.set(W - 2.3 - W / 2, 1.5, 0.25 - D / 2);
     K.groups.N.add(gear); K.spin.push({ mesh: gear, speed: -0.6, axis: 'z' });
     K.box(W - 2.35, 1.45, 0, 0.1, 0.1, 0.4, M.iron, { g: 'N' });
-    for (let i = 0; i < 6; i++) F.sack(K, 0.6 + (i % 3) * 0.55, D - 0.6 - Math.floor(i / 3) * 0.55);
+    // 麦袋と粉袋は shelfgfx.js が蔵の数だけ積む
     F.crate(K, W - 1.2, D - 1.2, 0.8); F.barrel(K, 0.6, 0.6);
     K.slot('work', cx + 1.8, cz + 1.4, { face: [-1, -1] }); K.slot('work', 2, D - 2.5, { face: [0, 1] });
     for (let i = 0; i < 8; i++) K.box(K.R.range(1, W - 1), 0.001, K.R.range(1, D - 1), 0.3, 0.01, 0.3, M.white);
@@ -1694,6 +1692,7 @@ export class InteriorView {
     if (type === 'house' && (b.floors || 1) >= 2) sub += '・二階建て';
     if (this.dungeon) sub += `・${G.rooms.length}つの部屋`;
     if (K.roomCount) sub += `・${K.roomCount}の部屋`;
+    try { SG.shelfAttach(this, b); } catch (e) { console.warn('shelfgfx', e); }   // 蔵の中身に合わせた品物
     const n = this.countInside();
     sub += n.people || n.monsters ? `・中に${n.people ? `${n.people}人` : ''}${n.people && n.monsters ? '・' : ''}${n.monsters ? `魔物${n.monsters}体` : ''}` : '・誰もいない';
     if (town && type !== 'house') sub = `${town.name}の${sub}`;
@@ -1703,6 +1702,7 @@ export class InteriorView {
 
   close() {
     MG.mintDetach(this);
+    SG.shelfDetach(this);
     for (const id of [...this.ents.keys()]) this.drop(id);
     for (const r of this.decos || []) this.disposeSprite(r);
     this.decos = [];
@@ -1999,6 +1999,7 @@ export class InteriorView {
     const now = this.time;
     this.syncEntities();
     this.animate(dt, now);
+    SG.shelfTick(this, dt, now);   // 数秒ごとに、売れた・作られた品を棚に映す。職場の人の動き（運び込む・並べる・作る）をドット絵で
     MG.mintTick(this, dt, now);   // 在庫の作り直し・炉の煙・造幣の職人の動き（mintgfx.js）
     this.light(now);
     this.cullWalls();

@@ -21,6 +21,7 @@ import { T, W, H, walkable, isWater, tryPlace, MinHeap, MOVE_COST, TILE_NAME, fi
 import { KINGDOMS, JOBS, GOODS, SPECIES, traitLabels } from './data.js';
 import { createPersonFactory, SENIOR_JOBS } from './history.js';
 import { houseValue, earn } from './property.js';
+import { registerConsAdapter, consFence, consExpBuild, consExpHome, consWaiting, consBegin, consLine, consPending, consHalt } from './construct.js'; // 工事の段階（開発部）
 import { starterKit } from './items.js';
 import { humanStats, startFight } from './society.js';
 import { killCreature, townMask } from './creatures.js';
@@ -919,14 +920,8 @@ function stepWork(sim, pr, k, pop) {
       beginFence(sim, pr);
     }
   } else if (pr.stage === 'fence') {
-    const m = sim.market(pr.from);
-    while (labor >= 1 && pr.fence.length) {
-      const i = pr.fence.shift();
-      const t = w.tiles[i];
-      if (!(BUILDABLE.has(t) || CLEARABLE.has(t) || t === T.ROCK || t === T.SWAMP)) continue;
-      if (m && m.stock.wood >= 1) marketBuy(sim, pr.from, 'wood', 1, 'k' + k.id, { force: true }); else { const c = GOODS.wood.base * 1.6; k.treasury -= c; pr.spent += c; moneyOut(sim, c, 'よその国から資材を取り寄せた'); }
-      w.tiles[i] = T.FENCE; changed.push(i); labor -= 1.5;
-    }
+    // 柵は工事の仕組み（construct.js）で、団員が杭を1本ずつ打っていく。材木は国庫で市場から買い、団員が運ぶ。柵が一周したら pr.fence が空になる
+    consFence(sim, pr, k, adults);
     if (R.chance(0.12)) toil(sim, pr, adults, 'fence');
     if (!pr.fence.length) {
       // 見張り櫓（柵の内側の角）
@@ -1083,6 +1078,8 @@ function initNewcomer(sim, p, job, pos) {
 
 // 建てる仕事を1日ぶん進める
 function buildQueue(sim, pr, k, labor, changed) {
+  registerConsAdapter('expApi', EXP_API);
+  if (consExpBuild(sim, pr, k, changed)) return;   // 井戸と家は、縄張りから段階を追って建てる（construct.js）。畑と村の完成は下の今までの仕組みで
   const S = sim.S, w = S.world, s = w.settlements[pr.sid], R = sim.rng;
   let work = labor / 5;   // 1日の働き（大人1人でおよそ1）
   while (work > 0 && pr.queue.length) {
@@ -1153,7 +1150,11 @@ function settleUnit(sim, pr, s, u) {
   return hh;
 }
 // 家を建てる：柵の内側に場所がなければ、柵の外の道ぞいに（町が柵の外へ広がる）
+// 工事の仕組みに渡す関数（完成したときに家族を住まわせる）
+const EXP_API = { placeIn: (...a) => placeIn(...a), houseFor: (...a) => houseFor(...a), settleUnit: (...a) => settleUnit(...a) };
+registerConsAdapter('expApi', EXP_API);
 function houseFor(sim, s, name) {
+  if (s._preHouse != null) { const pb = sim.building(s._preHouse); s._preHouse = null; if (pb) { pb.name = name; return pb; } }   // 工事の仕組みが建て終えた家
   let b = placeIn(sim, s, 'house', name, sim.rng.chance(0.4) ? 3 : 2, 2);
   for (let tries = 0; !b && tries < 3; tries++) {
     if ((s.extraR || 0) < 10) s.extraR = (s.extraR || 0) + 2;
@@ -1219,7 +1220,7 @@ function stepSettle(sim, pr, k, pop) {
   if (n === 0) return abandon(sim, pr, `${s.name}には誰もいなくなった`);
   if (age < 20 && attackCheck(sim, pr, k)) return;
   // 道普請：国庫から1日に数マスずつ
-  if (pr.road && pr.road.length && k.treasury > 150) {
+  if (pr.road && pr.road.length && k.treasury > 150 && !consHalt(sim, pr.road[0] % W, (pr.road[0] / W) | 0)) {   // 雨・嵐の日は道普請も休む
     const changed = [];
     for (let j = 0; j < 5 && pr.road.length; j++) {
       const i = pr.road.shift(), t = w.tiles[i];
@@ -1247,16 +1248,16 @@ function stepSettle(sim, pr, k, pop) {
   const safety = S.dangerMap?.[chunkAt(s.x, s.z)] || 0;
   const homeless = Object.values(S.households).filter((h) => h.s === s.id && (h.street || h.house == null) && !h.wander && !h.bandits);
   if (homeless.length) {
-    const h = homeless[0], b = houseFor(sim, s, h.name);
-    if (b) { h.house = b.id; h.street = false; b.hh = h.id; b.owner = h.id; b.value = houseValue(sim, b); b.rent = 0; b.arrears = 0; spend(sim, k, pr, materials(sim, pr, k, 4, 1)); }
+    const h = homeless.find((x) => !consWaiting(sim, x.id)), b = h ? houseFor(sim, s, h.name) : null;   // 家を普請してもらっている家族は待つ
+    if (b && !consExpHome(sim, b, h, s, k, pr)) { h.house = b.id; h.street = false; b.hh = h.id; b.owner = h.id; b.value = houseValue(sim, b); b.rent = 0; b.arrears = 0; spend(sim, k, pr, materials(sim, pr, k, 4, 1)); }
   } else {
     const attract = 0.022 + (w.fields.filter((f) => f.s === s.id).length > n ? 0.012 : 0) - safety * 0.006 + (pr.road && !pr.road.length ? 0.01 : 0);
     if (n < 60 && R.chance(Math.max(0.004, attract))) newcomers(sim, pr, s);
   }
   // 礼拝堂
-  if (n >= 10 && !s.buildings.some((id) => sim.building(id)?.type === 'church') && k.treasury > 500 && R.chance(0.2)) {
+  if (n >= 10 && !s.buildings.some((id) => sim.building(id)?.type === 'church') && !consPending(sim, s.id, 'church') && k.treasury > 500 && R.chance(0.2)) {
     const b = placeIn(sim, s, 'church', '礼拝堂', 3, 3);
-    if (b) { spend(sim, k, pr, 120 + materials(sim, pr, k, 10, 8)); sim.pushLog(`${s.name}に礼拝堂が建った。これで婚礼も弔いも村でできる。`, 'event', [], s); }
+    if (b && !consBegin(sim, b, { tag: 'church', sid: s.id, k: pr.k, payer: 'k' + k.id, big: true })) { spend(sim, k, pr, 120 + materials(sim, pr, k, 10, 8)); sim.pushLog(`${s.name}に礼拝堂が建った。これで婚礼も弔いも村でできる。`, 'event', [], s); }
   }
   // 領土が村のまわりに広がる
   if (n >= 8 && sim.today % 12 === pr.id % 12) growTerritory(sim, pr, s);
@@ -1320,14 +1321,15 @@ function upgradeTown(sim, pr, k, s) {
   for (let dz = -FR; dz <= FR; dz++) for (let dx = -FR; dx <= FR; dx++) {
     if (Math.max(Math.abs(dx), Math.abs(dz)) !== FR) continue;
     const i = (s.z + dz) * W + s.x + dx;
-    if (w.tiles[i] === T.FENCE) { w.tiles[i] = T.WALL; changed.push(i); s.walls.push({ x: s.x + dx, z: s.z + dz }); }
+    if (w.tiles[i] === T.FENCE) changed.push(i);
   }
-  if (changed.length) sim.events.push({ type: 'tiles', list: changed });
-  spend(sim, k, pr, 150 + materials(sim, pr, k, 4, changed.length * 0.5));
-  if (!s.buildings.some((id) => sim.building(id)?.type === 'tavern')) placeIn(sim, s, 'tavern', `${s.name.replace(/町$/, '')}の宿`, 3, 3);
+  // 石の塀は、石工と人夫が端から1マスずつ積んでいく（construct.js。石材は国庫で買う）。塀のマスは積み上がったときに s.walls へ
+  const wallSite = changed.length ? consLine(sim, { lk: 'wall', tag: 'wall', tiles: changed, sid: s.id, k: pr.k, payer: 'k' + k.id, name: `${s.name}の石の塀` }) : null;
+  if (!wallSite && changed.length) { for (const i of changed) { w.tiles[i] = T.WALL; s.walls.push({ x: i % W, z: (i / W) | 0 }); } sim.events.push({ type: 'tiles', list: changed }); spend(sim, k, pr, 150 + materials(sim, pr, k, 4, changed.length * 0.5)); }
+  if (!s.buildings.some((id) => sim.building(id)?.type === 'tavern')) { const tv = placeIn(sim, s, 'tavern', `${s.name.replace(/町$/, '')}の宿`, 3, 3); if (tv) consBegin(sim, tv, { tag: 'tavern', sid: s.id, k: pr.k, payer: 'k' + k.id, big: true }); }
   s.extraR = (s.extraR || 0) + 3;
   S.expansion.stats.towns++;
-  sim.news(`開拓村だった${old}が大きくなり、${s.name}に格上げされた。柵は石の塀に建て替えられた`, 3, s);
+  sim.news(`開拓村だった${old}が大きくなり、${s.name}に格上げされた。柵を石の塀に建て替える普請が始まった`, 3, s);
   sim.chron(`${old}が${s.name}に格上げされた`, pr.k);
   for (const p of sim.living()) if (p.s === s.id && sim.isAdult(p) && sim.rng.chance(0.6)) sim.remember(p, `${old}が町になった。開拓のころを思うと夢のようだ`, { emo: 0.8, imp: 0.8, k: 'frontier' });
 }

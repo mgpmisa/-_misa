@@ -16,6 +16,8 @@
 // 生成は遅延（必要になったアニメだけ）＋キャッシュ（LRU）。
 
 import * as TG from './tribegfx.js'; // 奥地の民族の装い
+import { constructMotions, constructProp } from './constructanim.js'; // 普請場の仕事の姿：杭打ち・掛矢・釘打ち・石積み・屋根葺き・背負子と荷車（開発部）
+import * as AX from './anim_acts.js'; // 暮らしと仕事の動き（種まき・刈り入れ・売り買い・糸紡ぎ…）
 const PIXEL_SCALE = 0.0432; // sprites.js と同じ値
 // ================================================================ 乱数
 function strHash(s) {
@@ -585,6 +587,7 @@ function makePainter(p, opts = {}) {
   // 小道具（地面に置く物）。横向きは体の前、正面は体の前（足元を隠す）、背中は体の後ろ（ほぼ隠れる）
   const drawProp = (P, kind, G, ph) => {
     const S = G.S;
+    if (AX.PROPS[kind]) { AX.PROPS[kind](P, G, ph, { S, sx0, sx1, bx0, bx1, FEET }); return; } // 機・露店の台・献金箱など（anim_acts.js）
     const x0 = S ? sx0 - 8 : 3; // 左端
     const W = S ? 6 : 10;
     const wd = '#8a6a4a', wdD = '#6a4a2a', wdL = '#b08a5a';
@@ -637,6 +640,7 @@ function makePainter(p, opts = {}) {
         else { const ex = G.F ? 1 : 14; P.rect(ex, G.nk - 1, 1, 7, '#e8e0d0'); P.rect(ex, G.nk + 6, 1, FEET - G.nk - 6 + 1, wdD); P.px(ex + (G.F ? -1 : 1), FEET, wdD); }
         break;
       }
+      default: constructProp(P, kind, G, ph, sx0, FEET);   // 梁の材・杭・積みかけの石垣（constructanim.js）
     }
   };
   // 道具を手から角度 a の向きに描く。戻り値は先端の位置
@@ -664,6 +668,7 @@ function makePainter(p, opts = {}) {
       return E;
     }
     for (let j = -back; j <= len; j++) put(at(j), T.shaft || wood);
+    if (AX.HEADS[T.head]) return AX.HEADS[T.head](put, at, len, E, T); // 鎌・突き棒・じょうろ・紡錘（anim_acts.js）
     switch (T.head) {
       case 'tip': put(E, steel); put(at(len + 1), lt(steel, 0.08)); put(at(len - 1, 1), steelD); put(at(len - 1, -1), steelD); return at(len + 1);
       case 'fork': for (let w = -1; w <= 1; w++) put(at(len, w), steel); for (const w of [-1, 1]) { put(at(len + 1, w), steel); put(at(len + 2, w), steel); } return at(len + 2);
@@ -1418,6 +1423,7 @@ function drawFx(P, r, flip) {
     const [kind, an, dx = 0, dy = 0, ex] = fx;
     const base = fxAnchor(r, an);
     const [x, y] = toRaw([base[0] + dx * sg, base[1] + dy]);
+    if (AX.FX[kind]) { AX.FX[kind]({ P, dot: (qx, qy, c, o) => dot(P, qx, qy, c, o), x, y, ex, fs, sg }); continue; } // しずく・呼び声・種まきの粒など（anim_acts.js）
     switch (kind) {
       case 'spark': glyph(P, 'plus', x - 1, y - 1, ex || '#fff4a0', '#ffffff'); break;
       case 'burst': glyph(P, 'star', x - 2, y - 2, ex || '#a0e0ff', '#ffffff'); glyph(P, 'burst', x - 2, y - 2, lt(ex || '#a0e0ff', 0.1)); break;
@@ -1972,6 +1978,7 @@ const WORK = {
 };
 WORK.pitch = { ...WORK.dig, pose(v, k) { const q = WORK.dig.pose(v, k); for (const t of [].concat(q.tools || [])) t.k = 'pitchfork'; for (const f of q.fx || []) f[4] = ['#e8d060', '#c8a840']; return q; } };
 const slow = (d, m) => ({ ...d, durs: d.durs.map((x) => Math.round(x * m)) });
+Object.assign(WORK, constructMotions({ A, AT, TO, TL, swing, hands4, OBJ, TOOL }));   // 普請場の仕事の姿（constructanim.js）
 WORK.train = { attack: true, mult: 1.6 };
 WORK.shoot = { attack: 'shoot', mult: 1.5 };
 WORK.cast = {
@@ -2000,10 +2007,18 @@ export const JOB_MOTION = {
   captain: 'spyglass', shipwright: 'saw', keeper: 'lantern', diver: 'gather', pirate: 'train', smuggler: 'lift',
   warrior: 'train', archer: 'shoot', cleric: 'pray', sage: 'cast', paladin: 'guard', guildmaster: 'train',
   banditchief: 'train', pickpocket: 'sneak', swindler: 'coins',
+  roadworker: 'dig', pioneer: 'chop', // 道普請の人夫は土を掘り、開拓者は木を伐る
 };
 Object.assign(JOB_MOTION, TG.TRIBE_MOTION); // 長老は語り、巫女は祈る
+AX.installActs({ WORK, LIFE, TOOL, OBJ, A, AT, TL, TO, MO, hands4, swing, GOLD, dk, lt, JOB_MOTION }); // 暮らしと仕事の動きを登録
+Object.assign(JOB_MOTION, AX.ACT_JOB_MOTION); // 動きの決まっていなかった職業（普請・行商・渡し守・機織り…）
 export const WORK_MOTIONS = Object.keys(WORK);
 export const ANIM_NAMES = ['idle', 'talk', 'attack', 'hurt', 'dying', 'death', 'dead', 'work', 'eat', 'drink', 'sleep', 'sit', 'pray', 'cry', 'cheer', 'wave', 'play', 'flee', 'beg'];
+// ほかのファイルから仕事の動きと「行動 → 動き」の決め方を足す入口（js/anim_leisure.js：歌う・手をたたく・賭け事・湯に入る・逢い引き）
+export function addWorkMotions(defs) { for (const [k, v] of Object.entries(defs)) if (!WORK[k]) WORK[k] = v; }
+const STATE_HOOKS = [];
+export function addAnimStateHook(fn) { if (!STATE_HOOKS.includes(fn)) STATE_HOOKS.push(fn); }
+export const POSE_KIT = { A, AT, TL, TO, MO, hands4 };
 
 // ================================================================ シートの組み立て
 function ctxOf(p, pt) {
@@ -2177,6 +2192,7 @@ export function personAnimState(sim, p, moving = false) {
   const a = p.action;
   if (p.fight) return moving ? 'walk' : (p.guardT != null && sim?.S && sim.S.t - p.guardT < 2 ? 'work:guard' : 'attack');   // 盾を構える（tactics.js の挑発・かばう）
   if (moving) {
+    if (a?.type === 'haul' && p.consHaul?.leg === 'drop') return p.consHaul.how === 'cart' || p.consHaul.how === 'beast' ? 'work:c_cart' : p.consHaul.g === 'stone' ? 'work:c_carrystone' : 'work:c_carry';   // 資材を背負って・荷車を押して歩く（construct.js）
     if (a?.type === 'flee' || (p.needs && p.needs.survival < 8)) return 'flee';
     if (kid && a && ['play', 'festival'].includes(a.type)) return 'play';
     return 'walk';
@@ -2184,7 +2200,9 @@ export function personAnimState(sim, p, moving = false) {
   if (p.maxhp && p.hp < p.maxhp * 0.2) return 'dying';
   if (p.talk) return 'talk';
   if (p.jail != null) return (p.mood ?? 50) < 25 ? 'cry' : 'sit';
+  { const ax = AX.actAnimState(sim, p, a, age, kid); if (ax) return ax; } // 季節の畑仕事・売り買い・休み方など（anim_acts.js）
   if (!a || a.phase !== 'do') return 'idle';
+  for (const f of STATE_HOOKS) { const r = f(sim, p, a, kid); if (r) return r; }   // 娯楽の動き（js/anim_leisure.js）
   switch (a.type) {
     case 'sleep': case 'nap': case 'sickbed': return 'sleep';
     case 'eat': case 'askfood': return 'eat';
@@ -2215,6 +2233,8 @@ export function personAnimState(sim, p, moving = false) {
     case 'court': return 'wave';
     case 'steal': case 'rob': return 'work:sneak';
     case 'jail': return 'sit';
+    case 'construct': return p.consAnim || 'work:lift';   // 普請場：槌を振る・石を積む・木を運ぶ（construct.js が段階と役目で選ぶ）
+    case 'roadbuild': return 'work:dig';                  // 街道の普請
   }
   if ((p.mood ?? 50) < 12) return 'cry';
   return 'idle';

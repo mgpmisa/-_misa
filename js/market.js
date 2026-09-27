@@ -36,6 +36,8 @@ import { hasShop, millToll } from './shops.js';
 import { matterGood, MATTER_USE } from './matter.js';
 const gd = (g) => GOODS?.[g] || matterGood(g);   // 今の20品か、物の一覧の品か
 const isStaple = (g) => !!GOODS?.[g];
+// 職場の蔵（workshop.js）へのつなぎ口：buy（買った）・deliver（商人が買い取った）・toll（粉ひき代）・stash（坑道で掘った）・sellWs / wsValue（職場の蔵のあまりを卸す）
+export const MARKET_HOOK = {};
 
 const FOOD = ['bread', 'fish', 'wheat', 'meat', 'honey'];
 const PERISH = { fish: 0.15, meat: 0.12, bread: 0.1 };
@@ -162,7 +164,7 @@ export function marketBuy(sim, sid, g, qty, payer, opt = {}) {
   const keeper = shopkeeper(sim, sid);
   const E = econState(sim);
   const payerName = opt.who || label(sim, payer);
-  let need = qty, got = 0;
+  let need = qty, got = 0; const parts = MARKET_HOOK.buy ? [] : null;
   while (need > 1e-9 && list.length) {
     const l = list[0];
     const w = l.w || 1;                        // ごまかしの量
@@ -184,10 +186,12 @@ export function marketBuy(sim, sid, g, qty, payer, opt = {}) {
       if (isM) E.day.merchant += gain;
       incomeOf(sim, l.o, gain);
     }
+    if (parts) parts.push([l.o, take * w, cost, l.c]);
     l.q -= take * w; need -= take; got += take * w;
     if (l.q < 1e-6) list.shift();
   }
   m.stock[g] = Math.max(0, num(m.stock[g]) - got);
+  if (parts && got > 0) MARKET_HOOK.buy(sim, sid, g, parts, payer, payerName);   // 職場の仕入れと売り上げの記録（workshop.js）
   return got;
 }
 function incomeOf(sim, code, amt) {
@@ -221,6 +225,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
     const cost = n * unit;
     mh.money -= cost; give(sim, code, cost, sid);
     addLot(sim, m, sid, g, mh.id, n, 0, unit);
+    MARKET_HOOK.deliver?.(sim, sid, g, n, code, mh.id, cost);
     flow(sim, '市場の商人', label(sim, code), cost, `${G.name}の買い取り`);
     { const wf = cost * 0.01; mh.money -= wf; m.fund = (m.fund || 0) + wf; flow(sim, '市場の商人', '町の蓄え', wf, 'はかり料'); }   // 町の計量所で量ってもらう
     incomeOf(sim, code, cost);
@@ -241,6 +246,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
       const cost = n * unit;
       t.fund -= cost; give(sim, code, cost, sid);
       addLot(sim, m, sid, g, 't' + sid, n, 3, unit);
+      MARKET_HOOK.deliver?.(sim, sid, g, n, code, 't' + sid, cost);
       flow(sim, '村の蔵（村長）', label(sim, code), cost, `${G.name}の買い取り`);
       incomeOf(sim, code, cost);
       got += cost; left -= n;
@@ -253,6 +259,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
 
 // ---------- 家の蔵 ----------
 export function stash(sim, p, g, q) {
+  if (MARKET_HOOK.stash && p && !p.members && MARKET_HOOK.stash(sim, p, g, q)) return 0;   // 坑道で掘った物は鉱山の小屋の蔵へ（workshop.js）
   const hh = p?.members ? p : sim.hh(p);
   if (!hh || !(q > 0) || !gd(g)) return 0;
   const st = hh.stock || (hh.stock = {});
@@ -274,8 +281,9 @@ function sellable(sim, hh, g) {
   return Math.max(0, n - keep);
 }
 function sellValue(sim, hh, sid) {
-  if (!hh?.stock) return 0;
-  const m = sim.S.towns[sid]; let v = 0;
+  let v = MARKET_HOOK.wsValue && hh ? MARKET_HOOK.wsValue(sim, hh, sid) : 0;   // 職場の蔵のあまり（workshop.js）
+  if (!hh?.stock) return v;
+  const m = sim.S.towns[sid];
   for (const g of Object.keys(hh.stock)) if (gd(g)) v += sellable(sim, hh, g) * (m?.price[g] ?? gd(g).base);
   return v;
 }
@@ -297,8 +305,9 @@ export function cookFromStock(sim, hh, want) {
 
 // (b) 家の蔵の品を、いまいる町の商人（村なら村の蔵）に売る。組合の職人は自分の店に並べる
 export function sellHousehold(sim, p) {
+  const wsGot = MARKET_HOOK.sellWs ? MARKET_HOOK.sellWs(sim, p) : 0;   // 職場の蔵のあまりを商人へ卸す（workshop.js）
   const hh = sim.hh(p);
-  if (!hh?.stock) return 0;
+  if (!hh?.stock) return wsGot;
   const sid = p.s;
   let total = 0; const sold = [];
   const craft = GUILD_JOBS.has(p.job) && p.job !== 'merchant' && p.job !== 'shopkeeper' && !!guildOf(sim, sid) && isGuildMember(sim, p);

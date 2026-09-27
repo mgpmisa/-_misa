@@ -16,12 +16,15 @@ import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
 import { mintBuildingHTML, mintPersonHTML, MINT_LABEL, MINT_GO, MINT_PREF } from './mintflow.js';   // 造幣の流れの詳細欄
 import { elderCard, elderBuildingRows } from './elder.js';
 import { BLD_LABEL, BLD_GO, BLD_PREF, BLD_TYPE_LABEL, buildingRows } from './buildings.js';
+import { LEISURE_LABEL, LEISURE_GO, LEISURE_PREF, LEISURE_TYPE_LABEL, leisureBuildingRows, isLeisureHouse, leisureToggle } from './leisure.js';
+import { CONS_LABEL, CONS_GO, CONS_PREF, constructBuildingHTML, constructTileHTML } from './construct.js'; // 工事の段階と資材（開発部）
 import { econFlowHTML } from './ledger.js';
 import { renderDex } from './matterdex.js';
 import { MATTER_LABEL, MATTER_GO, MATTER_PREF } from './matter.js';
 import { MARKET_LABEL, MARKET_GO, MARKET_PREF, marketTownHTML, stockText } from './market.js';
 import { wageText } from './payday.js';
 import { shopRows } from './shops.js';
+import { wsBuildingHTML, wsTownFlowHTML, wsPersonHTML } from './workshop.js';   // 職場の蔵と流れ（経済部）
 import { NEEDS_LABEL, NEEDS_GO, NEEDS_PREF, needsLabel } from './needs.js';
 import { laborCard, laborNationHTML, LABOR_LABEL, LABOR_GO, LABOR_PREF } from './labor.js';
 import { monsterHtml } from './monsters.js';
@@ -76,8 +79,10 @@ Object.assign(ACTION_LABEL, { roadbuild: '街道の普請' }); Object.assign(ACT
 Object.assign(ACTION_LABEL, RESCUE_ACTION_LABEL); Object.assign(ACTION_GO, RESCUE_ACTION_GO); Object.assign(PREF_LABEL, RESCUE_PREF_LABEL);
 Object.assign(ACTION_LABEL, CAREER_LABEL); Object.assign(ACTION_GO, CAREER_GO); Object.assign(PREF_LABEL, CAREER_PREF);
 Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION_GO);
+Object.assign(ACTION_LABEL, LEISURE_LABEL); Object.assign(ACTION_GO, LEISURE_GO); Object.assign(PREF_LABEL, LEISURE_PREF);
 Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
 Object.assign(ACTION_LABEL, CIVIC_LABEL); Object.assign(ACTION_GO, CIVIC_GO); Object.assign(PREF_LABEL, CIVIC_PREF);
+Object.assign(ACTION_LABEL, CONS_LABEL); Object.assign(ACTION_GO, CONS_GO); Object.assign(PREF_LABEL, CONS_PREF);
 Object.assign(ACTION_LABEL, GEAR_LABEL); Object.assign(ACTION_GO, GEAR_GO); Object.assign(PREF_LABEL, GEAR_PREF);
 Object.assign(ACTION_LABEL, { escort: '荷車を護衛している', sail: '船に乗り組んでいる' }); Object.assign(PREF_LABEL, { escort: '護衛', sail: '船旅' });
 Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '王に陳情している', riot: '暴動に加わっている' }); Object.assign(ACTION_GO, { levy: '税の取り立てに回っている', petition: '王都へ陳情に向かっている', riot: '広場へ押しかけている' }); Object.assign(PREF_LABEL, { levy: '徴税', petition: '陳情', riot: '暴動' });
@@ -123,7 +128,7 @@ export class UI {
     $('shadowChk').onchange = (e) => this.r.setShadows(e.target.checked);
     $('attnChk').onchange = (e) => { this.attention = e.target.checked; };
     $('matureChk').checked = this.sim.S.settings?.matureCrimes !== false;
-    $('matureChk').onchange = (e) => { this.sim.S.settings = this.sim.S.settings || {}; this.sim.S.settings.matureCrimes = e.target.checked; };
+    $('matureChk').onchange = (e) => { this.sim.S.settings = this.sim.S.settings || {}; this.sim.S.settings.matureCrimes = e.target.checked; leisureToggle(this.sim); this.renderLogAll(); this.renderInspector(true); };   // 切ると歓楽の館に関わるものを跡形もなく消す
     $('newWorld').onclick = () => { $('newWorldConfirm').hidden = false; };
     $('newWorldYes').onclick = () => this.onNewWorld && this.onNewWorld();
     $('sideToggle').onclick = () => $('side').classList.toggle('closed');
@@ -532,7 +537,7 @@ export class UI {
       <canvas id="priceChart" width="300" height="90"></canvas>
       <p>黄＝パン　緑＝小麦（最近の値動き）</p>
       <p>世帯 ${hhs.length}　平均の蓄え ${avg.toFixed(0)}銅貨　町の蓄え ${Math.round(m.fund)}銅貨<br>
-      貧しい世帯 ${poor}　お腹をすかせた人 ${hungry}人　盗み ${m.crime || 0}件${m.occupied ? '<br><b class="up">魔王軍に占領されている</b>' : ''}</p>${bankEconHTML(this.sim, sid, esc) || ''}${marketTownHTML(this.sim, sid)}${econFlowHTML(this.sim, esc)}`;
+      貧しい世帯 ${poor}　お腹をすかせた人 ${hungry}人　盗み ${m.crime || 0}件${m.occupied ? '<br><b class="up">魔王軍に占領されている</b>' : ''}</p>${bankEconHTML(this.sim, sid, esc) || ''}${marketTownHTML(this.sim, sid)}${wsTownFlowHTML(this.sim, sid, esc)}${econFlowHTML(this.sim, esc)}`;
     const cv = $('priceChart'), g = cv.getContext('2d');
     const hist = m.history;
     if (hist.length > 1) {
@@ -702,6 +707,7 @@ export class UI {
       const dangers = Object.entries(p.danger || {}).filter(([, v]) => v > 1.5).sort((a, b) => b[1] - a[1]).slice(0, 3);
       const cc = careerCard(this.sim, p);
       const lc = laborCard(this.sim, p);
+      h += wsPersonHTML(this.sim, p, esc);   // 働く職場とその蔵（workshop.js）
       if (lc.length) h += `<div class="section"><h4>働きぶりとお金の使い方</h4><dl class="kv">${lc.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
       const ec = elderCard(this.sim, p);
       if (ec.length) h += `<div class="section"><h4>老後の備え</h4><dl class="kv">${ec.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
@@ -766,7 +772,7 @@ export class UI {
     const k = w.kingdomOf[t.z * W + t.x];
     const near = Object.values(this.sim.S.creatures).filter((c) => !c.dormant && Math.hypot(c.pos.x - t.x, c.pos.z - t.z) < 6);
     return `<div class="pname">${esc(this.sim.placeName(t.x, t.z))}</div><div class="psub">${esc(TILE_NAME[tt])}・標高${w.hgt[t.z * W + t.x]}${k >= 0 ? `・${esc(KINGDOMS[k].name)}の領地` : k === -1 ? '・どの国にも属さない' : ''}</div>
-      ${near.length ? `<div class="section"><h4>近くにいる生き物</h4>${near.slice(0, 12).map((c) => `<span class="link" data-cid="${c.id}">${esc(c.name)}</span>`).join('、')}</div>` : ''}`;
+      ${near.length ? `<div class="section"><h4>近くにいる生き物</h4>${near.slice(0, 12).map((c) => `<span class="link" data-cid="${c.id}">${esc(c.name)}</span>`).join('、')}</div>` : ''}${constructTileHTML(this.sim, t.x, t.z, esc, (q, n) => this.pLink(q, n))}`;
   }
 
   familyHtml(p) {
@@ -798,7 +804,7 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    let typeLabel = { mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || BLD_TYPE_LABEL[b.type] || '建物';
+    let typeLabel = { site: '工事現場', mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || BLD_TYPE_LABEL[b.type] || LEISURE_TYPE_LABEL[b.type] || '建物';
     typeLabel = bldTypeLabel(b, typeLabel); // 民族の集会所・祠、村の寄り合い所などを正しい呼び名に
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     if (INTERIOR_TYPES.has(b.type)) h += `<div class="row-btns"><button id="enterBtn">${['cave', 'pyramid', 'demoncastle', 'ruins', 'mine'].includes(b.type) ? '奥へ踏み込んで見る' : '中に入って見る'}</button></div>`;
@@ -818,12 +824,16 @@ export class UI {
       const qs = (S.quests || []).filter((q) => q.s === b.settlement && ['open', 'taken', 'report'].includes(q.state));
       h += `<div class="section"><h4>依頼掲示板</h4><ul class="rels">${qs.map((q) => `<li><span>［${RANKS_ADV[q.rank]}］${esc(q.title)}</span><span class="dead">${q.reward}銅貨</span></li>`).join('') || '<li>いまは依頼がない</li>'}</ul></div>`;
     }
+    h += constructBuildingHTML(sim, b, esc, (q, t) => this.pLink(q, t));   // 普請の段階・資材・働く人・止まっている理由（construct.js）
+    h += wsBuildingHTML(sim, b, esc, (q, l) => this.pLink(q, l));   // 蔵と流れ（workshop.js）
     const br = [...shopRows(sim, b), ...(buildingRows(sim, b) || [])];
     if (br.length) h += `<div class="section"><h4>${esc(BLD_TYPE_LABEL[b.type] || '店と持ち主')}</h4><dl class="kv">${br.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
+    const lr = leisureBuildingRows(sim, b);
+    if (lr.length) h += `<div class="section"><h4>館の決まり</h4><dl class="kv">${lr.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const er = elderBuildingRows(sim, b);
     if (er.length) h += `<div class="section"><h4>救貧院</h4><dl class="kv">${er.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     h += mintBuildingHTML(sim, b, esc, (x, l) => this.pLink(x, l));   // 造幣所：入荷・地金・打った枚数・誰に払ったか・硬貨の質／鉱山：鉱石置き場（mintflow.js）
-    const inside = sim.living().filter((q) => q.inside === b.id);
+    const inside = isLeisureHouse(b) ? [] : sim.living().filter((q) => q.inside === b.id);   // 歓楽の館は中の人を出さない
     if (inside.length) h += `<div class="section"><h4>いま中にいる人</h4>${inside.map((q) => this.pLink(q)).join('、')}</div>`;
     const bandits = sim.living().filter((q) => q.hideout === b.id);
     if (bandits.length) h += `<div class="section"><h4>ねぐらにしている者</h4>${bandits.map((q) => this.pLink(q)).join('、')}</div>`;

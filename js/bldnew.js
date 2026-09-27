@@ -371,7 +371,7 @@ export const NEW_INTERIOR = {
   tailorshop(K, ctx, F) {
     const { M, W, D } = K;
     F.room(K, { floor: M.planks, wall: M.timber, beams: true, door: Math.floor(W / 2), win: { W: [3], E: [3], N: [], S: [1] } });
-    F.openShelf(K, 0.3, 0.05, W - 0.6, 'N', [M.red, M.blue, M.green, M.beige, M.purple, M.white, M.orange]);
+    F.openShelf(K, 0.3, 0.05, W - 0.6, 'N', []);   // 布の巻きと服は shelfgfx.js が蔵の数だけ並べる
     F.table(K, 1.5, 2.6, 3, 1.2, { top: M.wood }); K.box(1.8, 0.72, 2.8, 1.6, 0.03, 0.8, M.blue); K.box(3.6, 0.72, 3.0, 0.4, 0.04, 0.15, M.steel);
     K.slot('work', 3, 4.3, { face: [0, -1] }); K.slot('work', 1.1, 3.2, { face: [1, 0] });
     for (const [x, c] of [[W - 2.2, M.red], [W - 1.2, M.green]]) {
@@ -390,7 +390,7 @@ export const NEW_INTERIOR = {
     const { M, W, D } = K;
     F.room(K, { floor: M.stone, wall: M.timber, beams: true, door: Math.floor(W / 2), win: { W: [3], E: [], N: [], S: [W - 2] } });
     F.shelf(K, 0.3, 0, W - 0.6, 'N', M.bottles, { h: 2.1 });
-    F.openShelf(K, W, 1.2, 3, 'E', [M.green, M.red, M.blue, M.white, M.purple]);
+    F.openShelf(K, W, 1.2, 3, 'E', []);   // 薬瓶は shelfgfx.js が蔵の数だけ並べる
     K.box(1, 0, 3.2, W - 3, 1.0, 0.6, M.wood); K.box(0.9, 1.0, 3.15, W - 2.8, 0.08, 0.7, M.darkWood); K.solid(1, 3.2, W - 3, 0.6);
     K.cyl(2, 1.08, 3.5, 0.16, 0.14, M.stone, { seg: 7 }); K.box(3.2, 1.08, 3.3, 0.5, 0.2, 0.3, M.brass);
     for (let i = 0; i < 6; i++) { K.box(1.5 + i * 0.9, 1.7, 1.8, 0.25, 0.45, 0.2, i % 2 ? M.leaf : M.green); K.box(1.6 + i * 0.9, 2.15, 1.85, 0.04, 0.3, 0.04, M.brown); }
@@ -405,14 +405,13 @@ export const NEW_INTERIOR = {
   genstore(K, ctx, F) {
     const { M, W, D } = K;
     F.room(K, { floor: M.planks, wall: M.timber, beams: true, door: Math.floor(W / 2), win: { W: [3], E: [3], N: [], S: [1] } });
-    F.openShelf(K, 0.3, 0.05, W - 0.6, 'N', [M.bread, M.apple, M.clay, M.cabbage, M.brass, M.white, M.orange, M.fish]);
-    F.openShelf(K, 0, 1.4, 3.5, 'W', [M.clay, M.sack, M.iron, M.beige]);
+    F.openShelf(K, 0.3, 0.05, W - 0.6, 'N', []);   // 品物は shelfgfx.js が店の品の数だけ並べる
+    F.openShelf(K, 0, 1.4, 3.5, 'W', []);
     K.box(3, 0, 3.4, 4, 1.0, 0.6, M.wood); K.box(2.9, 1.0, 3.35, 4.2, 0.08, 0.7, M.darkWood); K.solid(3, 3.4, 4, 0.6);
     K.box(3.4, 1.08, 3.5, 0.6, 0.12, 0.3, M.brass); K.cyl(5.8, 1.08, 3.7, 0.18, 0.25, M.clay, { seg: 7 });
     K.slot('work', 5, 2.6, { face: [0, 1] });
     for (let i = 0; i < 3; i++) F.barrel(K, W - 0.8, 2.2 + i * 0.8, { h: 0.8 });
-    for (let i = 0; i < 4; i++) F.sack(K, 1.2 + i * 0.5, D - 0.7);
-    F.crate(K, W - 2.2, D - 1.2); F.crate(K, W - 2.2, D - 1.2, 0.6, 0.6);
+    F.crate(K, W - 2.2, D - 1.2); F.crate(K, W - 2.2, D - 1.2, 0.6, 0.6);   // 穀物の袋は shelfgfx.js
     K.slot('wait', 5, 4.7, { face: [0, -1] }); K.slot('wait', 3.6, 4.8, { face: [0, -1] });
     F.torch(K, 'W', 5.5, 1.6); F.candle(K, 4.4, 3.6, 1.08, { noStand: true });
   },

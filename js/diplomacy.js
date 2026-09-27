@@ -39,6 +39,7 @@ import { exchangeRate } from './bank.js';
 import { marketBuy, ownStock } from './market.js';
 import { landRoute } from './logistics.js';
 import { threatsNear } from './expansion.js';
+import { consHalt } from './construct.js'; // 雨・嵐の時間は工事を休む（開発部）
 import * as POL from './politics.js';
 
 // ---------- 料金表（docs/通行料の歴史.md「9-2〜9-5」。数字はここにまとめ、あとで差し替えやすくする） ----------
@@ -604,19 +605,41 @@ function stepRoad(sim, road) {
     }
     road.spent[sd.kid] = (road.spent[sd.kid] || 0) + paid; D.stats.wagesPaid += paid;
     if (!workers.length) { if (sim.rng.chance(0.2)) note(sim, `${kname(sim, sd.kid)}の国庫が乏しく、${road.name}の普請が止まっている`, [sd.kid], { pos: { x: hx, z: hz } }); continue; }
-    let work = workers.reduce((s, p) => s + WORK_DAY * (0.8 + (p.skill?.[p.job] || 0.3) * (p.job === 'roadworker' ? 0.6 : 0.2)), 0);
-    const changed = [];
-    while (work > 0 && canGo(sd.dir)) {
-      const i = road.todo[sd.dir > 0 ? road.lo : road.hi];
+    const work = workers.reduce((s, p) => s + WORK_DAY * (0.8 + (p.skill?.[p.job] || 0.3) * (p.job === 'roadworker' ? 0.6 : 0.2)), 0);
+    // その日の働きは、朝7時から夕方5時までの1時間ごとに少しずつ使い、端から1マスずつ延ばす（roadHour）。雨の時間の分は使えずに終わる
+    const bank = road.bank || (road.bank = {});
+    bank[sd.dir > 0 ? 'w1' : 'w2'] = work; bank[sd.dir > 0 ? 'k1' : 'k2'] = sd.kid;
+  }
+  if (road.lo > road.hi) openRoad(sim, road);
+}
+// 街道の普請を1時間ぶん進める（diplomacyHourly から、朝7時〜夕5時）
+function roadHour(sim, road) {
+  const S = sim.S, D = S.diplo, w = S.world, bank = road.bank;
+  if (!bank) return;
+  const blk = road.stage === 'purge' ? road.block : null;
+  const canGo = (dir) => (road.lo <= road.hi) && (!blk || (dir > 0 ? road.lo < blk.lo : road.hi > blk.hi));
+  const left = Math.max(1, 17 - Math.floor(sim.hour()));
+  const changed = [];
+  for (const dir of [1, -1]) {
+    const wk = dir > 0 ? 'w1' : 'w2', rk = dir > 0 ? 'r1' : 'r2', pk = dir > 0 ? 'part1' : 'part2';
+    if (!(bank[wk] > 0) || !canGo(dir)) continue;
+    const i0 = road.todo[dir > 0 ? road.lo : road.hi];
+    if (consHalt(sim, i0 % W, (i0 / W) | 0)) continue;
+    const use = bank[wk] / left;
+    bank[wk] -= use;
+    let work = use + (bank[rk] || 0);
+    bank[rk] = 0; bank[pk] = 0;
+    while (work > 0 && canGo(dir)) {
+      const i = road.todo[dir > 0 ? road.lo : road.hi];
       const t = w.tiles[i];
       const need = TILE_WORK[t] || 1;
-      if (work < need && changed.length) break;
+      if (work < need) { bank[rk] = work; bank[pk] = work / need; break; }
       work -= need;
-      layTile(sim, road, sd.kid, i, t, changed);
-      if (sd.dir > 0) road.lo++; else road.hi--;
+      layTile(sim, road, bank[dir > 0 ? 'k1' : 'k2'] ?? road.k, i, t, changed);
+      if (dir > 0) road.lo++; else road.hi--;
     }
-    if (changed.length) { sim.events.push({ type: 'tiles', list: changed }); D._netDirty = true; }
   }
+  if (changed.length) { sim.events.push({ type: 'tiles', list: changed }); D._netDirty = true; }
   if (road.lo > road.hi) openRoad(sim, road);
 }
 function layTile(sim, road, kid, i, t, changed) {
@@ -1242,6 +1265,7 @@ export function diplomacyDaily(sim) {
 export function diplomacyHourly(sim) {
   const S = sim.S, D = S.diplo; if (!D) return;
   const h = Math.floor(sim.hour());
+  if (h >= 7 && h < 17) for (const road of D.roads) if (road.stage === 'build' || road.stage === 'purge') roadHour(sim, road);   // 街道は1時間ごとに少しずつ延びる
   // 朝7時：普請場の近くに住む人夫を現場へ（遠い町の人夫は泊まり込みとみなす）
   if (h === 7) for (const road of D.roads) {
     if (road.stage !== 'build' && road.stage !== 'purge') continue;

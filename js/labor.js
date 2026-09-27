@@ -30,6 +30,7 @@ import { fallIll, isBedridden } from './health.js';
 import { markWanted, arrest, humanStats } from './society.js';
 import { makeItem, addItem, autoEquip, countItem } from './items.js';
 import { marketBuy, personPayer } from './market.js';
+import { wsTake } from './workshop.js';
 
 // ---------- 表 ----------
 export const NEED_JP = { hunger: '食', sleep: '眠り', survival: '身の安全', lust: '恋', sloth: '楽', pleasure: '楽しみ', esteem: '見栄・名誉' };
@@ -432,7 +433,7 @@ export const SPEND = [
   { id: 'wine', every: 2, need: 'pleasure', name: '上等な酒', type: 'dine', place: 'tavern', dur: 70,
     ok: (sim, p) => sim.hour() >= 15 && sim.ageOf(p) >= 16,
     deal: (sim, p) => { const s = findSeller(sim, p.s, ['innkeeper', 'brewer'], p); return s ? { cost: price(sim, p, 'ale') * 4 + 2, seller: s } : null; },
-    fx: (sim, p, c, d) => { bump(p, { pleasure: 25, esteem: 3 }); const sh = d.seller && sim.hh(d.seller); if (sh) { if ((sh.stock?.ale || 0) >= 1) sh.stock.ale -= 1; else marketBuy(sim, p.s, 'ale', 1, sh); } }, txt: null },
+    fx: (sim, p, c, d) => { bump(p, { pleasure: 25, esteem: 3 }); const sh = d.seller && sim.hh(d.seller); if (sh) { if (wsTake(sim, sh, 'ale', 1, '上等な酒の客', d.cost || 0) < 1) marketBuy(sim, p.s, 'ale', 1, sh); } }, txt: null },
   { id: 'fortune', every: 4, need: 'pleasure', name: '占い', type: 'show', place: 'plaza', dur: 30,
     deal: (sim, p) => { const s = findSeller(sim, p.s, ['fortune'], p); return s ? { cost: 2, seller: s } : null; },
     fx: (sim, p) => bump(p, { pleasure: 12, survival: 5 }), txt: (sim, p) => sim.rng.pick(['占い師に「近いうちによいことがある」と言われた', '占い師に「水辺に気をつけよ」と言われた', '占い師に恋の行方を占ってもらった']) },
