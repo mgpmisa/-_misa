@@ -1053,6 +1053,8 @@ export function villagesDaily(sim) {
     const s = sim.town(V.sid);
     if (!s) continue;
     if (s.annexed == null && V.annexed != null) V.annexed = null;
+    // 魔王軍に占領された（politics.js が住民を王都へ逃がしている）
+    if (S.towns[V.sid]?.occupied) { for (const p of sim.living()) if (p.vOrigin === V.id && sim.hh(p)?.refugee === V.sid) p.vRefugee = V.id; ruin(sim, V, null, `${S.demon?.name || '魔王'}の軍勢に占領されて`); continue; }
     upkeep(sim, V, s);
     if (checkRuin(sim, V, s)) continue;
     crisis(sim, V, s);
@@ -2486,7 +2488,7 @@ function lastEnemy(sim, V) {
   const r = XV(sim).raids.filter((q) => q.toKey === me && q.res === 'win' && sim.today - (q.d0 ?? 0) <= 40).sort((a, b) => b.d0 - a.d0)[0];
   return r ? r.from : null;
 }
-function ruin(sim, V, byKey) {
+function ruin(sim, V, byKey, why = null) {
   const S = sim.S, s = sim.town(V.sid), me = 's' + V.sid;
   V.state = 'ruin'; V.ruinDay = sim.today; V.ruinBy = byKey;
   s.abandoned = true; s.ruined = true;
@@ -2496,11 +2498,12 @@ function ruin(sim, V, byKey) {
   if (refugees.length) { const each = (S.towns[V.sid].fund || 0) / refugees.length; for (const h of refugees) xfer(acct(sim, me), hhAcct(h), each); }
   XV(sim).pacts = XV(sim).pacts.filter((q) => !(q.a === me || q.b === me || q.from === me || q.to === me));
   const by = byKey ? nameOf(sim, byKey) : null;
-  note(sim, [me, ...(byKey ? [byKey] : [])], `${V.name}は住む者がいなくなり、廃村となった${by ? `（${by}との争いの末に）` : ''}`, 3, V);
+  note(sim, [me, ...(byKey ? [byKey] : [])], why ? `${V.name}は${why}、廃村となった` : `${V.name}は住む者がいなくなり、廃村となった${by ? `（${by}との争いの末に）` : ''}`, 3, V);
   // 仇を誓う者
   for (const p of sim.living()) {
     if (p.vOrigin !== V.id || sim.ageOf(p) < 14) continue;
     sim.remember(p, `生まれ育った${V.name}が廃村になった`, { emo: -1, imp: 1, k: 'feud' });
+    if (!byKey && why && p.values.courage > 0.6 && p.pers.A < 0.5) { p.vendetta = p.vendetta || 'demon'; sim.remember(p, `いつか${V.name}を取り戻すと誓った`, { emo: -0.7, imp: 1, k: 'feud' }); stat(sim, 'avenger'); }
     if (byKey && p.values.courage > 0.55 && (1 - p.pers.A) + p.values.courage > 1.1) { p.vAvenge = { party: byKey, why: `${V.name}の仇`, since: sim.today }; sim.remember(p, `いつか${by}に${V.name}の仇を討つと誓った`, { emo: -0.8, imp: 1, k: 'feud' }); stat(sim, 'avenger'); }
   }
   stat(sim, 'ruin');
@@ -2531,7 +2534,7 @@ function refugeeHousehold(sim, V, hh, why) {
 // 廃村に、のちに人が住みつく（盗賊・王国の開拓者・生き残り）
 function resettle(sim, V) {
   const S = sim.S, R = sim.rng, s = sim.town(V.sid);
-  if (sim.today - V.ruinDay < 20 || !R.chance(0.08)) return;
+  if (sim.today - V.ruinDay < 20 || S.towns[V.sid]?.occupied || !R.chance(0.08)) return;
   const opts = {};
   const den = S.world.buildings.filter((b) => b.type === 'hideout' && Math.hypot(b.x - V.x, b.z - V.z) < 170 && banditsOf(sim, b.id).length >= 2).sort((a, b) => Math.hypot(a.x - V.x, a.z - V.z) - Math.hypot(b.x - V.x, b.z - V.z))[0];
   if (den) { const ch = chiefOf(sim, 'h' + den.id); if (ch) opts.bandit = ch.values.ambition + (1 - ch.pers.A) * 0.5 - 0.6 + R.range(0, 0.4); }
