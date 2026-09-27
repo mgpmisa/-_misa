@@ -1118,7 +1118,7 @@ function tradeExchange(sim, V, k, town) {
   let moved = 0;
   for (const g of t.goods || []) { const n = Math.min(4, (vm.stock[g] || 0) * 0.3); if (n > 0.5) { vm.stock[g] -= n; tm.stock[g] = (tm.stock[g] || 0) + n; moved += n * GOODS[g].base; } }
   for (const g of t.wants || []) { if (!GOODS[g]) continue; const n = Math.min(3, (tm.stock[g] || 0) * 0.2); if (n > 0.3) { tm.stock[g] -= n; vm.stock[g] = (vm.stock[g] || 0) + n; } }
-  vm.fund += moved * 0.2; tm.fund += moved * 0.1;
+  { const mc = sim.mcash(town.id); const pay = Math.max(0, Math.min(moved * 0.2, mc.cash)); mc.cash -= pay; vm.fund += pay; }   // 里の品の代金は、町の市場の金庫から里の蓄えへ
   V.att[k] = Math.min(100, V.att[k] + 0.6);
   TS(sim).stats.trades++;
 }
@@ -1153,7 +1153,7 @@ function visitorArrived(sim, V, p) {
   if (trader && !V.trade[k] && V.att[k] > -40 && !X.arcs.some((a) => a.arc === 'first_trade' && a.vid === V.id && !a.done) && sim.rng.chance(0.5)) {
     startArc(sim, 'first_trade', V, { merchant: p.id, elder: V.elder, youth: pickYoung(sim, V, (q) => q.pers.O)?.id ?? null }, { k });
   } else if (trader && V.trade[k]) {
-    const hh = sim.hh(p); if (hh) hh.money += 6;
+    const hh = sim.hh(p); const vf = sim.S.towns[V.sid]; if (hh && vf) { const x = Math.max(0, Math.min(6, (vf.fund || 0) * 0.05)); vf.fund -= x; hh.money += x; }   // 里との商いのもうけは、里の蓄えから
     sim.remember(p, `${V.name}で${t.special?.[0] || '奥地の品'}を仕入れた`, { emo: 0.4, imp: 0.4, k: 'trade' });
   } else if (V.att[k] <= -60 && !trader && !isAdventurer(p)) {
     // 敵意の強い村は、よそ者を追い返す

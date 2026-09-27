@@ -182,7 +182,9 @@ export function arrest(sim, guard, p) {
   p.pos = { ...prison.door }; p.inside = prison.id; if (p.rank !== 'outlaw' && p.rank !== 'prisoner') p.rankBefore = p.rankBefore || p.rank; if (!['king', 'royal', 'noble'].includes(p.rank)) p.rank = 'prisoner';
   delete sim.S.wanted[p.id];
   guard.needs.esteem = Math.min(100, guard.needs.esteem + 30); guard.fame += 4;
-  sim.hh(guard).money += (w?.bounty || 5);
+  { const want = w?.bounty || 5, k = sim.S.kingdoms[sim.town(guard.s)?.kingdom], t = sim.S.towns[guard.s]; let x = 0;   // 賞金は国庫から（足りなければ町の蓄え）
+    if (k && k.treasury > want + 50) { k.treasury -= want; x = want; } else if (t) { x = Math.max(0, Math.min(want, t.fund || 0)); t.fund -= x; }
+    const gh = sim.hh(guard); if (gh) gh.money += x; else if (t) t.fund += x; }
   sim.remember(guard, `お尋ね者の${p.given}を捕らえた`, { emo: 0.6, imp: 0.7, about: [p.id], k: 'justice' });
   sim.remember(p, `${guard.given}に捕まり、${p.crime}の罪で牢獄に入れられた`, { emo: -0.9, imp: 1, about: [guard.id], k: 'crime' });
   sim.relMut(p, guard).a -= 30;

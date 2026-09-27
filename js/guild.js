@@ -274,7 +274,7 @@ export function sellMaterials(sim, people) {
       if (keep) continue;
       const n = it.n || 1;
       town.mats[it.id] = (town.mats[it.id] || 0) + n;
-      m.purse = (m.purse || 0) + Math.round(d.value * n * 0.7);
+      { const pay = Math.max(0, Math.min(Math.round(d.value * n * 0.7), town.fund || 0)); town.fund -= pay; m.purse = (m.purse || 0) + pay; }   // 素材は町が買い取る（代金は町の蓄えから）
       m.inv.splice(m.inv.indexOf(it), 1);
     }
   }

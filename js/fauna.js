@@ -1397,8 +1397,8 @@ function livestockCare(sim, animals, si, dos) {
       const m = S.towns[c.owner];
       if (!hh || !m) continue;
       m.stock.wool = (m.stock.wool || 0) + 1.5;
-      const earn = 1.5 * (m.price.wool || 4) * 0.85;
-      hh.money += earn; F.stats.products += 1.5;
+      const mc = sim.mcash(c.owner); const earn = Math.max(0, Math.min(1.5 * (m.price.wool || 4) * 0.85, mc.cash));   // 羊毛の代金は市場の金庫から
+      mc.cash -= earn; hh.money += earn; F.stats.products += 1.5;
       const q = hhMembers(sim, hh).find((x) => sim.ageOf(x) >= 14);
       if (q) sim.remember(q, `春の毛刈りで${c.given || '羊'}の毛を刈った。よい羊毛がとれた`, { emo: 0.5, imp: 0.35, k: 'farm' });
     }
