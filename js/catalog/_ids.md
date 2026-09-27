@@ -310,3 +310,4 @@
 - string：`b_gutstring` 腸の弦、`b_sinewcord` 腱の弦、`b_horsehairline` 馬毛の釣り糸
 - live：`b_carrierpigeon` 伝書鳩、`b_falcon` 若い鷹、`b_cormorant` 鵜、`b_songbird` 鶯、`b_calf` 子牛、`b_piglet` 子豚、`b_lamb_live` 子羊、`b_kid` 子ヤギ、`b_foal` 子馬、`b_chick` ひよこ、`b_duckling` アヒルの雛、`b_puppy` 子犬、`b_kitten` 子猫、`b_donkey_foal` 子ロバ
 - wood：`b_treant_heart` 樹人の心材
+- 注記（beast）：頼まれた id はそのまま作った。ただし `dragon_bone`（食べ物の担当が使用）は、道具の担当の `dragonbone` にそろえたので、食べ物の担当は `dragonbone` に直してほしい。`milk`・`egg`・`honey`・`lard` は食べ物の担当が作ったものを使う（beast には置かない）。`magicstone` と `golemcore` は大地、`demonlord_horn`・`mermaid_tear`・貝殻（`seashell_*`）は魔法・宝、`felt` は道具の担当の品を使う。hunt の rate は「1頭あたりの平均の数」。
