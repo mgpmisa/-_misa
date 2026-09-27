@@ -422,9 +422,9 @@ function nearWater(w, x, z) {
   for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) if (WATERISH.has(tileAt(w, x + dx, z + dz))) return true;
   return false;
 }
-export function growthHourly(sim) {
+export function growthHourly(sim, people = sim.living()) {   // people：この時に処理する人（sim.js の hourSlice が1時間に分けて渡す）
   const S = sim.S, w = S.world, summer = sim.seasonIdx?.() === 1;
-  for (const p of sim.living()) {
+  for (const p of people) {
     if (p.jail != null && p.gr) { computeStats(sim, p); continue; }
     const fresh = !p.gr;
     ensureGrowth(sim, p);

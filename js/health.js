@@ -211,9 +211,20 @@ export function onDeath(sim, dead, cause, killer) {
   if (h.mourned[dead.id]) return;
   h.mourned[dead.id] = 1;
   const unsolved = (sim.S.unsolved || []).some((u) => u.victim === dead.id);
+  // 続柄を調べるのは、血のつながりか婚姻のつながりがありうる人だけ（全員の続柄を毎回計算しない）
+  const deadAnc = sim.ancestors(dead);
+  const maybeKin = (q) => {
+    if (q.spouseId === dead.id || q.exSpouses?.[q.exSpouses.length - 1] === dead.id || deadAnc.has(q.id)) return true;
+    if (q.spouseId != null) { const sp = sim.S.people[q.spouseId]; if (sp && (sp.fatherId === dead.id || sp.motherId === dead.id)) return true; }
+    const qa = sim.ancestors(q);
+    if (qa.has(dead.id)) return true;
+    if (deadAnc.size < qa.size) { for (const id of deadAnc.keys()) if (qa.has(id)) return true; }
+    else for (const id of qa.keys()) if (deadAnc.has(id)) return true;
+    return false;
+  };
   for (const q of sim.living()) {
     if (q === dead || !q.memories) continue;
-    const term = closeTerm(sim, q, dead);
+    const term = maybeKin(q) ? closeTerm(sim, q, dead) : null;
     let lv = term ? GRIEF_LV[term] || 0 : 0;
     const aff = q.rel?.[dead.id]?.a;
     if (!lv && q.hh === dead.hh) lv = 45;

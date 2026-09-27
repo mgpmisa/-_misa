@@ -6,6 +6,7 @@ import { generateWorld, openGates, makeHousePlacer, T, W, H, walkable, tileAt, h
 import { findPath } from './path.js';
 import { findPathFar } from './pathfar.js';
 import { lodWalkMul, creatureArray } from './lod.js';
+import { peopleNear, peopleInside, pxBeginStep, pxTouch, pxEndLoop, lordHouseholds, personDt, encounterDt, kinFilter } from './perf.js';
 import { ancestors, kinTerm, isCloseKin, siblings } from './kin.js';
 import { composeConversation, innerThought, speechStyle } from './speech.js';
 import { mindConversation, mindThought } from './talkmind.js';
@@ -47,6 +48,10 @@ const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [6
 const mortY = (a) => { for (const [x, p] of MORT_Y) if (a <= x) return p; return 0.3; };
 const CHILD_PLAY = ['大きな木に登って叱られた', '川で泳いで溺れかけた', '収穫祭の夜にこっそり抜け出して星を見た', '城壁の上にこっそり登った', '森で迷子になって一晩過ごした', '司祭さまのりんごを盗んで食べた', '雪合戦で窓を割った', '水辺に秘密の基地を作った'];
 const CHILD_FIGHT = ['取っ組み合いのけんかをした', '収穫祭の力比べで本気でやり合った'];
+// 歩きにくさ（毎歩、表を作り直さない）
+const WALK_COST = { [T.FOREST]: 1.4, [T.DENSE]: 1.8, [T.JUNGLE]: 1.9, [T.DESERT]: 1.3, [T.SNOW]: 1.5, [T.ROCK]: 2, [T.SWAMP]: 2 };
+const NO_REL = Object.freeze({ a: 0, f: 0 });
+const TALK_PLACES = new Set(['tavern', 'plaza', 'festival', 'wedding', 'water', 'laundry']);
 export const NEED_KEYS = ['survival', 'sleep', 'hunger', 'lust', 'sloth', 'pleasure', 'esteem'];
 const MEM_CAP = 45;
 
@@ -1066,12 +1071,12 @@ export class Sim {
       if (J.goods === 'cloth' && m.stock.wool >= 0.5) m.stock.wool -= 0.3 * eff;
       if (m.stock[J.goods] < (GOODS[J.goods]?.target || 10) * 2) this.sell(p, J.goods, rate * eff);
     }
-    const near = (r) => this.living().filter((q) => q !== p && (p.inside != null ? q.inside === p.inside : !q.inside && Math.abs(q.pos.x - p.pos.x) + Math.abs(q.pos.z - p.pos.z) < r));
+    const near = (r) => (p.inside != null ? peopleInside(this, p.inside, p) : peopleNear(this, p.pos.x, p.pos.z, r, p));
     switch (J.svc) {
       case 'finance': if (k) k.financier = p.id; break; // 財務の腕は徴税の手際に効く（お金は作らない）
       case 'advise': if (k) k.advisor = p.id; break;
       case 'command': if (k) k.general = p.id; p.xp = (p.xp || 0) + 0.4 * hr; this.levelCheck(p); break;
-      case 'feed': { const royal = Object.values(S.households).find((h) => h.royal && h.s === p.s); if (royal) royal.food += 1.5 * hr; break; }
+      case 'feed': { const royal = lordHouseholds(this).find((h) => h.royal && h.s === p.s); if (royal) royal.food += 1.5 * hr; break; }
       case 'entertain': case 'service': {
         const aud = near(4);
         for (const q of aud) {
@@ -1095,12 +1100,12 @@ export class Sim {
       }
       case 'bank': { const fee = Math.min(2 * hr, S.towns[p.s].fund * 0.001); S.towns[p.s].fund -= fee; hh.money += fee; break; }
       case 'mill': if (m.stock.wheat > 4) { this.mcash(p.s); m.stock.wheat -= 1.2 * hr; m.stock.bread += 1.5 * hr; const f = Math.min(1.5 * hr, m.cash); m.cash -= f; hh.money += f; } break;
-      case 'childcare': for (const q of this.living()) if (q.hh === p.hh && this.ageOf(q) < 10) q.needs.pleasure = Math.min(100, q.needs.pleasure + 8 * hr); break;
+      case 'childcare': for (const id of (this.hh(p)?.members || [])) { const q = S.people[id]; if (q && q.deathYear == null && q.hh === p.hh && this.ageOf(q) < 10) q.needs.pleasure = Math.min(100, q.needs.pleasure + 8 * hr); } break;
       case 'trade': for (const g of ['cloth', 'jewelry', 'pottery', 'honey']) if (m.stock[g] < GOODS[g].target * 0.5) m.stock[g] += 0.1 * hr; { this.mcash(p.s); const f = Math.min(2 * hr, m.cash * 0.01); m.cash -= f; hh.money += f; } break;
       case 'quests': {
         if (R.chance(0.02 * dt)) {
           const s = this.townOf(p);
-          const c = Object.values(S.creatures).find((x) => x.hostile && !x.dormant && Math.hypot(x.pos.x - s.x, x.pos.z - s.z) < 30 && !x.bounty);
+          const c = creatureArray(this).find((x) => S.creatures[x.id] === x && x.hostile && !x.dormant && Math.hypot(x.pos.x - s.x, x.pos.z - s.z) < 30 && !x.bounty);
           if (c) { c.bounty = 20 + c.lv * 10; this.pushLog(`冒険者ギルドが${c.name}に${c.bounty}銅貨の賞金をかけた。`, 'event', [p.id], p.pos); }
         }
         break;
@@ -1112,7 +1117,7 @@ export class Sim {
     switch (p.job) {
       case 'gardener': case 'butler': case 'maid': {
         // 仕える家（王家・貴族）の暮らしが整う
-        const lord = Object.values(S.households).find((h) => h.s === p.s && (h.royal || h.members.some((id) => S.people[id]?.rank === 'noble')) && h.id !== p.hh);
+        const lord = lordHouseholds(this).find((h) => h.s === p.s && (h.royal || h.members.some((id) => S.people[id]?.rank === 'noble')) && h.id !== p.hh);
         if (lord) { lord.comfort = Math.min(10, (lord.comfort || 0) + 0.05 * hr); lord.laundry = Math.max(0, (lord.laundry || 0) - 0.5 * hr); lord.water = Math.min(10, (lord.water ?? 5) + 0.5 * hr); }
         if (p.job === 'gardener' && R.chance(0.02 * hr)) m.stock.herbs = (m.stock.herbs || 0) + 0.5;
         break;
@@ -1249,18 +1254,44 @@ export class Sim {
 
   // ---------- 1ステップ ----------
   step(dt) {
+    this.stepBegin(dt);
+    this.stepPeople(Infinity);
+    this.stepEnd();
+  }
+
+  // 1歩を3つに分けたもの。ブラウザ（main.js）は住人の処理を数フレームに分けて進め、画面が止まらないようにする
+  stepBegin(dt) {
+    if (this._sl) { this.stepPeople(Infinity); this.stepEnd(); }   // やりかけの歩があれば先に終える
     const S = this.S;
     const prevDay = this.dayIndex, prevHour = Math.floor(this.hour());
     S.t += dt;
     if (this.dayIndex !== prevDay) this.newDay();
     if (Math.floor(this.hour()) !== prevHour) this.newHour();
+    this.hourSlice(S.t - dt, S.t);
     const people = this.living();
-    const hr = dt / 60;
-    this.pathBudget = 8;
+    // 1歩で道を探す人数。人口が多いと順番待ちで動けない人が出るので、人口に合わせて増やす（400人までは今までどおり8人）
+    this.pathBudget = Math.max(8, Math.ceil(people.length / 50));
     const heal = S.kingdoms.map((k) => (k.techs.includes('healing') ? 3 : 1.5));
     const setl = S.world.settlements;
-    for (const p of people) {
+    this._sl = { dt, people, heal, setl, i: 0, touch: false };
+    pxBeginStep(this);
+  }
+
+  // 住人を max 人まで進める。全員が終わったら true
+  stepPeople(max) {
+    const S = this.S, sl = this._sl;
+    if (!sl) return true;
+    const { dt, people, heal, setl } = sl;
+    const end = Math.min(people.length, sl.i + max);
+    for (let pi = sl.i; pi < end; pi++) {
+      const p = people[pi];
+      if (sl.touch) { pxTouch(this, pi - 1, people[pi - 1]); sl.touch = false; }   // 前の人が動いたかを索引に知らせる（perf.js）
       if (p.deathYear != null) continue;
+      // カメラから遠い人は数歩に1回、あいだの時間をまとめて進める（perf.js の人の LOD）
+      const pdt = personDt(this, p, dt, pi, people);
+      if (!pdt) continue;
+      sl.touch = true;
+      const hr = pdt / 60;
       const a = p.action, n = p.needs;
       const sleeping = a && a.type === 'sleep' && a.phase === 'do';
       const age = this.ageOf(p);
@@ -1275,27 +1306,51 @@ export class Sim {
       n.survival = clamp(n.survival + (p.hp < p.maxhp * 0.5 ? -8 : 6) * hr, 0, 100);
       if (!sleeping && p.hp < p.maxhp) p.hp = Math.min(p.maxhp, p.hp + (heal[setl[p.s].kingdom] || 1.5) * hr);
       if (sleeping) p.hp = Math.min(p.maxhp, p.hp + 4 * hr);
-      p.cooldown = Math.max(0, p.cooldown - dt);
+      p.cooldown = Math.max(0, p.cooldown - pdt);
       if (p.fight) continue; // 戦闘中は society.js が処理
-      p._spot = (p._spot || 0) - dt;
+      p._spot = (p._spot || 0) - pdt;
       if (p._spot <= 0 && this._cgrid && p.mission?.type !== 'rescue') { p._spot = 1; if (spotThreats(this, p, this._cgrid, around)) continue; }
       if (p.talk) { this.stepTalk(p); continue; }
       if (!a) { this.decide(p); continue; }
       if (a.phase === 'walk') {
         if (!p.path) { if (this.pathBudget-- > 0) this.computePath(p); else continue; }
-        const wk = lodWalkMul(this, p); if (wk) this.walk(p, dt * wk);   // 遠い荒野をひとりで旅する人は4歩に1回まとめて歩く（広い世界だけ）
+        const wk = pdt > dt ? 1 : lodWalkMul(this, p); if (wk) this.walk(p, pdt * wk);   // 遠い荒野をひとりで旅する人は4歩に1回まとめて歩く（広い世界だけ）
       } else {
-        this.doAction(p, dt);
+        this.doAction(p, pdt);
       }
     }
+    sl.i = end;
+    return end >= people.length;
+  }
+
+  // 住人のあとの処理（生き物・戦い・助け合い・出会い・隊商など）
+  stepEnd() {
+    const sl = this._sl;
+    if (!sl) return;
+    if (sl.i < sl.people.length) this.stepPeople(Infinity);
+    this._sl = null;
+    const { dt, people } = sl;
+    if (sl.touch) pxTouch(this, people.length - 1, people[people.length - 1]);
+    pxEndLoop(this);
     stepCreatures(this, dt);
     this._defend = (this._defend || 0) - dt;
     if (this._defend <= 0) { this._defend = 5; defendTowns(this); }
     stepCombat(this, dt);
     rescueStep(this, dt);
-    this.checkEncounters(people, dt);
+    { const edt = encounterDt(this, dt); if (edt) this.checkEncounters(people, edt); }   // 広い世界では3歩に1回、3歩分まとめて（perf.js）
     diplomacyStep(this, dt);
     stepConvoys(this, dt);
+  }
+
+  // 1時間を120の区切り（0.5分ずつ）に分け、sim.living() の並びで i 番目の人は区切り i % 120 に1時間ぶんの処理をする
+  hourSlice(t0, t1) {
+    const a = Math.floor(t0 * 2), b = Math.floor(t1 * 2);
+    if (b <= a) return;
+    const people = this.living(), n = people.length, list = [];
+    for (let k = a + 1; k <= b && k - a <= 120; k++) { const s = k % 120; for (let i = s; i < n; i += 120) if (people[i].deathYear == null) list.push(people[i]); }
+    if (!list.length) return;
+    for (const p of list) this.hourlyPerson(p);
+    growthHourly(this, list);
   }
 
   doAction(p, dt) {
@@ -1315,7 +1370,7 @@ export class Sim {
       case 'rest': n.sloth += 12 * hr; break;
       case 'perform': {
         n.esteem += 20 * hr;
-        for (const q of this.living()) if (q.inside === p.inside && q !== p) q.needs.pleasure = Math.min(100, q.needs.pleasure + 15 * hr);
+        for (const q of (p.inside != null ? peopleInside(this, p.inside) : this.living())) if (q.inside === p.inside && q !== p) q.needs.pleasure = Math.min(100, q.needs.pleasure + 15 * hr);
         break;
       }
       case 'beg': {
@@ -1455,7 +1510,7 @@ export class Sim {
       const t = p.path[0];
       const dx = t.x - p.pos.x, dz = t.z - p.pos.z;
       const d = Math.hypot(dx, dz);
-      const cost = { [T.FOREST]: 1.4, [T.DENSE]: 1.8, [T.JUNGLE]: 1.9, [T.DESERT]: 1.3, [T.SNOW]: 1.5, [T.ROCK]: 2, [T.SWAMP]: 2 }[tileAt(w, t.x, t.z)] || 1;
+      const cost = WALK_COST[tileAt(w, t.x, t.z)] || 1;
       const step = speed / cost;
       if (d <= step) { p.pos.x = t.x; p.pos.z = t.z; p.path.shift(); speed -= d * cost; }
       else { p.pos.x += (dx / d) * step; p.pos.z += (dz / d) * step; speed = 0; }
@@ -1478,9 +1533,8 @@ export class Sim {
   }
 
   nearby(p, r) {
-    const out = [];
-    for (const q of this.living()) if (q !== p && !q.inside && Math.abs(q.pos.x - p.pos.x) + Math.abs(q.pos.z - p.pos.z) < r) out.push(q);
-    return out;
+    // 住人の升目（perf.js）で近くの人だけを調べる。結果と順番は全員をなめたときと同じ
+    return peopleNear(this, p.pos.x, p.pos.z, r, p);
   }
 
   // ---------- 会話 ----------
@@ -1489,7 +1543,8 @@ export class Sim {
     const grid = new Map();
     for (const p of people) {
       if (p.talk || p.fight || p.cooldown > 0 || !p.action || (p.action.type === 'sleep' && p.action.phase === 'do') || p.deathYear != null) continue;
-      const key = p.inside != null ? 'b' + p.inside : Math.floor(p.pos.x / 2) + ',' + Math.floor(p.pos.z / 2);
+      // 鍵は数（文字列を毎歩作らない）。建物の中は負の数、外は2×2マスの升目
+      const key = p.inside != null ? -1 - p.inside : (Math.floor(p.pos.x / 2) + 1024) * 4096 + (Math.floor(p.pos.z / 2) + 1024);
       let arr = grid.get(key);
       if (!arr) grid.set(key, arr = []);
       arr.push(p);
@@ -1502,8 +1557,8 @@ export class Sim {
         for (let j = i + 1; j < arr.length; j++) {
           const b = arr[j];
           if (b.talk || this.ageOf(b) < 3) continue;
-          const rel = this.rel(a, b);
-          const place = ['tavern', 'plaza', 'festival', 'wedding', 'water', 'laundry'].includes(a.action.type) ? 2.6 : a.action.phase === 'walk' ? 0.7 : a.action.type === 'work' ? 0.35 : 1;
+          const rel = a.rel[b.id] || NO_REL;
+          const place = TALK_PLACES.has(a.action.type) ? 2.6 : a.action.phase === 'walk' ? 0.7 : a.action.type === 'work' ? 0.35 : 1;
           const visit = (a.action.friend === b.id || b.action.friend === a.id) ? 6 : 1;
           let pr = 0.035 * dt * (0.35 + a.pers.E + b.pers.E * 0.5) * (1 + (100 - a.needs.esteem) / 80) * (0.3 + rel.f / 100) * place * visit;
           if (a.talkedToday[b.id]) pr *= 0.25;
@@ -1588,7 +1643,7 @@ export class Sim {
     if (e.argument) {
       this.remember(a, `${b.given}と口論になった`, { emo: -0.7, imp: 0.65, about: [b.id], k: 'quarrel' });
       this.remember(b, `${a.given}と口論になった`, { emo: -0.7, imp: 0.65, about: [a.id], k: 'quarrel' });
-      const witnesses = this.living().filter((q) => q !== a && q !== b && ((a.inside && q.inside === a.inside) || (!a.inside && !q.inside && Math.abs(q.pos.x - a.pos.x) + Math.abs(q.pos.z - a.pos.z) < 5)));
+      const witnesses = (a.inside ? peopleInside(this, a.inside, a) : peopleNear(this, a.pos.x, a.pos.z, 5, a)).filter((q) => q !== b);
       if (witnesses.length) { const g = this.gossip(a, `${b.given}と大声で言い争っていた`, -0.4, witnesses, { silent: talk.quiet }); b.gk[g.key] = 1; }
       if (ra.a < -80 && a.pers.A < 0.25 && a.pers.N > 0.65) a.revenge = b.id;
     }
@@ -1667,7 +1722,12 @@ export class Sim {
     this.unstick();
     this.updatePrices();
     logisticsHourly(this);
-    for (const p of this.living()) {
+    this.newHourRest();   // 一人ひとりの分は hourSlice で1時間に分けて行う（perf）
+  }
+
+  // 1時間ごとの一人ひとりの処理（気分・心の声・危険の記憶）。hourSlice から呼ばれる
+  hourlyPerson(p) {
+    {
       const n = p.needs;
       const needAvg = (n.hunger * 1.3 + n.sleep + n.survival * 1.3 + n.lust * 0.5 + n.sloth * 0.7 + n.pleasure + n.esteem) / 6.8;
       const money = this.householdMoney(p) + hhDeposit(this, this.hh(p));
@@ -1682,6 +1742,9 @@ export class Sim {
       // 危険の記憶は少しずつ薄れる
       if (p.danger) for (const k of Object.keys(p.danger)) { p.danger[k] *= 0.985; if (p.danger[k] < 0.2) delete p.danger[k]; }
     }
+  }
+
+  newHourRest() {
     for (const w of this.S.pendingWeddings.slice()) {
       if (this.S.t >= w.at) {
         this.S.pendingWeddings.splice(this.S.pendingWeddings.indexOf(w), 1);
@@ -1704,7 +1767,6 @@ export class Sim {
     monstersHourly(this);
     weatherHourly(this);
     choreHourly(this);
-    growthHourly(this);
     gearHourly(this);
     healthHourly(this);
     faunaHourly(this);
@@ -1947,9 +2009,10 @@ export class Sim {
     // 目撃者のいない殺人では、犯人の名前は世間に出ない
     const killerName = killer && !(cause === 'murder' && typeof killer.id === 'number' && !S.wanted[killer.id]) ? (typeof killer.id === 'number' ? killer.given : (killer.given && !killer.name.includes(killer.given) ? `${killer.name}の${killer.given}` : killer.name)) : null;
     this.dirty();
+    const mayKin = kinFilter(this, p);   // perf.js
     for (const q of this.living()) {
       if (!q.rel) continue;
-      const term = this.kinTerm(q, p);
+      const term = mayKin(q) ? this.kinTerm(q, p) : null;
       const aff = this.rel(q, p).a;
       const how = cause === 'murder' && killer && q.gk ? `${causeTxt}に倒れて` : `${causeTxt}で`;
       if (term) {
@@ -1963,7 +2026,7 @@ export class Sim {
     }
     const town = this.townOf(p);
     const from = (this.dayIndex + 1) * 1440 + 10 * 60;
-    const mourners = this.living().filter((q) => q.s === p.s && (this.kinTerm(q, p) || q.hh === p.hh || q.job === 'priest')).map((q) => q.id);
+    const mourners = this.living().filter((q) => q.s === p.s && ((mayKin(q) && this.kinTerm(q, p)) || q.hh === p.hh || q.job === 'priest')).map((q) => q.id);
     if (!S.towns[p.s].occupied) S.gatherings.push({ type: 'funeral', place: 'church', from, to: from + 90, ids: mourners, s: p.s, label: `${p.given}の弔い` });
     const important = ['king', 'royal', 'noble'].includes(p.rank) || p.hero || p.fame > 40;
     const line = `${this.fullName(p)}が${age}歳で亡くなった（${causeTxt}${killerName ? `・${killerName}の手にかかって` : ''}）`;

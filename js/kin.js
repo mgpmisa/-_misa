@@ -1,7 +1,19 @@
 // 血縁関係の計算
 
 // 祖先を世代の深さつきで返す: Map(id -> depth)  1=親, 2=祖父母 ...
+const ANC_CACHE = new WeakMap();   // people の表ごとに、(人, 深さ) → 祖先の一覧。返した Map は書き換えないこと
 export function ancestors(people, p, maxDepth = 8) {
+  let cache = ANC_CACHE.get(people);
+  if (!cache) { cache = new Map(); ANC_CACHE.set(people, cache); }
+  const key = typeof p.id === 'number' ? p.id * 16 + maxDepth : p.id + ':' + maxDepth;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const out = ancestorsOf(people, p, maxDepth);
+  if (cache.size > 300000) cache.clear();
+  cache.set(key, out);
+  return out;
+}
+function ancestorsOf(people, p, maxDepth) {
   const out = new Map();
   let frontier = [p];
   for (let d = 1; d <= maxDepth && frontier.length; d++) {

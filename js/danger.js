@@ -5,6 +5,7 @@ import { W, H, T } from './world.js';
 import { startFight } from './society.js';
 import { gearGuardMul, gearWillDefend } from './gear.js';
 import { creatureArray } from './lod.js';
+import { threatNear } from './perf.js';
 
 export const CH = 8;              // 区画の大きさ（マス）
 export const CW = W / CH, CHH = H / CH;
@@ -110,6 +111,7 @@ export function spotThreats(sim, p, grid, around) {
   if (J?.combat >= 2 || DEFENDERS.has(p.job)) return false;
   const tough = J?.combat >= 1; // 狩人・開拓者・道普請は、獣では逃げない（魔物からは逃げる）
   const sight = 6 + p.pers.N * 3;
+  if (!threatNear(grid, p.pos.x, p.pos.z, sight)) return false;   // 近くの升目に怖い生き物がいなければ調べない（perf.js）
   for (const c of around(grid, p.pos.x, p.pos.z, sight)) {
     if (c.dormant || c.hp <= 0) continue;
     const scary = c.hostile || (!tough && ['wolf', 'bear', 'tiger', 'polarbear', 'croc'].includes(c.sp)) || (tough && ['bear', 'tiger', 'polarbear'].includes(c.sp) && p.lv < 3);

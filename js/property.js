@@ -1,5 +1,6 @@
 // 財産：所持金（財布）・家の持ち主と借家・家賃・追い出し・畑と家畜の持ち主・相続
 // 家計（hh.money）は家族の共有財産、財布（p.purse）は一人ひとりの小遣いと稼ぎ。
+import { landlords as landlordList } from './perf.js';
 import { JOBS } from './data.js';
 import { ITEMS, addItem, autoEquip, itemName, itemValue } from './items.js';
 
@@ -304,7 +305,7 @@ export function fieldShare(sim, p, qty) {
   const S = sim.S, hh = sim.hh(p);
   if (!hh || hh.land > 0) return qty;
   const town = sim.town(p.s);
-  const lord = Object.values(S.households).filter((h) => h.land >= 8 && (h.s === p.s || sim.town(h.s).kingdom === town.kingdom)).sort((a, b) => (a.s === p.s ? -1 : 1) - (b.s === p.s ? -1 : 1) || b.land - a.land)[0];
+  const lord = landlordList(sim).filter((h) => h.land >= 8 && (h.s === p.s || sim.town(h.s).kingdom === town.kingdom)).sort((a, b) => (a.s === p.s ? -1 : 1) - (b.s === p.s ? -1 : 1) || b.land - a.land)[0];
   if (!lord) return qty;
   const cut = qty * 0.3;
   lord.food += cut * 0.3; lord.money += cut * 0.7 * sim.price('wheat', p.s) * 0.8;

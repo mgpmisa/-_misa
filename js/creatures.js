@@ -203,7 +203,9 @@ export function stepCreatures(sim, dt) {
   const all = L.on ? creatureArray(sim) : Object.values(S.creatures);
   const due = lodDue(sim, all);   // 広い世界だけ。160 の世界では null
   const cgrid = sim._cgrid = due ? lodCreatureGrid(sim, buildGrid) : buildGrid(all.filter((c) => !c.dormant && c.hp > 0 && !c.inDungeon));
-  const hgrid = buildGrid(sim.living().filter((h) => h.inside == null && h.jail == null));
+  const LV = sim.living(), ps = sim._pstep || 0;
+  if (!sim._hgrid || sim._hgridL !== LV || ps - sim._hgridAt >= 2 || ps < sim._hgridAt) { sim._hgrid = buildGrid(LV.filter((h) => h.inside == null && h.jail == null)); sim._hgridL = LV; sim._hgridAt = ps; }
+  const hgrid = sim._hgrid;
   // 遠い荒野の生き物は数歩に1回、まとめた時間で動かす（LOD。広い世界だけ。160 の世界では due は null で今までどおり）
   const n = due ? due.length : all.length;
   for (let i = 0; i < n; i += due ? 2 : 1) {
@@ -219,7 +221,7 @@ export function stepCreatures(sim, dt) {
     if (c.think <= 0) {
       // 遠い荒野の生き物（LOD の段階1・2）は、考える間隔も長くする（誰も見ていない所で細かく迷わない）
       c.think = R.range(1.5, 3) * (k > 1 ? k * 0.8 : 1);
-      think(sim, c, def, around(cgrid, c.pos.x, c.pos.z, 12), around(hgrid, c.pos.x, c.pos.z, 9));
+      think(sim, c, def, around(cgrid, c.pos.x, c.pos.z, 12), around(hgrid, c.pos.x, c.pos.z, 9).filter((h) => h.inside == null && h.jail == null && h.deathYear == null));
     }
     move(sim, c, def, cdt);
   }

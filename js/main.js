@@ -4,6 +4,9 @@ import { UI } from './ui.js';
 import { markTilesChanged } from './pathfar.js';
 
 const MIN_PER_SEC = 2; // 1倍速のとき、現実の1秒 = 世界の2分
+const STEP_MIN = 0.5;  // 世界は0.5分きざみの「歩」で進める（ヘッドレス試験と同じきざみ）
+const PEOPLE_CHUNK = 300; // 住人の処理は、この人数ごとに時間を確かめながら進める
+let simAcc = 0;
 
 let sim, renderer, ui, last = performance.now();
 const msg = (t) => { const el = document.getElementById('loadMsg'); if (el) el.textContent = t; };
@@ -35,12 +38,15 @@ function frame(now) {
   // 会話の文章づくりはカメラの近くと選択中の人に絞る
   const v = renderer.viewInfo();
   sim.focus = { x: v.x, z: v.z, r: v.r, ids: new Set(ui.selected != null ? [ui.selected] : []) };
-  let minutes = realDt * ui.speed * MIN_PER_SEC;
+  // 1歩の住人の処理は数フレームに分けて進め、1フレームで使う時間に上限を付ける（人口が多くても画面が止まらない）。
+  // 1フレームで使う時間は8ms（1秒60コマのとき）から、コマの間隔の3割まで。遅れているとき（速い再生など）は30msまで広げる。
+  simAcc = Math.min(simAcc + realDt * ui.speed * MIN_PER_SEC, STEP_MIN * (2 + ui.speed * 2));
+  const budget = simAcc >= STEP_MIN * 2 ? 30 : Math.max(8, Math.min(30, realDt * 1000 * 0.3));
   const t0 = performance.now();
-  while (minutes > 0 && performance.now() - t0 < 30) {
-    const d = Math.min(0.5, minutes);
-    sim.step(d);
-    minutes -= d;
+  while (performance.now() - t0 < budget) {
+    if (sim._sl) { if (sim.stepPeople(PEOPLE_CHUNK)) sim.stepEnd(); continue; }
+    if (simAcc >= STEP_MIN) { simAcc -= STEP_MIN; sim.stepBegin(STEP_MIN); continue; }
+    break;
   }
   for (const e of sim.events) {
     switch (e.type) {

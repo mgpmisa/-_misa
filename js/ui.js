@@ -66,6 +66,7 @@ Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '�
 Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Object.assign(PREF_LABEL, LABOR_PREF);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
+const JA_ORDER = new Intl.Collator('ja');   // 名前の並べ替え（localeCompare を毎回作らない。並びは同じ）
 const KIND_NAME = { livestock: '家畜', wild: '野生動物', neutral: '中立の魔物', hostile: '敵対する魔物', demon: '魔王軍' };
 
 export class UI {
@@ -399,7 +400,7 @@ export class UI {
   renderPeople() {
     const q = $('search').value.trim();
     const list = this.sim.living().filter((p) => !q || (p.given + p.family + (this.sim.townOf(p).name) + (JOBS[p.job]?.name || '')).includes(q))
-      .sort((a, b) => (RANKS[b.rank]?.lv ?? 0) - (RANKS[a.rank]?.lv ?? 0) || a.s - b.s || a.family.localeCompare(b.family, 'ja')).slice(0, 200);
+      .sort((a, b) => (RANKS[b.rank]?.lv ?? 0) - (RANKS[a.rank]?.lv ?? 0) || a.s - b.s || JA_ORDER.compare(a.family, b.family)).slice(0, 200);
     const col = (m) => (m > 65 ? 'var(--moss)' : m > 40 ? 'var(--amber)' : 'var(--rose)');
     $('peopleList').innerHTML = list.map((p) => {
       const job = p.job ? JOBS[p.job].name : this.sim.ageOf(p) < 14 ? '子ども' : '隠居';

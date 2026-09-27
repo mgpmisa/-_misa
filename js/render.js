@@ -11,6 +11,7 @@ import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration 
 import { PartyRings } from './partyring.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家と里
 import { convoyViews } from './logistics.js';
+import { ShadowPool, CrowdDots, dotColor } from './crowd.js';
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
 const wx = (x) => x - W / 2 + 0.5;
@@ -49,6 +50,8 @@ export class Renderer {
     buildTextures();
     this.mats = this.makeMaterials();
     this.ents = new Map();
+    this.shadows = new ShadowPool(this.scene);   // 足元の影は全員まとめて1回で描く（crowd.js）
+    this.dots = new CrowdDots(this.scene);        // 大きく引いたときの人と生き物の点（crowd.js）
     this.terrainMeshes = [];
     this.buildTerrain();
     this.buildStructures();
@@ -678,10 +681,9 @@ export class Renderer {
     sprite.scale.set(wid, hgt, 1);
     sheet.tex.repeat.set(1 / sheet.cols, 1 / sheet.rows);
     sprite.userData = { id: e.id, human: isHuman };
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(Math.min(0.5, wid * 0.35), 10), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.25, depthWrite: false }));
-    shadow.rotation.x = -Math.PI / 2;
-    this.scene.add(sprite, shadow);
-    r = { sprite, shadow, sheet, key, dir: 0, lx: e.pos.x, lz: e.pos.z, phase: Math.random() * 10, flash: 0 };
+    const shadow = this.shadows.make(Math.min(0.5, wid * 0.35));
+    this.scene.add(sprite);
+    r = { sprite, shadow, sheet, key, dir: 0, lx: e.pos.x, lz: e.pos.z, phase: Math.random() * 10, flash: 0, sx: e.pos.x, sz: e.pos.z, fx: e.pos.x, fz: e.pos.z, tx: e.pos.x, tz: e.pos.z, tChange: 0, dur: 1 };
     this.ents.set(e.id, r);
     return r;
   }
@@ -755,16 +757,16 @@ export class Renderer {
     return true;
   }
 
-  entityPos(e) {
+  entityPos(e, px = e.pos.x, pz = e.pos.z) {
     const w = this.sim.S.world;
     if (e.inside != null) {
       const b = this.sim.building(e.inside);
       return new THREE.Vector3(wx(b.x) + (b.w - 1) / 2, topY(b.h || 0) + 1.8, wz(b.z) + (b.d - 1) / 2);
     }
-    const x = Math.round(e.pos.x), z = Math.round(e.pos.z);
+    const x = Math.round(px), z = Math.round(pz);
     const t = w.tiles[z * W + x];
     let y = (t === T.SEA || t === T.DEEP) ? SEA_Y : t === T.DOCK ? SEA_Y + 0.18 : topY(w.hgt[z * W + x] || 0);
-    return new THREE.Vector3(wx(e.pos.x), y, wz(e.pos.z));
+    return new THREE.Vector3(wx(px), y, wz(pz));
   }
 
   updateEntities(realDt, now) {
@@ -777,8 +779,14 @@ export class Renderer {
     const viewR = 22 / this.camera.zoom + 8;
     const nowMs = performance.now(); this._animMs = 0;
     this.partyRings.begin();
+    const farView = this.camera.zoom < 0.55;
+    this.dots.begin();
     const place = (e, isHuman) => {
       const near = Math.abs(e.pos.x - (t.x + W / 2)) < viewR * 1.6 && Math.abs(e.pos.z - (t.z + H / 2)) < viewR * 1.6;
+      if (farView) {   // 引いた眺め：点だけ（絵は作らない。作ってあった絵は下で片づく）
+        if (near && e.inside == null && !e.dormant && (isHuman || e.hp > 0)) { const q = this.entityPos(e); this.dots.add(q.x, q.y + 0.3, q.z, dotColor(e, isHuman)); }
+        return;
+      }
       if (!near && !this.ents.has(e.id)) return;
       const r = this.ensure(e, isHuman);
       if (!r) return;
@@ -786,9 +794,18 @@ export class Renderer {
       if (!isHuman) r.e = e;
       const vis = e.inside == null && !e.dormant;
       r.sprite.visible = r.shadow.visible = vis && near;
-      if (!r.sprite.visible) return;
-      const p = this.entityPos(e);
-      const dx = e.pos.x - r.lx, dz = e.pos.z - r.lz;
+      if (!r.sprite.visible) { r.hid = true; return; }
+      // 表示の位置：世界は0.5分きざみ（数フレームに1回）で動くので、前の位置から今の位置へ一定の速さでつなぐ
+      if (r.tx !== e.pos.x || r.tz !== e.pos.z || r.hid) {
+        const jump = r.hid || Math.abs(e.pos.x - r.tx) + Math.abs(e.pos.z - r.tz) > 3;
+        r.fx = jump ? e.pos.x : r.sx; r.fz = jump ? e.pos.z : r.sz;
+        r.tx = e.pos.x; r.tz = e.pos.z; r.hid = false;
+        r.dur = Math.min(700, Math.max(40, nowMs - r.tChange)); r.tChange = nowMs;
+      }
+      const kk = Math.min(1, (nowMs - r.tChange) / r.dur);
+      r.sx = r.fx + (r.tx - r.fx) * kk; r.sz = r.fz + (r.tz - r.fz) * kk;
+      const p = this.entityPos(e, r.sx, r.sz);
+      const dx = r.sx - r.lx, dz = r.sz - r.lz;
       const moved = Math.hypot(dx, dz);
       let target = null;
       if (e.fight) { const o = sim.entity(e.fight.target); if (o) target = o; }
@@ -797,7 +814,7 @@ export class Renderer {
         const sx = vx * right.x + vz * right.y, sf = vx * fwd.x + vz * fwd.y;
         r.dir = Math.abs(sx) > Math.abs(sf) ? (sx > 0 ? 2 : 1) : (sf > 0 ? 3 : 0);
       }
-      r.lx = e.pos.x; r.lz = e.pos.z;
+      r.lx = r.sx; r.lz = r.sz;
       const walking = moved > 0.0005 || !!e.fight;
       if (!isHuman && moved > 0.0005) r.movedAt = nowMs; // 止まっても0.4秒は歩きを続ける（がたつき防止）
       const anim = !isHuman && r.sheet.cols >= 3 && this.creatureAnim(r, e, nowMs - (r.movedAt || 0) < 400, nowMs);
@@ -808,8 +825,8 @@ export class Renderer {
       if (isHuman && r.sheet.cols >= 3) {
         // 画面の近くの人だけ、しぐさのアニメを付ける
         const close = Math.abs(e.pos.x - (t.x + W / 2)) < viewR && Math.abs(e.pos.z - (t.z + H / 2)) < viewR;
-        let an = r.once && now < r.once.until ? r.once.anim : personAnimState(sim, e, moved > 0.0005 && !e.fight);
-        if (an === 'walk' || !close) an = null;
+        let an = !close ? null : r.once && now < r.once.until ? r.once.anim : personAnimState(sim, e, moved > 0.0005 && !e.fight);
+        if (an === 'walk') an = null;
         this.applyAnim(r, e, an, now, row, frame);
       } else if (!anim) r.sheet.tex.offset.set(frame / r.sheet.cols, 1 - (row + 1) / r.sheet.rows);
       const def = !isHuman ? SPECIES[e.sp] : null;
@@ -822,7 +839,7 @@ export class Renderer {
       r.shadow.position.set(p.x, p.y + 0.015, p.z);
       if (isHuman && e.party != null) this.partyRings.add(sim, e, p.x, p.y, p.z);
       r.shadow.visible = !def?.swims;
-      if (r.flash > 0) { r.flash -= realDt; r.sprite.material.color.set('#ff6a6a'); } else r.sprite.material.color.set('#ffffff');
+      if (r.flash > 0) { r.flash -= realDt; if (!r.red) { r.red = true; r.sprite.material.color.set('#ff6a6a'); } } else if (r.red) { r.red = false; r.sprite.material.color.set('#ffffff'); }
     };
     for (const p of sim.living()) place(p, true);
     for (const c of Object.values(sim.S.creatures)) place(c, false);
@@ -845,6 +862,8 @@ export class Renderer {
       }
     }
     for (const id of [...this.ents.keys()]) if (!seen.has(id)) this.drop(id);
+    this.shadows.flush(this.ents);
+    this.dots.end();
     this.partyRings.end(now);
   }
 
@@ -899,7 +918,8 @@ export class Renderer {
     // 選択・追従
     const sel = selectedId != null ? sim.entity(selectedId) : null;
     if (sel && (sel.deathYear == null) && sel.hp > 0) {
-      const pos = this.entityPos(sel);
+      const rs = this.ents.get(sel.id);
+      const pos = rs && sel.inside == null && rs.sprite.visible ? this.entityPos(sel, rs.sx, rs.sz) : this.entityPos(sel);
       this.selRing.visible = sel.inside == null;
       this.selRing.position.set(pos.x, pos.y + 0.03, pos.z);
       this.selRing.scale.setScalar(1 + Math.sin(now * 5) * 0.1);
