@@ -49,7 +49,8 @@ import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth, tribeWork } from './tribes.js';
 import { initVillages, ensureVillages, villagesDaily, villagesHourly, villagesPlace } from './villages.js';
 import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
-import { ensureHerbGardens, herbPlace, herbWork, herbDaily, urbanAt } from './herbgarden.js';   // 薬草園と、薬草を摘む場所（町の中では摘まない）
+import { ensureHerbGardens, herbPlace, herbWork, herbDaily, urbanAt } from './herbgarden.js';
+import { ensureArtisans, artisanPlace, artisanWork, artisanDaily } from './artisans.js';   // いなかった職人・炭焼き窯・らくだとなかい・墓の苔（artisans.js）   // 薬草園と、薬草を摘む場所（町の中では摘まない）
 import { constructOptions, constructDo, constructHourly, constructDaily } from './construct.js'; // 工事の段階・資材の運搬・普請場へ通う（開発部）
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { feedChild, adultShare } from './kinfeed.js';   // 子どもを先に食べさせる（家になければ親が買う・親戚や近所・教会の施し）
@@ -128,6 +129,7 @@ export class Sim {
     initFarmsteads(this); // 首都の城壁の外に、畑つきの農家（farmstead.js）
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
     ensureHerbGardens(this); // 町の薬草園と園丁（herbgarden.js）
+    ensureArtisans(this); // 王都の職人・炭焼き窯・らくだとなかい（artisans.js）
     ensureLeisure(this, true); // 恋と楽しみの場（leisure.js）。大人向けの館は設定が有効なときだけ
     ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
     ensureFormation(this); // 隊列と職業の補正（formation.js）
@@ -160,6 +162,7 @@ export class Sim {
     ensureVillages(this);
     ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
     ensureHerbGardens(this); // 古いセーブ：町の薬草園と園丁
+    ensureArtisans(this); // 古いセーブ：王都の職人・炭焼き窯・らくだとなかい
     ensureLeisure(this); // 古いセーブ：設定に合わせて館を建てる／消す
     ensureFormation(this); // 古いセーブ：隊列と職業の補正の記録（formation.js）
     ensureCarry(this); // 古いセーブ：持ち物の重さと枠・袋やかご
@@ -533,7 +536,8 @@ export class Sim {
     const ex = expansionPlace(this, p, kind); if (ex) return ex;
     const tp = tribesPlace(this, p, kind); if (tp) return tp;
     const vp = villagesPlace(this, p, kind); if (vp) return vp;
-    const hp = herbPlace(this, p, kind); if (hp) return hp;   // 園丁は薬草園の畝へ、薬草摘みは町の外の野山へ（herbgarden.js）
+    const hp = herbPlace(this, p, kind); if (hp) return hp;
+    const ap = artisanPlace(this, p, kind); if (ap) return ap;   // 炭焼きは窯か町の外の森（artisans.js）   // 園丁は薬草園の畝へ、薬草摘みは町の外の野山へ（herbgarden.js）
     const R = this.rng, s = this.townOf(p), w = this.S.world;
     const cp = civicPlace(this, p, kind); if (cp) return cp;
     const bp = buildingsPlace(this, p, kind); if (bp) return bp;
@@ -1133,7 +1137,7 @@ export class Sim {
         // 貴族の収入は領地の地代（property.js の家賃・小作料）から入る
         break;
       }
-      default: this.genericWork(p, dt, eff); civicWork(this, p, dt, eff); buildingsWork(this, p, dt, eff); herbWork(this, p, dt, eff);
+      default: this.genericWork(p, dt, eff); civicWork(this, p, dt, eff); buildingsWork(this, p, dt, eff); herbWork(this, p, dt, eff); artisanWork(this, p, dt, eff);
     }
   }
 
@@ -1997,7 +2001,8 @@ export class Sim {
     choreDaily(this);
     civicDaily(this);
     buildingsDaily(this);
-    herbDaily(this);   // 薬草園の園丁の補充・新しい町の薬草園（herbgarden.js）
+    herbDaily(this);
+    artisanDaily(this);   // 職人と家畜の補充・猫のひげ（artisans.js）   // 薬草園の園丁の補充・新しい町の薬草園（herbgarden.js）
     leisureDaily(this);   // 仲人の縁組・（大人向け）館の決まりとお金
     constructDaily(this);   // 普請の資材の買い付け・人集め・施主が世帯の普請の給料日・焼け跡の建て直し（construct.js）
     careerDaily(this);

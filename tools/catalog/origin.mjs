@@ -49,6 +49,7 @@ function direct(it) {
     if (h === 'loot') { for (const o of ons) { r.where.add(o); if (LOOT_OK.has(o)) { r.ok = true; r.ways.add('loot'); r.who.add('冒険者'); } else r.why.push(`宝箱の場所「${JP[o] || o}」は宝探しの対象でない`); } continue; }
     if (h === 'hunt') { for (const o of ons) { if (spSeen.has(o) || SPECIES[o]) { r.ok = true; r.ways.add('hunt'); r.who.add('狩人・冒険者・兵士'); } else r.why.push(`狩る相手「${o}」がこの世界にいない`); } continue; }
     if (h === 'milk') { for (const o of ons) { if (keptSp.has(o)) { r.ok = true; r.ways.add('milk'); r.who.add('家畜の飼い主'); } else r.why.push(`家畜「${o}」を飼う人がいない`); } continue; }
+    if (['ruins', 'demoncastle', 'pyramid', 'dungeon'].some((o) => ons.includes(o))) for (const o of ons) if (LOOT_OK.has(o)) { r.ok = true; r.ways.add('loot'); r.who.add('冒険者（探索で持ち帰る）'); }
     const jobs = whoHow[h] || [];
     for (const o of ons) {
       r.where.add(o);
@@ -62,6 +63,9 @@ function direct(it) {
   return r;
 }
 for (const it of MAT.values()) R.set(it.id, direct(it));
+// artisans.js：墓守が墓地で集める苔、猫を飼う家が拾うひげ
+const special = { grave_moss: [jobsSeen.has('gravedigger') && bTypes.has('cemetery'), '墓守'], b_cat_whisker: [keptSp.has('cat'), '猫の飼い主'] };
+for (const [id, [ok, who]] of Object.entries(special)) { const r = R.get(id); if (r && ok) { r.ok = true; r.ways.add('gather'); r.who.add(who); } }
 // 作る：材料がすべて手に入り、作り手がいれば（くり返して広げる）
 let changed = true, pass = 0;
 while (changed && pass < 30) {

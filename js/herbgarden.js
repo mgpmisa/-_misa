@@ -166,7 +166,7 @@ export function herbPlace(sim, p, kind) {
   if (p.job === 'gatherer' && (kind === 'forest' || kind === 'wild')) {
     // 薬草は野に自生する：町の外の森・草原・川辺・沼へ。町の中や畑には行かない
     const s = sim.townOf(p), w = sim.S.world, R = sim.rng;
-    if (!s || s.tribe || s.tribal) return null;
+    if (!s) return null;   // 民族の里の薬草摘みも、里の外の森・草原へ出かける
     const r0 = (s.r || 4) + (s.extraR || 0) + 2;
     let best = null, bs = -1;
     for (let i = 0; i < 40; i++) {

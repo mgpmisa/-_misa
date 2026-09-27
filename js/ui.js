@@ -130,7 +130,6 @@ export class UI {
     $('bubbleChk').onchange = (e) => { this.bubblesOn = e.target.checked; if (!this.bubblesOn) this.clearBubbles(); };
     $('shadowChk').checked = this.r.renderer.shadowMap.enabled;
     $('shadowChk').onchange = (e) => this.r.setShadows(e.target.checked);
-    $('attnChk').onchange = (e) => { this.attention = e.target.checked; };
     $('matureChk').checked = this.sim.S.settings?.matureCrimes !== false;
     $('matureChk').onchange = (e) => { this.sim.S.settings = this.sim.S.settings || {}; this.sim.S.settings.matureCrimes = e.target.checked; leisureToggle(this.sim); this.renderLogAll(); this.renderInspector(true); };   // 切ると歓楽の館に関わるものを跡形もなく消す
     $('newWorld').onclick = () => { $('newWorldConfirm').hidden = false; };
@@ -251,9 +250,7 @@ export class UI {
     const el = $('ticker');
     el.textContent = `【速報】${n.text}`;
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
-    if (this.attention && n.imp >= 3 && n.x != null && this.follow == null && !(this.r.userMoved && performance.now() - this.r.userMoved < 8000)) {
-      this.r.lookAt(n.x, n.z, Math.max(1.4, Math.min(this.r.camera.zoom, 2.4)));
-    }
+    // 速報でカメラを勝手に動かさない（社長の指示）。現場へは速報の欄をクリックしたときだけ移る
   }
 
   // ---------- 吹き出し ----------
@@ -587,7 +584,7 @@ export class UI {
         if (hit && hit.entity != null) this.select(hit.entity, false);
       });
       $('ivCanvas').addEventListener('contextmenu', (e) => e.preventDefault());
-      $('ivClose').onclick = () => this.closeInterior();
+      $('ivClose').onclick = () => { if (this.ivByFollow) this.ivMuted = this.ivOpen; this.ivByFollow = false; this.closeInterior(); };
       window.addEventListener('resize', () => this.ivOpen != null && this.iv.resize());
     }
     this.iv.resize();
@@ -601,7 +598,23 @@ export class UI {
     this.ivOpen = null;
     $('interior').hidden = true;
   }
+  // 追いかけ中の人が建物に入ったら中の画面を開き、外へ出たら閉じる（社長の指示）
+  followInterior() {
+    if (this.follow == null) { this.ivByFollow = false; return; }
+    const e = this.sim.person?.(this.follow);
+    let inside = e && e.deathYear == null ? e.inside ?? null : null;
+    const b = inside != null ? this.sim.building(inside) : null;
+    if (!b || !INTERIOR_TYPES.has(b.type) || isLeisureHouse(b)) inside = null;   // 中を描けない建物・歓楽の館は開かない
+    if (inside != null && inside === this.ivMuted) return;                      // 自分で閉じた建物は、出てくるまで開き直さない
+    if (inside !== this.ivMuted) this.ivMuted = null;
+    if (inside != null && this.ivOpen !== inside) {
+      if (this.openInterior(inside)) this.ivByFollow = true;
+    } else if (inside == null && this.ivOpen != null && this.ivByFollow) {
+      this.closeInterior(); this.ivByFollow = false;
+    }
+  }
   updateInterior(dt) {
+    this.followInterior();
     if (this.ivOpen == null) return;
     this.iv.update(dt);
     this.ivT = (this.ivT || 0) + dt;

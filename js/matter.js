@@ -76,6 +76,17 @@ export const MAKER = {
   tribal_crafter: ['weaver', 'potter'], tribal_artisan: ['weaver', 'potter'], tribe_elder: ['shaman'],
   glassmaker: ['potter'], glassblower: ['potter'], chandler: ['priest', 'nun'], saltmaker: ['fisher'], dyer: ['tailor', 'weaver'],
 };
+// 世界にいない・少ない作り手は、近い職が代わりに作る（物の出どころ 第2段）
+Object.assign(MAKER, {
+  incense_maker: ['alchemist', 'herbalist', 'priest'], enchanter: ['alchemist', 'wizard', 'courtmage'], wandmaker: ['alchemist', 'wizard', 'courtmage'],
+  witch: ['alchemist', 'herbalist'], lich: ['alchemist', 'wizard'], papermaker: ['scribe', 'weaver'], bookbinder: ['scribe', 'librarian'],
+  cartographer: ['scribe', 'scholar'], lacquerer: ['jeweler', 'carpenter'], teacher: ['scribe', 'teacher', 'scholar', 'priest'], scholar: ['scribe', 'scholar', 'librarian', 'priest'], wizard: ['wizard', 'courtmage', 'magister', 'alchemist'], fortune: ['fortune', 'shaman'],
+  brewer: ['brewer', 'innkeeper'], butcher: ['butcher', 'hunter'],
+  // 王都に人手がなく置けないときの代わり（artisans.js が置けた町では本職が作る）
+  alchemist: ['alchemist', 'herbalist', 'wizard'], scribe: ['scribe', 'librarian', 'scholar'], painter: ['painter', 'potter', 'weaver'],
+  jeweler: ['jeweler', 'smith'], shipwright: ['shipwright', 'carpenter'], charcoal: ['charcoal', 'woodcutter'],
+  mason: ['mason', 'miner'], sculptor: ['mason', 'miner'],   // 石工がいない世界では、鉱夫が石を切り出して整える
+});
 function makersOf(by) { return MAKER[by] || (JOBS[by] ? [by] : []); }
 
 // ---------- 索引（読み込んだとき一度だけ） ----------
@@ -85,6 +96,7 @@ const USE = new Map();                                     // use の k → [id]
 const USESET = new Map();                                  // id → Set(k)
 const RECIPES = new Map();                                 // 職業 → [id]
 const HOUSE_RECIPES = [];                                  // 家で作る物（household・cook）
+const LOOT_ONLY = new Set(['ruins', 'demoncastle', 'pyramid', 'dungeon']);   // 摘む・掘る場所が遺跡や魔王城の物は、探索で持ち帰る（宝箱の中身にも入れる）
 const TRADE_IDS = [];                                      // 遠い国から来る物
 for (const it of MAT.values()) {
   const ks = new Set(it.use.map((u) => u.k));
@@ -96,6 +108,7 @@ for (const it of MAT.values()) {
     for (const on of s.on || []) {
       const key = s.how + ':' + on;
       (SRC.get(key) || SRC.set(key, []).get(key)).push({ id: it.id, rate: s.rate || 0.1, w: (s.rate || 0.1) * RARW[it.rare || 0] });
+      if (s.how !== 'loot' && LOOT_ONLY.has(on)) { const lk = 'loot:' + on; (SRC.get(lk) || SRC.set(lk, []).get(lk)).push({ id: it.id, rate: s.rate || 0.1, w: (s.rate || 0.1) * RARW[it.rare || 0] }); }
     }
   }
   if (it.make && (it.make.by === 'household' || it.make.by === 'cook')) HOUSE_RECIPES.push(it.id);

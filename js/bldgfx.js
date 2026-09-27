@@ -464,6 +464,22 @@ export function styledParts(R, b, ctx) {
       sign('guild', { y: 1.1, side: doorSide, at: 0.55 });
       return true;
     }
+    case 'charkiln': {
+      // 炭焼き窯：土を盛った丸い窯（焚き口と煙出し）、割った薪の山、雨よけの小屋根、炭俵
+      add(R.box(W_ + 0.2, 0.05, D_ + 0.2), G.soil, 0, 0.025, 0);
+      const s = F.side, h = F.half;
+      at(-s * 0.3, -h * 0.1, new THREE.SphereGeometry(0.62, 9, 6, 0, Math.PI * 2, 0, Math.PI / 2), G.pot, 0.04);
+      at(-s * 0.3, -h * 0.1 + 0.6, R.box(0.26, 0.22, 0.1), G.iron, 0.12);   // 焚き口
+      at(-s * 0.3 + 0.25, -h * 0.1 - 0.2, R.cyl(0.07, 0.08, 0.3, 6), M.darkStone, 0.72);   // 煙出し
+      { const [x, z] = F.P(-s * 0.3 + 0.25, -h * 0.1 - 0.2); smokeSrc(R, b, x, 0.9, z, 'ember'); }
+      // 薪の山
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3 - i; j++) at(s * 0.55 - 0.25 + j * 0.2 + i * 0.1, h * 0.35, R.cyl(0.08, 0.08, 0.7, 6), M.wood, 0.09 + i * 0.15, Math.PI / 2);
+      // 雨よけの小屋根と炭俵
+      for (const [u, v] of [[s * 0.25, -h + 0.25], [s - 0.15, -h + 0.25], [s * 0.25, -h * 0.1], [s - 0.15, -h * 0.1]]) at(u, v, R.box(0.06, 0.7, 0.06), M.planks, 0.35);
+      at(s * 0.62, -h * 0.55, R.box(s * 0.85, 0.06, h * 0.9), M.thatch, 0.72);
+      for (let i = 0; i < 3; i++) at(s * 0.4 + i * 0.22, -h * 0.55, R.cyl(0.1, 0.1, 0.26, 6), G.hay, 0.13);
+      return true;
+    }
     case 'herbgarden': {
       // 薬草園：低い木の柵で囲んだ畑。畝に薬草が並び、ところどころ紫や黄の花。奥に道具小屋と水桶
       add(R.box(W_ + 0.2, 0.06, D_ + 0.2), G.soil, 0, 0.03, 0);
@@ -717,6 +733,7 @@ export function bldTypeLabel(b, base) {
   if (b.tribe && b.style) return tribalLabel(b);
   if (b.type === 'shrine') return '祠';
   if (b.type === 'herbgarden') return '薬草園';
+  if (b.type === 'charkiln') return '炭焼き窯';
   if (b.hall) return b.type === 'church' ? '修道院（村の中心）' : '寄り合い所（村の集会所）';
   if (b.type === 'tavern') return /宿/.test(b.name || '') ? '宿屋・酒場' : '酒場';
   if (b.type === 'house' && (b.floors || 1) >= 2) return `${base}（二階建て）`;
