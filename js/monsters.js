@@ -4,6 +4,7 @@
 import { SPECIES } from './data.js';
 import { killCreature, makeCreature, applyStats, townMask, buildGrid, around } from './creatures.js';
 import { startFight } from './society.js';
+import { beastsFull, beastsFloor } from './beasts.js';
 import { T, W, H, walkable, tileAt, biomeOf } from './world.js';
 
 // 食物連鎖の表は動物担当の fauna.js にある。まだつながっていなくても動くように、あとから読み込む
@@ -267,7 +268,7 @@ function fight(sim, A, B) {
   let grown = 0;
   const gain = decisive ? 2 : 1;
   for (let i = 0; i < gain; i++) {
-    if (win.members.length >= MAX_BAND || (count[base] || 0) >= capOf(base)) break;
+    if (win.members.length >= MAX_BAND || (count[base] || 0) >= capOf(base) || beastsFull(sim, base)) break;
     const p = sim.randomNear(wb.x, wb.z, 3);
     if (!p) break;
     const c = makeCreature(sim, base, p.x, p.z, { lair: win.lair, hx: wb.x, hz: wb.z, range: 7, lv: R.int(1, 3), age: 0 });
@@ -1196,7 +1197,7 @@ function bandCouncil(sim, band, why) {
   for (const c of Object.values(S.creatures)) count[c.sp] = (count[c.sp] || 0) + 1;
   const bsp = FAM[band.fam].base;
   let called = 0;
-  while (party.length < plan.need && called < 3 && (count[bsp] || 0) < capOf(bsp) + 2) {
+  while (party.length < plan.need && called < 3 && (count[bsp] || 0) < capOf(bsp) + 2 && !beastsFull(sim, bsp)) {
     const p = sim.randomNear(base.x, base.z, 4);
     if (!p) break;
     const c = makeCreature(sim, bsp, p.x, p.z, { lair: band.lair, hx: base.x, hz: base.z, range: 7, lv: R.int(1, 3), age: 30 });
@@ -1307,7 +1308,7 @@ function keepAlive(sim) {
   const count = sim._monCount;
   const mask = townMask(sim);
   for (const [sp, d] of Object.entries(MIN_DENS)) {
-    const min = Math.max(1, Math.round(d * AREA()));
+    const min = beastsFloor(sim, sp, Math.max(1, Math.round(d * AREA())));   // はじめの数の6割まで（広さの目安だけだと、安全弁が増やしすぎていた）
     if ((count[sp] || 0) >= min || !R.chance((count[sp] || 0) === 0 ? 0.8 : 0.3)) continue; // 絶えかけたら急いで、少ないだけならゆっくり
     const def = SPECIES[sp];
     const lairs = (SPRING[sp] || []).flatMap((t) => w.specials.map((id) => sim.building(id)).filter((b) => b && b.type === t));

@@ -60,6 +60,7 @@ import { SCARS, fallIll } from './health.js';
 import { T, walkable, tileAt } from './world.js';
 import { around } from './creatures.js';
 import { formationArmorStrain } from './formation.js';
+import { beastsStrongFoe, beastsCrew, beastsNeed, beastsNoteRetreat } from './beasts.js';
 
 // ---------- 数の目安（docs/戦闘の研究.md の案。調整はここだけで） ----------
 export const TUNE = {
@@ -889,10 +890,11 @@ function partyCheck(sim, e) {
     pt._cbChk = S.t;
     crew = pt.members.map((id) => S.people[id]).filter((m) => m && m.deathYear == null && dist(m, e) <= 10);
   } else {
-    if (!(e.advClass || e.quest)) return false;     // 一人の冒険者だけ
+    const strongF = beastsStrongFoe(sim, e);   // 手ごわい魔物には、冒険者でなくても形勢を見る（beasts.js）
+    if (!(e.advClass || e.quest) && !strongF) return false;     // 一人の冒険者だけ
     if ((c.chk || -99) > S.t - TUNE.CHECK_EVERY) return false;
     c.chk = S.t;
-    crew = [e];
+    crew = strongF ? beastsCrew(sim, e) : [e];   // そばで一緒に戦っている人も数える
   }
   const up = crew.filter((m) => m.hp > 0 && !isDown(m));
   const downs = crew.filter(isDown);
@@ -910,7 +912,8 @@ function partyCheck(sim, e) {
   const hpAvg = up.reduce((s, m) => s + m.hp / m.maxhp, 0) / Math.max(1, up.length);
   const mor = morale(sim, e);
   let why = null;
-  if (ratio < (lostTo ? TUNE.RETREAT_RATIO_LOST : TUNE.RETREAT_RATIO)) why = '敵が強すぎる';
+  const needB = beastsNeed(sim, foes);   // 手ごわい魔物：相手と同じだけの力がなければ退く（beasts.js）
+  if (ratio < Math.max(lostTo ? TUNE.RETREAT_RATIO_LOST : TUNE.RETREAT_RATIO, needB)) { why = '敵が強すぎる'; if (needB) beastsNoteRetreat(sim); }
   else if (downs.length && !canHeal) why = '倒れた仲間を治す手立てがない';
   else if (crew.length >= 2 && downs.length * 2 >= crew.length) why = '仲間の半分が倒れた';
   else if (healers.length && !canHeal && hpAvg <= TUNE.RETREAT_HP) why = '癒しの力が尽きた';

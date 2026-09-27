@@ -12,6 +12,7 @@ import { faunaThink, faunaDied, popTarget, canHunt } from './fauna.js';
 import { monsterThink, onMonsterKilled } from './monsters.js';
 import { matterHunt } from './matter.js';
 import { moneyIn } from './ledger.js';
+import { beastsFull } from './beasts.js';
 
 // 生息数の目安
 const POP = {
@@ -568,7 +569,7 @@ export function creatureDaily(sim) {
     const def = SPECIES[sp];
     const n = count[sp] || 0;
     const demonMul = sp === 'imp' || sp === 'demonsoldier' ? (S.demon?.active ? 2.5 : 0.6) : 1;
-    if (n >= target * demonMul) continue;
+    if (n >= target * demonMul || beastsFull(sim, sp)) continue;
     if (sp === 'rat') {
       const s = R.pick(w.settlements);
       const p = sim.randomNear(s.x, s.z, s.r - 1);

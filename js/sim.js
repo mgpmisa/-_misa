@@ -16,6 +16,7 @@ import { initPolitics, politicsDaily, politicsHourly, demonHourly, addSaying } f
 import { saveWorld, loadWorld, clearWorld } from './store.js';
 import { computeDanger, tooDangerous, defendTowns, spotThreats, dangerAt } from './danger.js';
 import { around } from './creatures.js';
+import { beastsDaily, beastsSpare, beastsCrewOk } from './beasts.js';
 import { ITEMS, makeItem, addItem, autoEquip, starterKit, countItem, takeItem, itemName, itemValue, TREASURE_ITEMS } from './items.js';
 import { initProperty, propertyDaily, inherit, transferEstate, spendable, pay, earn, fieldShare, houseValue, weeklyRent } from './property.js';
 import { partiesDaily } from './guild.js';
@@ -776,6 +777,7 @@ export class Sim {
       const d = Math.hypot(c.pos.x - s.x, c.pos.z - s.z);
       if (d > 40) continue;
       if (deadlyAt(this, c.pos.x, c.pos.z)) continue;   // 竜の縄張りの中の獲物は狙わない（討伐は依頼を受けた強いパーティだけ）
+      if (beastsSpare(this, c, s) || !beastsCrewOk([p], c)) continue;   // 町から離れた少ない種・1人では手ごわい魔物は狙わない（beasts.js）
       const risk = c.lv * 3 + c.atk + c.maxhp / 10 - p.lv * 4 - p.atk - p.maxhp / 10;
       if (risk > 10 + p.values.courage * 10) continue;
       opts.push({ w: 50 / (d + 5) + (c.bounty || 0) / 20 - Math.max(0, risk) * 0.2 * (1 - p.values.courage), x: Math.round(c.pos.x), z: Math.round(c.pos.z), target: c.id, label: c.name });
@@ -2003,6 +2005,7 @@ export class Sim {
     workshopDaily(this);   // 職場の蔵：記録を昨日へ・傷む品・店をやめた人の品を家へ
     paydayDaily(this);
     creatureDaily(this);
+    beastsDaily(this);   // 減りすぎた魔物を呼び戻し、増えすぎた魔物を散らす（beasts.js）
     faunaDaily(this);
     rescueDaily(this);
     spawnerDaily(this);   // モンスター脅威度・討伐依頼・冒険者を志す人（spawner.js）

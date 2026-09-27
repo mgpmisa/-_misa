@@ -32,6 +32,7 @@
 // ■ お金：この仕組みはお金を動かさない。冒険者を志す人の持ち金だけは、実家の家計 → 新しい宿住まいの家計へ移す（どちらも帳簿の家計）。
 import { SPECIES, JOBS } from './data.js';
 import { makeCreature, killCreature, townMask } from './creatures.js';
+import { beastsFull } from './beasts.js';
 import { T, W, walkable, tileAt } from './world.js';
 import { CH, CW, CHH } from './danger.js';
 import { isAdventurer, partyOf } from './guild.js';
@@ -164,6 +165,7 @@ function spawnOne(sim, sp, b) {
   const R = sim.rng;
   const kind = R.pick(sp.sp);
   if (!SPECIES[kind]) return null;
+  if (beastsFull(sim, kind)) return null;   // その種が世界にもう十分いる（beasts.js）
   const p = sim.randomNear(b.door.x, b.door.z, 4, (t) => walkable(t) && t !== T.BLD && t !== T.RIVER);
   if (!p) return null;
   const deep = sp.depth >= 2 && b.type !== 'demoncastle';

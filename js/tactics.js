@@ -184,6 +184,7 @@ export function tacticsRole(sim, p) {
     if (cls === 'priest') return 'heal';
     if (RANGED_CLASS.has(cls)) return 'ranged';
     if (heavy) return 'tank';          // 重い鎧と盾を持つ剣士・盗賊などは盾役を務める
+    if ((cls === 'swordsman' || cls === 'hero') && eq.shield && eq.armor) return 'tank';   // 盾と鎧を持つ剣士・勇者も前で受け止める
     if (cls === 'thief') return 'scout';
     return 'attack';
   }

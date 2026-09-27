@@ -8,6 +8,7 @@ import { questFamilyOk, questNearMul } from './partylife.js';
 import { deadlyAt, strongEnough, crewUnsafe } from './deadly.js';
 import { tacticsFormParty, tacticsAfterForm, tacticsPickMates, tacticsCrewRank, tacticsRoleName } from './tactics.js';
 import { combatQuestOk } from './combat.js';
+import { beastsSpare } from './beasts.js';
 
 // 依頼の行き先が竜など手に負えない相手の縄張りなら、その相手（deadly.js）
 function questDeadly(sim, q) {
@@ -97,6 +98,7 @@ export function guildDaily(sim) {
       const near = towns.find((s) => Math.hypot(s.x - c.pos.x, s.z - c.pos.z) < s.r + 22);
       if (!near || !R.chance(0.35)) continue;
       if (isDeadly(sim, c.pos.x, c.pos.z)) continue;
+      if (beastsSpare(sim, c, near)) continue;   // 数の少ない種は、町に迫らないかぎり討伐を頼まない（beasts.js）
       const power = c.atk + c.maxhp / 8;
       const rank = rankFor(Math.max(power, threatNear(sim, c.pos.x, c.pos.z, 12)));
       const giver = R.pick(sim.living().filter((p) => p.s === near.id && sim.isAdult(p)));

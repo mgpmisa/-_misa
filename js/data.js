@@ -272,7 +272,7 @@ export const SPECIES = {
   bigslime: { name: 'ビッグスライム', kind: 'neutral', shape: 'blob', col: '#6fd86a', col2: '#2f7a2a', size: 0.9, hp: 40, atk: 6, speed: 0.5, diet: 'grass', evolve: 'kingslime', monster: true },
   kingslime:{ name: 'キングスライム', kind: 'hostile', shape: 'blob', col: '#e8c83a', col2: '#9a7a1a', size: 1.5, hp: 120, atk: 14, speed: 0.4, diet: 'meat', crown: true, monster: true },
   unicorn:  { name: 'ユニコーン', kind: 'neutral', shape: 'quad', col: '#ffffff', col2: '#e8c8f0', size: 1.1, hp: 60, atk: 10, speed: 1.4, diet: 'grass', biome: ['dense'], horn: true, tall: true, monster: true },
-  golem:    { name: 'ゴーレム', kind: 'neutral', shape: 'biped', col: '#8a8478', col2: '#4fc3e8', size: 1.4, hp: 150, atk: 16, speed: 0.3, diet: 'none', biome: ['mountain'], monster: true },
+  golem:    { name: 'ゴーレム', kind: 'neutral', shape: 'biped', col: '#8a8478', col2: '#4fc3e8', size: 1.4, hp: 260, atk: 20, speed: 0.3, diet: 'none', biome: ['mountain'], monster: true },
   // 敵対する魔物
   goblin:   { name: 'ゴブリン', kind: 'hostile', shape: 'biped', col: '#6a9a3a', col2: '#5a3a22', size: 0.6, hp: 18, atk: 5, speed: 0.9, diet: 'meat', biome: ['forest', 'dense', 'cave'], evolve: 'hobgoblin', monster: true, loot: 8 },
   hobgoblin:{ name: 'ホブゴブリン', kind: 'hostile', shape: 'biped', col: '#4a7a2a', col2: '#3a2618', size: 0.85, hp: 45, atk: 10, speed: 0.9, diet: 'meat', evolve: 'goblinlord', monster: true, loot: 20 },
@@ -286,7 +286,7 @@ export const SPECIES = {
   pharaoh:  { name: 'ファラオの亡霊', kind: 'hostile', shape: 'biped', col: '#3a6ab0', col2: '#e8c83a', size: 1.2, hp: 170, atk: 22, speed: 0.6, diet: 'none', monster: true, loot: 150, undead: true, crown: true },
   spider:   { name: '大蜘蛛', kind: 'hostile', shape: 'spider', col: '#2a2228', col2: '#c9463a', size: 0.8, hp: 35, atk: 10, speed: 1.0, diet: 'meat', biome: ['jungle', 'cave', 'dense'], evolve: 'arachne', monster: true, loot: 18 },
   arachne:  { name: 'アラクネ', kind: 'hostile', shape: 'spider', col: '#4a2a4a', col2: '#e8c8a0', size: 1.3, hp: 120, atk: 19, speed: 1.0, diet: 'meat', monster: true, loot: 80 },
-  wyvern:   { name: 'ワイバーン', kind: 'hostile', shape: 'dragon', col: '#6a4a8a', col2: '#c8a8e8', size: 1.4, hp: 110, atk: 18, speed: 1.3, diet: 'meat', biome: ['mountain'], evolve: 'dragon', monster: true, loot: 80, flies: true },
+  wyvern:   { name: 'ワイバーン', kind: 'hostile', shape: 'dragon', col: '#6a4a8a', col2: '#c8a8e8', size: 1.4, hp: 170, atk: 23, speed: 1.3, diet: 'meat', biome: ['mountain'], evolve: 'dragon', monster: true, loot: 80, flies: true },
   dragon:   { name: 'ドラゴン', kind: 'hostile', shape: 'dragon', col: '#b8322a', col2: '#e8c83a', size: 2.4, hp: 450, atk: 40, speed: 1.1, diet: 'meat', monster: true, loot: 400, flies: true },
   // 魔王軍
   imp:      { name: 'インプ', kind: 'demon', shape: 'biped', col: '#8a2a3a', col2: '#1a1a1a', size: 0.6, hp: 25, atk: 8, speed: 1.0, diet: 'none', monster: true, loot: 12, horns: true, evolve: 'demonsoldier' },

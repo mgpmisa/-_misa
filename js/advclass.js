@@ -118,12 +118,18 @@ export function advClassDaily(sim) {
   const S = sim.S;
   const L = sim.living();
   const advs = [];
+  const tankN = L.filter((q) => q.advClass === 'squire' || q.advClass === 'paladin' || q.advClass === 'fighter').length, advN = L.filter((q) => q.advClass).length;
   for (const p of L) {
     if (isAdvJob(p.job) && !(sim.ageOf && sim.ageOf(p) < 13)) {
       const before = p.advClass && p.advClassJob === p.job ? p.advClass : null;
       advClassOf(sim, p); advs.push(p);
       // 騎士見習いも28歳を過ぎれば一人前の剣士
-      if (p.advClass === 'squire' && sim.ageOf && sim.ageOf(p) >= 28) { p.advClass = 'swordsman'; if (S._advClassInit) sim.remember?.(p, '見習いを卒業し、一人前の剣士として認められた', { emo: 0.7, imp: 0.7, k: 'career' }); }
+      // 盾を持つ者・盾役が足りないときは、盾を預かる聖騎士として叙される（盾役が年とともに減らないように）
+      if (p.advClass === 'squire' && sim.ageOf && sim.ageOf(p) >= 28) {
+        const knight = !!p.eq?.shield || tankN < advN * 0.25;
+        p.advClass = knight ? 'paladin' : 'swordsman';
+        if (S._advClassInit) sim.remember?.(p, knight ? '見習いを卒業し、盾を預かる聖騎士として叙された' : '見習いを卒業し、一人前の剣士として認められた', { emo: 0.7, imp: 0.7, k: 'career' });
+      }
       if (!before && S._advClassInit && p.advClass !== 'hero') sim.remember?.(p, `${ADV_CLASSES[p.advClass].name}として身を立てると決めた`, { emo: 0.4, imp: 0.4, k: 'career' });
     } else if (p.advClass) { delete p.advClass; delete p.advClassJob; }
   }
