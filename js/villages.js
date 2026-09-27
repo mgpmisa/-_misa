@@ -813,6 +813,16 @@ function stepTrips(sim) {
     }
   }
 }
+// 家へ帰らせる（着いたら任務を解く）
+function sendHome(sim, p) {
+  const X = XV(sim), S = sim.S, home = sim.town(p.s);
+  if (!alive(p) || !home) return;
+  X.trips = X.trips.filter((t) => t.pid !== p.id);
+  const t = { id: X.seq++, pid: p.id, deed: 'home', to: p.s, tx: home.x, tz: home.z, start: S.t, stage: 'back', from: p.s, data: {} };
+  X.trips.push(t);
+  p.mission = { type: 'stroll', x: home.x, z: home.z, until: S.t + 1440 * 2, dur: 30, vtrip: t.id };
+  p.action = null;
+}
 function goBack(sim, t, p) {
   const home = sim.town(p.s);
   t.stage = 'back';
@@ -1167,7 +1177,7 @@ function deedsDaily(sim) {
     if (!spot) continue;
     best.spot = spot;
     const t = newTrip(sim, best.p, best.deed, best.to, spot, best.data || {});
-    if (t && best.deed === 'elope') { const lv = S.people[best.data.lover]; if (lv && alive(lv)) { lv.mission = { type: 'stroll', x: best.spot.x, z: best.spot.z, until: S.t + 1440 * 2.5, dur: 40 }; lv.action = null; } }
+    if (t && best.deed === 'elope') { const lv = S.people[best.data.lover]; if (lv && alive(lv)) { lv.mission = { type: 'stroll', x: best.spot.x, z: best.spot.z, until: S.t + 1440 * 1.5, dur: 40 }; lv.action = null; } }
     if (t) sim.remember(best.p, deedMotive(sim, best), { emo: -0.1, imp: 0.5, k: 'plan' });
   }
 }
@@ -1758,7 +1768,7 @@ function startRaid(sim, from, to, kind, inc = null, callAllies = false) {
   const fq = P(sim, from), tq = P(sim, to);
   if (!fq || !tq || (tq.sid == null && tq.kind !== 'bandit') || tq.kind === 'kingdom') return null;
   if (X.raids.some((r) => r.stage !== 'done' && r.from === from && r.toKey === to)) return null;
-  const want = kind === 'burn' ? 9 : kind === 'punitive' ? 8 : kind === 'bandit' ? 6 : kind === 'hunger' ? 6 : 5;
+  const want = kind === 'burn' ? 12 : kind === 'punitive' ? 10 : kind === 'bandit' ? 8 : 8;
   let men = [];
   if (fq.kind === 'kingdom') men = sim.living().filter((p) => p.s === fq.sid && ['soldier', 'knight', 'militia', 'guard', 'gatekeeper'].includes(p.job) && !p.mission && !p.quest && p.jail == null && p.hp > p.maxhp * 0.5).sort((a, b) => pw(b) - pw(a)).slice(0, want);
   else if (fq.kind === 'bandit') men = banditsOf(sim, fq.bid).filter((p) => p.hp > p.maxhp * 0.5 && !p.mission);
@@ -1776,6 +1786,13 @@ function startRaid(sim, from, to, kind, inc = null, callAllies = false) {
     if (extra.length) { r.allies = (r.allies || []).concat(al); note(sim, [al, from, to], `${nameOf(sim, al)}が盟約にしたがい、${nameOf(sim, from)}の${RAID_LABEL[kind]}に加わった`, 1, P(sim, al)); }
   }
   const imp = kind === 'burn' || kind === 'punitive' ? 3 : 2;
+  // 襲い合いが重なれば、村どうし・種族どうしの戦（いくさ）になる
+  const rr = rec(sim, from, to);
+  if ((rr.heat || 0) >= 18 && !rr.war && isVillageKey(sim, from) && isVillageKey(sim, to)) {
+    rr.war = sim.today;
+    note(sim, [from, to], `${nameOf(sim, from)}と${nameOf(sim, to)}の争いは、ついに${P(sim, from).kind !== P(sim, to).kind ? '種族どうしの' : '村どうしの'}戦（いくさ）になった`, 3, P(sim, to));
+    stat(sim, 'war');
+  }
   note(sim, [from, to], `${nameOf(sim, from)}の${men.length}人が、${nameOf(sim, to)}へ${RAID_LABEL[kind]}に出た（率いるのは${leader.given}）`, imp, P(sim, from), fq.kind === 'kingdom' ? fq.k : undefined);
   stat(sim, 'raid:' + kind);
   return r;
@@ -1843,8 +1860,9 @@ function resolveRaid(sim, r, men, tgt) {
   const att = men.filter((p) => Math.hypot(p.pos.x - tgt.x, p.pos.z - tgt.z) <= tgt.r + 8);
   const def = defendersAt(sim, r, tgt);
   const fighters = def.filter((p) => (JOBS[p.job]?.combat || 0) >= 1 || p.values.courage > 0.45);
+  const asleep = (p) => p.action?.type === 'sleep' && p.action.phase === 'do';   // 夜討ちなら、寝ていた者は力を出しきれない
   const A = att.reduce((s, p) => s + pw(p), 0) + 1;
-  const D = fighters.reduce((s, p) => s + pw(p), 0) + (def.length - fighters.length) * 4 + 1;
+  const D = fighters.reduce((s, p) => s + pw(p) * (asleep(p) ? 0.45 : 1), 0) + (def.length - fighters.length) * 3 + 1;
   const tq = P(sim, r.toKey);
   const fence = tq?.kind === 'indep' || tq?.kind === 'tribal' ? 1.15 : 1.05;
   const ratio = A / (D * fence);
@@ -1949,10 +1967,20 @@ function startAid(sim, from, toKey, kind, n, days, wage = 0) {
 function stepGuard(sim, r, men) {
   const S = sim.S;
   if (S.t < r.until && men.length) {
-    for (const p of men) if (!p.fight && (!p.mission || p.mission.vraid !== r.id)) { const spot = sim.randomNear(r.x, r.z, 5) || { x: r.x, z: r.z }; p.mission = { type: 'march', x: spot.x, z: spot.z, until: r.until, dur: 90, vraid: r.id }; p.action = null; }
+    // 昼は村の中を見回り、夜は村の宿（集会所・宿屋）で眠る
+    const h = sim.hour(), night = h >= 22 || h < 6;
+    const town = sim.town(r.to), inn = town ? (sim.townBuilding(town, 'tavern') || sim.townBuilding(town, 'church')) : null;
+    for (const p of men) {
+      if (p.fight) continue;
+      const near = Math.hypot(p.pos.x - r.x, p.pos.z - r.z) < (town?.r || 6) + 3;
+      if (night && near) {
+        if (p.mission?.vraid === r.id) p.mission = null;
+        if (p.action?.type !== 'sleep') sim.startAction(p, { type: 'sleep', place: inn ? { x: inn.door.x, z: inn.door.z, bld: inn.id } : { x: r.x, z: r.z }, dur: 420 });
+      } else if (!p.mission || p.mission.vraid !== r.id) { const spot = sim.randomNear(r.x, r.z, 5) || { x: r.x, z: r.z }; p.mission = { type: 'march', x: spot.x, z: spot.z, until: r.until, dur: 90, vraid: r.id }; if (p.action?.type !== 'sleep' || h >= 6) p.action = null; }
+    }
     return;
   }
-  for (const p of men) { p.vGuardAt = null; const h = sim.town(p.s); if (h) { p.mission = { type: 'stroll', x: h.x, z: h.z, until: S.t + 1440 * 2, dur: 30 }; p.action = null; } }
+  for (const p of men) { p.vGuardAt = null; sendHome(sim, p); }
   endRaid(sim, r, men);
 }
 // 魔物退治の討伐隊：群れの住処へ行き、見つけた魔物と戦う
@@ -1962,7 +1990,7 @@ function stepHunt(sim, r, men) {
   if (!band || !men.length || S.t > r.until) {
     const n0 = r.n0 || 0, n1 = band ? band.members.length : 0;
     note(sim, [r.from, r.toKey], `${nameOf(sim, r.from)}の討伐隊が戻った（${band ? `「${band.name}」の${Math.max(0, n0 - n1)}体を討った` : '群れは散った'}）`, 2, P(sim, r.toKey));
-    for (const p of men) { const h = sim.town(p.s); if (h) { p.mission = { type: 'stroll', x: h.x, z: h.z, until: S.t + 1440 * 2, dur: 30 }; p.action = null; } }
+    for (const p of men) sendHome(sim, p);
     endRaid(sim, r, men);
     return;
   }
@@ -2317,7 +2345,7 @@ function makePeace(sim, a, b, how, o) {
   else if (how === 'mediator' && o.med) { txt = `${nameOf(sim, o.med)}の仲立ちで、${an}と${bn}が争いをやめた`; addFeel(sim, a, o.med, 6, `${nameOf(sim, o.med)}が争いを収めてくれた`, 0.5); addFeel(sim, b, o.med, 6, null, 0.5); }
   else { const ok = exchangeHostages(sim, a, b); txt = ok ? `${an}と${bn}が若者を人質として預け合い、争いをやめた` : `${an}と${bn}の長が顔を合わせ、しばらく争いをやめることにした`; }
   X.pacts.push({ type: 'peace', a, b, since: sim.today, until: sim.today + 60, how });
-  const r = rec(sim, a, b); r.heat = 0;
+  const r = rec(sim, a, b); r.heat = 0; r.war = null;
   addFeel(sim, a, b, 12, txt, 1);
   note(sim, [a, b], txt, 2, P(sim, a));
   tell(sim, a, `${bn}との争いが終わった。ほっとした`, 0.6, 0.7, 12);
