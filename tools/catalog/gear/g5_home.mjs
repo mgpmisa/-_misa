@@ -1,0 +1,195 @@
+// 家具・日用品・旅と野営の道具（gear5.js）
+import { add, r, CR, LOOT, TR } from './g0_common.mjs';
+
+const F = 'gear5';
+export function genHome() {
+  // [id, 名前, 小分類, 重さ, 値打ち, 材料, 職人, rare, demand, 説明, 使い道(追加)]
+  const H = [
+    // 寝る
+    ['strawbed', '藁の寝床', 'bed', 5, 1, { straw: 6, hempcloth: 1 }, 'weaver', 0, 3, '藁を詰めた袋を床に敷いた寝床。貧しい家や馬小屋で。'],
+    ['woodbed', '木の寝台', 'bed', 30, 20, { wood: 6, rope: 1, straw: 4 }, 'carpenter', 0, 2, '木の枠に縄を張り、藁の敷布団を載せた寝台。'],
+    ['featherbed', '羽毛の寝台', 'bed', 35, 60, { wood: 6, down: 4, linen: 2 }, 'carpenter', 0, 1, '羽毛の敷布団を重ねた柔らかい寝台。'],
+    ['canopybed', '天蓋付きの寝台', 'bed', 120, 400, { oak: 12, velvet: 3, down: 6, linen: 3 }, 'carpenter', 1, 1, '柱と帳で囲った貴族の寝台。すきま風を防ぐ。'],
+    ['royalbed', '王の寝台', 'bed', 200, 2000, { ebony: 15, gold_leaf: 2, brocade: 4, down: 10 }, 'carpenter', 2, 0, '金箔と錦で飾った王の寝台。'],
+    ['bunkbed', '二段寝台', 'bed', 40, 35, { wood: 10, rope: 2 }, 'carpenter', 0, 1, '兵舎や船の狭い部屋で使う二段の寝台。'],
+    ['cradle', '揺りかご', 'bed', 8, 12, { wood: 3, linen: 1 }, 'carpenter', 0, 2, '赤子を寝かせる揺れる籠。代々受け継ぐ。'],
+    ['hammock', '吊り床', 'bed', 1.5, 5, { rope: 2, sailcloth: 1 }, 'roper', 0, 1, '船乗りが柱の間に吊って眠る網の寝床。'],
+    ['sickbed', '病人の寝台', 'bed', 30, 25, { wood: 6, linen: 2 }, 'carpenter', 0, 1, '診療所と修道院に並ぶ、洗える白布の寝台。'],
+    ['pillow', '枕', 'bedding', 0.5, 3, { linen: 1, straw: 1 }, 'tailor', 0, 2, 'そば殻や藁を詰めた枕。'],
+    ['downpillow', '羽毛の枕', 'bedding', 0.4, 12, { linen: 1, down: 1 }, 'tailor', 0, 1, '鵞鳥の羽毛を詰めた柔らかい枕。'],
+    ['woolblanket', '毛布', 'bedding', 2, 8, { woolcloth: 2 }, 'weaver', 0, 3, '羊毛で織った厚い毛布。冬には欠かせない。'],
+    ['furthrow', '毛皮の掛け物', 'bedding', 4, 25, { hide: 3 }, 'furrier', 0, 1, '毛皮を縫い合わせた掛け物。北国の寝台に。'],
+    ['quilt', '羽毛布団', 'bedding', 2, 40, { linen: 3, down: 4 }, 'tailor', 1, 1, '羽毛を詰めた軽くて温かい掛け布団。'],
+    ['bedsheet', '敷布', 'bedding', 0.8, 7, { linen: 2 }, 'tailor', 0, 2, '寝台に敷く白い亜麻の布。'],
+    ['strawmat', '藁のむしろ', 'bedding', 2, 1, { straw: 5 }, 'weaver', 0, 3, '藁を編んだ敷物。土間にも、干し物にも、寝床にも。'],
+    // 卓と机
+    ['roughtable', '粗末な卓', 'table', 15, 8, { wood: 3 }, 'carpenter', 0, 2, '板を打ち付けただけの卓。'],
+    ['diningtable', '食卓', 'table', 30, 25, { wood: 6 }, 'carpenter', 0, 2, '家族が囲む木の食卓。'],
+    ['feasttable', '宴の長卓', 'table', 80, 60, { oak: 12 }, 'carpenter', 0, 1, '城や酒場の広間に置く長い卓。何十人も座れる。'],
+    ['writingdesk', '書き物机', 'table', 25, 45, { oak: 5, brass: 1 }, 'carpenter', 0, 1, '引き出しの付いた机。学者・書記・商人に。'],
+    ['workbench', '仕事台', 'table', 40, 30, { oak: 6, iron: 1 }, 'carpenter', 0, 2, '職人が材を固定して加工する頑丈な台。'],
+    ['altar', '祭壇', 'table', 200, 150, { marble_block: 4, linen: 2 }, 'mason', 1, 0, '教会の奥に据える石の祭壇。'],
+    ['counter', '帳場の台', 'table', 40, 40, { wood: 8 }, 'carpenter', 0, 1, '店や宿で客と向き合う台。'],
+    ['maptable', '軍議の地図台', 'table', 50, 80, { oak: 8 }, 'carpenter', 0, 0, '将軍が地図を広げて戦を練る大きな台。'],
+    ['vanity', '化粧台', 'table', 30, 90, { wood: 5, windowglass: 1, silver_leaf: 1 }, 'carpenter', 1, 1, '鏡の付いた貴婦人の化粧台。'],
+    ['lectern', '書見台', 'table', 12, 25, { oak: 3 }, 'carpenter', 0, 1, '重い本を開いて置く斜めの台。教会と学び舎に。'],
+    ['tavernbench', '酒場の卓と長椅子', 'table', 45, 20, { wood: 8 }, 'carpenter', 0, 2, '酒場に並べる、傷だらけでも平気な卓と長椅子。'],
+    // 腰掛け
+    ['stool', '腰掛け', 'seat', 3, 2, { wood: 1 }, 'carpenter', 0, 3, '三本脚の小さな腰掛け。乳しぼりにも。'],
+    ['chair', '椅子', 'seat', 6, 10, { wood: 2 }, 'carpenter', 0, 2, '背もたれの付いたふつうの椅子。'],
+    ['armchair', '肘掛け椅子', 'seat', 12, 40, { oak: 3, woolcloth: 1 }, 'carpenter', 0, 1, '家の主が座る肘掛けの付いた椅子。'],
+    ['bench', '長椅子', 'seat', 15, 12, { wood: 3 }, 'carpenter', 0, 2, '何人も並んで座れる長い腰掛け。'],
+    ['pew', '教会の長椅子', 'seat', 30, 35, { oak: 5 }, 'carpenter', 0, 1, '祈りの人が並ぶ背もたれの高い長椅子。'],
+    ['rockingchair', '揺り椅子', 'seat', 10, 25, { wood: 4 }, 'carpenter', 0, 1, '老人が暖炉の前で揺られる椅子。'],
+    ['throne', '玉座', 'seat', 150, 3000, { ebony: 10, gold: 5, velvet: 2, ruby: 2 }, 'carpenter', 3, 0, '王が座る金と宝石の椅子。国にひとつ。'],
+    ['cushion', '座布団', 'seat', 0.5, 4, { woolcloth: 1, straw: 1 }, 'tailor', 0, 2, '床や硬い椅子に敷く詰め物の布。'],
+    ['floorcushion', '砂の国の大きな座り布団', 'seat', 3, 30, { cottoncloth: 3, wool: 2 }, 'tailor', 0, 1, '床に並べて座る刺繍の大きな布団。'],
+    // しまう
+    ['shelf', '棚', 'storage', 10, 12, { wood: 3 }, 'carpenter', 0, 2, '壁に据える板の棚。'],
+    ['bookshelf', '本棚', 'storage', 30, 35, { oak: 6 }, 'carpenter', 0, 1, '重い本を並べる背の高い棚。'],
+    ['cupboard', '食器棚', 'storage', 35, 40, { wood: 6, hinge: 2 }, 'carpenter', 0, 1, '扉の付いた食器と保存食の棚。'],
+    ['wardrobe', '箪笥', 'storage', 50, 50, { oak: 8, hinge: 2 }, 'carpenter', 0, 1, '引き出しと扉のある衣装のしまい場所。'],
+    ['clothchest', '衣装箱', 'storage', 15, 15, { wood: 3, hinge: 2 }, 'carpenter', 0, 2, '蓋付きの木の箱。嫁入り道具の定番。'],
+    ['longchest', '長持', 'storage', 30, 25, { wood: 5, iron: 1 }, 'carpenter', 0, 1, '布団や衣を入れる長い箱。二人で担いで運ぶ。'],
+    ['weaponrack', '武器立て', 'storage', 20, 20, { wood: 4 }, 'carpenter', 0, 1, '槍や剣を立てかける台。兵舎と武器屋に。'],
+    ['armorstand', '鎧掛け', 'storage', 15, 18, { wood: 3 }, 'carpenter', 0, 1, '鎧を着せて置く人の形の台。'],
+    ['ironstrongbox', '金庫の鉄箱', 'storage', 60, 120, { iron: 10, lock: 1 }, 'smith', 0, 1, '国庫や両替商がお金をしまう鉄の箱。'],
+    ['medicinecabinet', '薬棚', 'storage', 30, 45, { wood: 6 }, 'carpenter', 0, 1, '薬草ごとに百の小さな引き出しがある棚。'],
+    ['furniture', '家具', 'storage', 15, 26, { wood: 5, iron_nail: 1 }, 'carpenter', 0, 2, '家に置くふつうの家具ひと揃い。'],
+    // 食器
+    ['woodbowl', '木の椀', 'tableware', 0.2, 0.5, { wood: 1 }, 'carpenter', 0, 3, 'ろくろで挽いた木の椀。汁物もかゆもこれで食べる。'],
+    ['woodplate', '木の皿', 'tableware', 0.3, 0.5, { wood: 1 }, 'carpenter', 0, 3, '平たい木の皿。'],
+    ['woodspoon', '木の匙', 'tableware', 0.05, 0.2, { wood: 1 }, 'carpenter', 0, 3, '木を削った匙。赤子の誕生祝いに贈る。'],
+    ['woodcup', '木の杯', 'tableware', 0.2, 0.5, { wood: 1 }, 'carpenter', 0, 2, '木をくり抜いた杯。'],
+    ['pottery', '陶器', 'tableware', 2, 6, { clay: 2 }, 'potter', 0, 3, '皿・椀・壺など、ふつうの焼き物ひと揃い。'],
+    ['clayplate', '陶器の皿', 'tableware', 0.5, 1, { clay: 1 }, 'potter', 0, 2, '素焼きに釉をかけた皿。'],
+    ['claybowl', '陶器の椀', 'tableware', 0.4, 1, { clay: 1 }, 'potter', 0, 2, '厚手の焼き物の椀。'],
+    ['claypitcher', '陶器の水差し', 'tableware', 1, 2, { clay: 1 }, 'potter', 0, 2, '水や麦酒を注ぐ取っ手付きの器。'],
+    ['porcelaincup', '白磁の器', 'tableware', 0.2, 30, { porcelainbody: 1, glaze: 1 }, 'potter', 1, 1, '薄く白く透けるような器。遠い国から伝わった技。'],
+    ['pewterplate', '白鑞の皿', 'tableware', 0.6, 5, { pewter: 1 }, 'smith', 0, 1, '町の家が客をもてなす鈍い銀色の皿。'],
+    ['pewtercup', '白鑞の杯', 'tableware', 0.3, 4, { pewter: 1 }, 'smith', 0, 1, '酒場で使う白鑞の杯。'],
+    ['tankard', '蓋付きの酒杯', 'tableware', 0.6, 8, { pewter: 1, wood: 1 }, 'smith', 0, 1, '蓋の付いた大きな麦酒の杯。'],
+    ['hornmug', '角杯', 'tableware', 0.3, 5, { horn_cattle: 1 }, 'carpenter', 0, 1, '牛の角をくり抜いた杯。北国の宴で回し飲む。'],
+    ['glasscup', '硝子の杯', 'tableware', 0.2, 15, { glass: 1 }, 'glassblower', 1, 1, '透きとおった硝子の杯。貴族の食卓に。'],
+    ['silverware', '銀の食器一揃い', 'tableware', 2, 150, { silver: 3 }, 'jeweler', 1, 1, '皿・杯・匙の銀の揃い。毒に触れると曇るという。'],
+    ['knife', '包丁', 'tableware', 0.2, 3, { iron: 1, wood: 1 }, 'smith', 0, 3, '台所の刃物。'],
+    ['meatfork', '肉叉', 'tableware', 0.1, 2, { iron: 1 }, 'smith', 0, 1, '肉を刺して取り分ける二股の叉。'],
+    ['spit', '鉄串', 'tableware', 1, 3, { iron: 1 }, 'smith', 0, 2, '肉や魚を刺して火にかざす長い串。'],
+    ['cuttingboard', 'まな板', 'tableware', 1, 1, { wood: 1 }, 'carpenter', 0, 3, '食材を切る厚い板。'],
+    ['breadbasket', 'パンかご', 'tableware', 0.3, 1, { willow: 1 }, 'basketweaver', 0, 2, '焼いたパンを入れて食卓に出すかご。'],
+    // 鍋・台所
+    ['ironpot', '鉄鍋', 'cookware', 3, 10, { iron: 2 }, 'smith', 0, 3, '炉の自在鉤に吊るす黒い鉄の鍋。'],
+    ['copperpot', '銅鍋', 'cookware', 2, 15, { copper_sheet: 2 }, 'smith', 0, 1, '熱がよく回る銅の鍋。宮廷の厨房に。'],
+    ['claypot', '土鍋', 'cookware', 2, 2, { clay: 2 }, 'potter', 0, 3, '煮込みに向く土の鍋。落とすと割れる。'],
+    ['cauldron', '大釜', 'cookware', 20, 45, { iron: 8 }, 'smith', 0, 1, '兵舎の炊き出しや洗濯の湯を沸かす大きな釜。'],
+    ['fryingpan', '平鍋', 'cookware', 1.5, 6, { iron: 1 }, 'smith', 0, 2, '柄の付いた浅い鍋。卵や薄焼きを焼く。'],
+    ['kettle', '湯沸かし', 'cookware', 1.2, 8, { copper_sheet: 1 }, 'smith', 0, 2, '注ぎ口の付いた湯を沸かす器。'],
+    ['gridiron', '焼き網', 'cookware', 1, 4, { iron_wire: 2 }, 'smith', 0, 2, '炭火の上で肉や魚を焼く網。'],
+    ['pothook', '自在鉤', 'cookware', 1.5, 4, { iron: 1 }, 'smith', 0, 2, '炉の上で鍋の高さを変えて吊るす鉤。'],
+    ['breadmold', 'パン焼きの型', 'cookware', 0.8, 3, { iron_sheet: 1 }, 'smith', 0, 1, '祭りの菓子やパンを焼く鉄の型。'],
+    ['ladle', '杓子', 'cookware', 0.2, 1, { wood: 1 }, 'carpenter', 0, 3, '汁をすくう柄の長い匙。'],
+    ['handmill', '手挽き臼', 'cookware', 15, 20, { stone: 2, wood: 1 }, 'mason', 0, 2, '家で麦や豆を挽く小さな石臼。粉屋に払う代金が浮く。'],
+    ['waterbucket', '手桶', 'cookware', 1.5, 2, { wood: 2, iron_hoop: 1 }, 'cooper', 0, 3, '井戸から水を汲む桶。'],
+    ['washtub', '洗い桶', 'cookware', 6, 5, { wood: 4, iron_hoop: 2 }, 'cooper', 0, 2, '洗濯と食器洗いの大きな桶。'],
+    ['washboard', '洗濯板', 'cookware', 1, 1, { wood: 1 }, 'carpenter', 0, 2, '溝を刻んだ板。洗濯婦の道具。'],
+    ['bathtub', '湯浴みの桶', 'cookware', 25, 40, { oak: 6, iron_hoop: 3 }, 'cooper', 0, 1, '人が入れる大きな桶。湯を張って体を洗う。'],
+    ['waterjar', '水瓶', 'cookware', 10, 6, { clay: 4 }, 'potter', 0, 2, '台所の隅に据えて水を溜める甕。'],
+    ['chamberpot', 'おまる', 'cookware', 1, 1, { clay: 1 }, 'potter', 0, 2, '夜に用を足す壺。朝に肥溜めへ運ぶ。'],
+    ['smokerack', '燻製の吊り棚', 'cookware', 8, 6, { wood: 3 }, 'carpenter', 0, 1, '炉の煙で肉や魚を燻す棚。'],
+    // 灯り
+    ['candlestick', '鉄の燭台', 'light', 0.8, 4, { iron: 1 }, 'smith', 0, 3, '蝋燭を一本立てる鉄の台。'],
+    ['brasscandlestick', '真鍮の燭台', 'light', 0.8, 12, { brass: 1 }, 'smith', 0, 1, '磨くと金のように光る真鍮の燭台。'],
+    ['candelabrum', '枝付き燭台', 'light', 3, 45, { brass: 3 }, 'smith', 1, 1, '七本の蝋燭を立てる枝分かれした燭台。'],
+    ['chandelier', '吊り燭台', 'light', 20, 150, { iron: 8, brass: 2, chain: 1 }, 'smith', 1, 1, '広間の天井から吊るす輪の燭台。'],
+    ['oillamp', '油皿', 'light', 0.3, 1, { clay: 1 }, 'potter', 0, 3, '油に芯を浸して灯す素焼きの皿。いちばん安い灯り。'],
+    ['lantern', '角灯', 'light', 1, 10, { iron_sheet: 1, glass: 1 }, 'smith', 0, 2, '硝子で囲った手提げの灯り。風で消えない。'],
+    ['hornlantern', '角の薄板の角灯', 'light', 0.8, 6, { iron: 1, horn_cattle: 1 }, 'smith', 0, 2, '牛の角を薄く削って窓にした安い角灯。'],
+    ['minerlamp', '鉱夫の灯り', 'light', 0.6, 6, { iron: 1 }, 'smith', 0, 2, '帽子や壁に掛ける小さな油の灯り。坑道を照らす。'],
+    ['streetlamp', '街灯', 'light', 30, 60, { iron: 6, glass: 2 }, 'smith', 0, 1, '町の辻に立てる灯り。夜警が火を入れて回る。'],
+    ['firebasket', '篝火の籠', 'light', 8, 10, { iron: 3 }, 'smith', 0, 2, '門や見張り台で薪を燃やす鉄の籠。'],
+    // 布もの
+    ['rug', '織り敷物', 'textile', 5, 25, { woolyarn: 8 }, 'weaver', 0, 1, '床に敷く羊毛の敷物。'],
+    ['carpet', '砂の国の絨毯', 'textile', 12, 200, { woolyarn: 20, dye: 3 }, 'weaver', 2, 1, '一年がかりで結んだ模様の絨毯。王侯が競って買う。'],
+    ['rushmat', '藺草の敷物', 'textile', 3, 4, { rush: 6 }, 'weaver', 0, 2, '床に撒く藺草を編んだ敷物。いい香りがする。'],
+    ['curtain', '帳', 'textile', 2, 12, { woolcloth: 2 }, 'tailor', 0, 1, '窓や寝台を仕切る厚い布。'],
+    ['tablecloth', '卓布', 'textile', 0.6, 8, { linen: 2 }, 'tailor', 0, 1, '祝いの日に食卓に掛ける白い布。'],
+    ['banner', '紋章旗', 'textile', 1.5, 30, { woolcloth: 2, dye: 2 }, 'tailor', 0, 1, '城や陣に掲げる家と国の旗。'],
+    ['rag', 'ぼろ布', 'textile', 0.1, 0.1, { clothes: 1 }, 'tailor', 0, 2, '古着を裂いた布切れ。雑巾・継ぎ当て・火口・紙の原料になる。', 1],
+    ['lace', '飾り編み', 'textile', 0.05, 15, { linenthread: 3 }, 'tailor', 1, 1, '糸を編んで透かし模様を作った飾り。襟と袖口に付ける。'],
+    // 掃除・暮らし
+    ['broom', '箒', 'household', 0.8, 1, { straw: 2, wood: 1 }, 'weaver', 0, 3, '藁や小枝を束ねた箒。'],
+    ['dustpan', '塵取り', 'household', 0.3, 0.5, { wood: 1 }, 'carpenter', 0, 2, '掃いた塵を集める板。'],
+    ['poker', '火かき棒', 'household', 1, 2, { iron: 1 }, 'smith', 0, 2, '炉の薪や炭をかき回す鉄の棒。'],
+    ['firedogs', '薪台', 'household', 6, 6, { iron: 2 }, 'smith', 0, 1, '暖炉で薪を載せる鉄の台。'],
+    ['firescreen', '暖炉の衝立', 'household', 5, 15, { iron_wire: 3, wood: 1 }, 'smith', 0, 1, '火の粉が飛ばないように立てる網の衝立。'],
+    ['wallmirror', '壁掛けの鏡', 'household', 3, 60, { windowglass: 1, silver_leaf: 1, wood: 1 }, 'glassblower', 1, 1, '硝子の裏に銀を張った鏡。'],
+    ['bronzemirror', '青銅の鏡', 'household', 1, 12, { bronze: 1 }, 'smith', 0, 1, '磨いた青銅の鏡。ぼんやり映る。'],
+    ['woodcomb', '木の櫛', 'household', 0.02, 0.5, { wood: 1 }, 'carpenter', 0, 3, '髪を梳く木の櫛。'],
+    ['flowerpot', '植木鉢', 'household', 1, 1, { clay: 1 }, 'potter', 0, 2, '窓辺で薬草や花を育てる鉢。'],
+    ['spinningstool', '糸紡ぎの椅子', 'household', 4, 5, { wood: 2 }, 'carpenter', 0, 1, '低い座面の、糸紡ぎと繕い物のための椅子。'],
+    ['doormat', '戸口の泥落とし', 'household', 1, 0.5, { straw: 3 }, 'weaver', 0, 2, '戸口に置く藁の敷物。'],
+    ['mousetrap', 'ねずみ捕り', 'household', 0.3, 1, { wood: 1, iron_wire: 1 }, 'carpenter', 0, 2, '蔵の穀物を守る、ばね仕掛けの罠。'],
+    ['beehivestraw', '藁の蜂籠', 'household', 3, 5, { straw: 5 }, 'weaver', 0, 1, '藁を編んだ釣鐘形の蜂の巣。農家の庭先に置く。'],
+    ['henhouse', '鶏の巣箱', 'household', 10, 8, { wood: 3, straw: 1 }, 'carpenter', 0, 2, '鶏が卵を産む箱。狐から守る。'],
+    ['kennel', '犬小屋', 'household', 20, 10, { wood: 5 }, 'carpenter', 0, 1, '番犬や猟犬の小屋。'],
+    ['cradleboard', '背負い揺りかご', 'household', 2, 6, { wood: 1, leather: 1 }, 'tribal_crafter', 0, 1, '赤子を縛って背負う板。畑仕事の間も一緒にいられる。'],
+  ];
+  for (const [id, name, sub, w, v, from, by, rare, dem, desc, stack] of H) {
+    const burn = !from.iron && !from.brass && !from.clay && !from.pewter && !from.silver && !from.glass && !from.stone;
+    const use = [{ k: 'tool', note: sub === 'light' ? '夜を照らす' : sub === 'bed' || sub === 'bedding' ? '眠る・体を休める' : '暮らしに使う' }];
+    if (['bed', 'table', 'seat', 'storage', 'textile'].includes(sub)) use.push({ k: 'build', note: '家の内装' });
+    if (v >= 100) use.push({ k: 'luxury' }, { k: 'collect' });
+    if (burn && v < 100) use.push({ k: 'fuel', note: '古くなったら薪に' });
+    else if (from.iron || from.pewter || from.brass || from.copper_sheet) use.push({ k: 'craft', note: '古くなったら鋳つぶす' });
+    if (/揺りかご|匙|衣装箱|枕/.test(name)) use.push({ k: 'gift', note: '祝いの贈り物' });
+    if (id === 'altar' || id === 'pew') use.push({ k: 'ritual' });
+    add(F, { id, name, sub, w, v, stack: stack ? 20 : ['tableware'].includes(sub) && w < 0.5 ? 10 : 1, rare, demand: dem,
+      ...(id === 'throne' || id === 'royalbed' ? {} : {}), src: [CR, ...(id === 'rag' ? [{ how: 'gather', on: ['town'], rate: 0.2 }] : [])], use,
+      make: { from, by, t: r(0.5 + v / 6, 1) }, ...(sub === 'light' ? { fx: { light: v >= 40 ? 3 : v >= 6 ? 2 : 1 } } : {}), desc });
+  }
+
+  // ---- 旅と野営 ----
+  const TV = [
+    ['waterskin', '革の水袋', 0.3, 3, { leather: 1 }, 'leatherworker', 3, { drink: 3 }, '一日分の水が入る革の袋。旅人の必需品。'],
+    ['gourdflask', '瓢箪の水筒', 0.2, 1, { gourd: 1 }, 'gatherer', 2, { drink: 2 }, '乾かした瓢箪の水筒。'],
+    ['tinflask', '錫の水筒', 0.4, 8, { tin_sheet: 1 }, 'smith', 1, { drink: 3 }, '栓の付いた錫の水筒。匂いが移らない。'],
+    ['bambooflask', '竹筒の水筒', 0.2, 1, { bamboo: 1 }, 'carpenter', 1, { drink: 2 }, '竹の節を底にした水筒。'],
+    ['wineskin', '酒袋', 0.3, 4, { leather: 1, tar: 1 }, 'leatherworker', 1, { drink: 3 }, '葡萄酒を入れる内側を塗った革袋。'],
+    ['tinderbox', '火打ち箱', 0.2, 3, { flint: 1, steel: 1, tinder: 1 }, 'smith', 3, {}, '火打ち石と火打ち金と火口を入れた小箱。野営の火を熾す。'],
+    ['torch', 'たいまつ', 0.5, 0.3, { wood: 1, rag: 1, tar: 1 }, 'carpenter', 3, { light: 2 }, '松脂を染ませた布を巻いた棒。半刻ほど燃える。', 10],
+    ['pinetorch', '松明の束', 0.6, 0.2, { pinewood: 2 }, 'woodcutter', 2, { light: 1 }, '脂の多い松の割り木の束。', 10],
+    ['smalltent', '小天幕', 4, 15, { sailcloth: 2, wood: 1, rope: 1 }, 'tailor', 1, {}, '二人が寝られる帆布の天幕。'],
+    ['bigtent', '大天幕', 20, 60, { sailcloth: 8, wood: 4, rope: 3 }, 'tailor', 1, {}, '隊商や冒険者の一行が泊まる大きな天幕。'],
+    ['wartent', '軍の天幕', 30, 90, { sailcloth: 10, wood: 6, rope: 4, dye: 1 }, 'tailor', 1, {}, '国の色に染めた将の天幕。軍議にも使う。'],
+    ['yurt', '遊牧民の天幕', 80, 120, { felt: 10, wood: 8, rope: 4 }, 'tribal_crafter', 1, {}, '毛氈で覆った丸い天幕。畳んで駱駝に積む。'],
+    ['bedroll', '毛布の寝具巻き', 2.5, 10, { woolcloth: 2, oilcloth: 1 }, 'tailor', 2, {}, '油布と毛布を重ねて丸めた寝具。'],
+    ['sleepingfur', '毛皮の寝袋', 4, 25, { hide: 3 }, 'furrier', 1, { warm: 2 }, '毛皮を袋に縫った寝袋。雪の上でも眠れる。'],
+    ['camppot', '野営鍋', 1.2, 6, { iron: 1 }, 'smith', 2, {}, '取っ手の付いた小さな鍋。三脚に吊るして煮炊きする。'],
+    ['tripod', '野営の三脚', 1.5, 4, { iron: 1 }, 'smith', 1, {}, '焚き火の上に鍋を吊るす鉄の三脚。'],
+    ['messkit', '旅の食器入れ', 0.5, 4, { tin_sheet: 1, leather: 1 }, 'smith', 2, {}, '椀・匙・小刀をひとまとめにした革の包み。'],
+    ['walkingstick', '旅人の杖', 0.8, 1, { wood: 1 }, 'carpenter', 2, { speed: 1.05 }, '長い道のりを支える杖。いざとなれば獣も追い払える。'],
+    ['compass', '羅針盤', 0.3, 50, { compassneedle: 1, brass: 1 }, 'smith', 1, { sight: 1 }, '磁針がいつも北を指す箱。船乗りと探検家の道具。'],
+    ['mapcase', '地図入れの筒', 0.3, 6, { leather: 1 }, 'leatherworker', 1, {}, '地図を濡らさずに持ち運ぶ筒。'],
+    ['grapnel', '鉤縄', 2, 12, { iron: 1, rope: 2 }, 'smith', 1, { climb: 1 }, '縄の先に鉤を付けたもの。城壁や崖を登る。'],
+    ['pitons', '登攀の鉄杭', 0.8, 5, { iron: 1 }, 'smith', 1, { climb: 1 }, '岩の割れ目に打ち込む杭。縄を通して崖を登る。', 10],
+    ['tarp', '油布の雨避け', 1.5, 8, { oilcloth: 2 }, 'tailor', 2, {}, '木の間に張って雨をしのぐ布。荷を覆ってもよい。'],
+    ['mosquitonet', '蚊帳', 0.5, 6, { linen: 2 }, 'tailor', 1, {}, '密林や沼で虫を防ぐ目の細かい網。熱病を避けられる。'],
+    ['whistle', '呼び子の笛', 0.02, 1, { brass: 1 }, 'smith', 1, {}, '仲間を呼び、危険を知らせる小さな笛。'],
+    ['signalhorn', '狼煙の筒', 1, 5, { bamboo: 1, saltpeter: 1 }, 'alchemist', 1, {}, '火を点けると色の付いた煙が上がる筒。遠くの仲間に知らせる。'],
+    ['folding_stool', '折り畳みの腰掛け', 2, 5, { wood: 2, leather: 1 }, 'carpenter', 1, {}, '野営や戦場で広げる脚が交差した腰掛け。'],
+    ['foodtin', '弁当箱', 0.3, 2, { willow: 1 }, 'basketweaver', 2, {}, '柳で編んだ弁当入れ。畑や旅に昼飯を持って行く。'],
+    ['firstaidpouch', '手当ての包み', 0.3, 5, { linen: 2, leather: 1 }, 'tailor', 2, {}, '包帯と添え木と糸をまとめた包み。旅先のけがに。'],
+    ['fishingkit', '旅の釣り具', 0.3, 4, { hemp: 1, iron: 1, wood: 1 }, 'carpenter', 1, {}, '糸と針と浮きを巻いた携帯の釣り具。野営の食料を得る。'],
+    ['snowgoggles_wood', '木の雪眼鏡', 0.05, 2, { wood: 1, leather: 1 }, 'carpenter', 1, {}, '細い切れ目の木の眼鏡。雪原で目を守る。'],
+    ['desertveil_travel', '旅の砂除け布', 0.2, 3, { cottoncloth: 1 }, 'tailor', 2, {}, '砂漠を越える旅人が顔と首に巻く布。'],
+  ];
+  for (const [id, name, w, v, from, by, dem, fx, desc, stack] of TV) {
+    const isDrink = fx.drink; const isLight = fx.light;
+    const f = { ...fx }; delete f.drink;
+    add(F, { id, name, sub: 'travel', w, v, stack: stack || 1, rare: 0, demand: dem, src: [CR],
+      use: [{ k: 'tool', note: isDrink ? '水や酒を持ち歩く' : isLight ? '暗い道や洞窟を照らす' : '旅と野営' }, ...(isLight ? [{ k: 'fuel' }] : [])],
+      make: { from, by, t: r(0.5 + v / 6, 1), ...(stack ? { n: 5 } : {}) },
+      ...(isDrink ? { eq: { slot: 'accessory', water: fx.drink } } : id === 'walkingstick' ? { eq: { slot: 'tool', jobs: ['wanderer', 'peddler', 'messenger', 'bard'], eff: 1.05 } } : id === 'torch' || id === 'pinetorch' ? { eq: { slot: 'tool', light: 1 } } : {}),
+      ...(Object.keys(f).length ? { fx: f } : {}), desc });
+  }
+}
