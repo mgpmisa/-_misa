@@ -91,7 +91,7 @@ export const KINDS = {
   },
   free: {
     label: '自由開拓民の村', title: '寄り合いの世話役', hall: ['tavern', '寄り合い所', 3, 2], extra: [['church', '小さな礼拝堂', 2, 2, { open: true }]],
-    laws: ['council', 'no_master', 'share'], jobs: { farmer: 6, woodcutter: 2, shepherd: 1, beekeeper: 1, carpenter: 1, hunter: 1, vguard: 2 },
+    laws: ['council', 'no_master', 'share'], jobs: { farmer: 6, woodcutter: 3, shepherd: 1, beekeeper: 1, hunter: 1, vguard: 2 },
     goods: ['wheat', 'wood', 'honey', 'wool'], wants: ['tools', 'cloth'],
     fams: ['フライ', 'ノイマン', 'ハーン', 'ベルク', 'ヴィント', 'アーデ', 'ロス', 'ミュラー'],
     names: ['自由村ヴァルトハイム', 'フライエンフェルト', '風見の開拓村', 'ノイラントの自由村'],
@@ -123,7 +123,7 @@ export const KINDS = {
   },
   inn: {
     label: '商人の宿場', title: '元締め', hall: ['tavern', '宿屋', 3, 3], extra: [['smithy', '蹄鉄屋', 2, 2]],
-    laws: ['trade_sacred', 'guest', 'pay_blood'], jobs: { innkeeper: 1, brewer: 1, farmer: 3, weaver: 1, carpenter: 1, tailor: 1, hunter: 1, vguard: 2 },
+    laws: ['trade_sacred', 'guest', 'pay_blood'], jobs: { innkeeper: 1, brewer: 1, farmer: 4, weaver: 1, tailor: 1, hunter: 1, vguard: 2 },
     goods: ['ale', 'cloth', 'furniture'], wants: ['wheat', 'ore'],
     fams: ['ヴィルト', 'ハンデル', 'ガスト', 'ヴェーク', 'ブルンネン', 'ザルツ', 'クレーマー'],
     names: ['渡り鳥の宿場', '泉の宿場', '塩の道の宿場', 'ミッテンの宿場'],
@@ -371,17 +371,17 @@ function assignKinds(sim, sites) {
     switch (kind) {
       case 'mine': return rock * 0.12;
       case 'hidden': return forest * 0.06 + (dTown > 140 ? 1 : 0);
-      case 'free': return grass * 0.05 + (nm.includes('自由') ? 3 : 0);
+      case 'free': return grass * 0.05 + (nm.includes('自由') ? 0.8 : 0);
       case 'abbey': return dTown * 0.01 + forest * 0.02;
       case 'merc': return (dBand < 120 ? 1.5 : 0) + rock * 0.03;
-      case 'inn': return water * 0.08 + (nm.includes('渡り鳥') ? 3 : 0) + (dTown < 150 ? 0.8 : 0);
+      case 'inn': return water * 0.08 + (nm.includes('渡り鳥') ? 0.8 : 0) + (dTown < 150 ? 0.8 : 0);
     }
     return 0;
   };
   const pool = ['hidden', 'free', 'mine', 'abbey', 'merc', 'inn'];
   const out = new Array(sites.length).fill(null);
   const pairs = [];
-  sites.forEach((fv, i) => { for (const k of pool) pairs.push({ i, k, sc: score(fv, k) + R.range(0, 1.6) }); });
+  sites.forEach((fv, i) => { for (const k of pool) pairs.push({ i, k, sc: Math.min(2, score(fv, k)) + R.range(0, 3) }); });
   pairs.sort((a, b) => b.sc - a.sc);
   const used = new Set();
   for (const pr of pairs) { if (out[pr.i] || used.has(pr.k)) continue; out[pr.i] = pr.k; used.add(pr.k); }
@@ -1081,9 +1081,9 @@ function upkeep(sim, V, s) {
   if (!alive(chief) || chief.s !== V.sid || chief.jail != null) chooseChief(sim, V, here, chief);
   const t = S.towns[V.sid];
   // 週に一度、暮らしに余裕のある家が村の蓄えに積み立てる（出どころ：家計 → 行き先：村の蓄え）
-  if (sim.today % 7 === 3) for (const hh of Object.values(S.households)) if (hh.s === V.sid && hh.money > 70 && !hh.bandits) { const x = (hh.money - 70) * 0.05; hh.money -= x; t.fund += x; }
-  // 村の守り手・傭兵への手当て（村の蓄え → 家計）
-  if (sim.today % 2 === 0) for (const p of here) if ((p.job === 'vguard') && t.fund > 15) xfer(acct(sim, 's' + V.sid), hhAcct(sim.hh(p)), 1.5);
+  if (sim.today % 7 === 3) for (const hh of Object.values(S.households)) if (hh.s === V.sid && hh.money > 40 && !hh.bandits) { const x = (hh.money - 40) * 0.06; hh.money -= x; t.fund += x; }
+  // 村の守り手への手当て（村の蓄え → 家計）。蓄えに余裕があるときだけ
+  if (sim.today % 3 === 0 && t.fund > 60) for (const p of here) if (p.job === 'vguard') xfer(acct(sim, 's' + V.sid), hhAcct(sim.hh(p)), 1.5);
   // 飢えの見張り
   const pop = Math.max(1, here.length);
   const food = Object.values(S.households).filter((h) => h.s === V.sid).reduce((a, h) => a + (h.food || 0), 0) + (t.stock.wheat || 0) * 0.5 + (t.stock.bread || 0) + (t.stock.meat || 0) + (t.stock.fish || 0);
@@ -1207,19 +1207,19 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     // 盗み
     if (!iAmTown || tq.kind !== 'kingdom') {
       const wealth = (sim._vRich?.get(tsid) || 0) > 2 ? 0.3 : -1;
-      const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 3.2 + R.range(-0.3, 0.3);
+      const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 2.5 + R.range(-0.3, 0.3);
       out.push({ p, deed: 'steal', to: tsid, sc, why: need || starving ? 'need' : 'greed', spotFn: () => sim.randomNear(ts.x, ts.z, Math.max(2, ts.r - 2)) || { x: ts.x, z: ts.z } });
     }
     // 密猟（狩人・薬草摘み・飢えた村）
     if (['hunter', 'gatherer', 'mercenary', 'charcoal'].includes(p.job) || hungry) {
-      const sc = (p.job === 'hunter' ? 0.7 : 0.2) + (hungry ? 0.8 : 0) + need * 0.6 + (1 - p.pers.C) * 0.5 - f / 70 - far * 1.2 - 2.3 + R.range(-0.3, 0.3);
+      const sc = (p.job === 'hunter' ? 0.7 : 0.2) + (hungry ? 0.8 : 0) + need * 0.6 + (1 - p.pers.C) * 0.5 - f / 70 - far * 1.2 - 1.7 + R.range(-0.3, 0.3);
       out.push({ p, deed: 'poach', to: tsid, sc, spotFn: () => sim.randomNear(ts.x, ts.z, ts.r + 12, (t, x, z) => Math.max(Math.abs(x - ts.x), Math.abs(z - ts.z)) > ts.r + 4 && (t === T.FOREST || t === T.GRASS || t === T.SAVANNA || t === T.DENSE || t === T.SNOW)) });
     }
     // 聖地荒らし（民族の祠・町の教会）
     if (tq.kind === 'tribal' || (tq.kind === 'kingdom' && !iAmTown)) {
       const shrine = tq.kind === 'tribal' ? sim.building(tq.TV?.shrine) : sim.townBuilding(ts, 'church');
       if (shrine) {
-        const sc = p.pers.O * 0.7 + (1 - p.values.faith) * 1.3 + bad * 0.6 + p.values.ambition * 0.3 + need * 0.5 - f / 60 - far - 3.6 + R.range(-0.3, 0.3);
+        const sc = p.pers.O * 0.7 + (1 - p.values.faith) * 1.3 + bad * 0.6 + p.values.ambition * 0.3 + need * 0.5 - f / 60 - far - 3.0 + R.range(-0.3, 0.3);
         out.push({ p, deed: 'sacrilege', to: tsid, sc, spot: { x: shrine.door.x, z: shrine.door.z }, data: { bid: shrine.id } });
       }
     }
@@ -2609,6 +2609,25 @@ export function moneyTotal(sim) {
 }
 // 事件をじかに起こす（試験用）
 export function startVillageIncident(sim, o) { return openIncident(sim, o); }
+// 試験用：いま各町で、いちばんしたいこと（実行はしない）
+export function peekDeeds(sim) {
+  const S = sim.S, X = XV(sim), out = [];
+  const actorSids = new Set();
+  for (const V of X.list) if (V.state !== 'ruin') { actorSids.add(V.sid); const near = nearestTownOf(sim, V); if (near) actorSids.add(near.id); }
+  for (const TV of S.tribes?.villages || []) if (!TV.gone) actorSids.add(TV.sid);
+  const villageSids = [...actorSids].filter((sid) => isVillageKey(sim, partyKeyOfSid(sim, sid)));
+  const rich = new Map();
+  for (const h of Object.values(S.households)) if (h.money > 30 && h.house != null) rich.set(h.s, (rich.get(h.s) || 0) + 1);
+  sim._vRich = rich;
+  for (const sid of actorSids) {
+    const pk = partyKeyOfSid(sim, sid);
+    const people = sim.living().filter((p) => p.s === sid && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 50 && p.jail == null && p.job !== 'vchief');
+    const by = {};
+    for (const p of people) for (const o of deedOptions(sim, p, pk, sid, false, villageSids)) if (!by[o.deed] || o.sc > by[o.deed].sc) by[o.deed] = o;
+    out.push({ sid, name: sim.town(sid).name, best: Object.values(by).map((o) => `${o.deed}:${o.sc.toFixed(2)}`) });
+  }
+  return out;
+}
 export function startVillageRaid(sim, from, toKey, kind = 'raid') { return startRaid(sim, from, toKey, kind, null); }
 export function villageRuin(sim, vid, byKey = null) { const V = XV(sim).list[vid]; if (!V) return; for (const hh of Object.values(sim.S.households).filter((h) => h.s === V.sid && h.members.length)) refugeeHousehold(sim, V, hh, '村が滅びて'); ruin(sim, V, byKey); }
 export { partyKeyOfSid, P as villageParty };

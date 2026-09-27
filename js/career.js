@@ -184,10 +184,11 @@ export function initCareer(sim) {
     const hh = sim.hh(p);
     const years = clamp((age - 18) / 12, 0, 1.5);
     const want = Math.round(Math.min(plan.need * 0.95, plan.need * R.range(0.05, 0.85) * years));
-    let got = Math.min(want * 0.3, Math.max(0, (p.purse || 0) - 3));
+    // これまでに貯めてきた分：財布と家計から実際に取り分ける（お金を湧かせない）
+    let got = Math.min(want * 0.5, Math.max(0, (p.purse || 0) - 3));
     p.purse = (p.purse || 0) - got;
-    if (hh && hh.money > 80) { const x = Math.min(want * 0.2, (hh.money - 80) * 0.25); hh.money -= x; got += x; }
-    plan.saved = Math.round(Math.max(got, want * R.range(0.6, 1)));
+    if (hh && hh.money > 60) { const x = Math.min(want * 0.5, (hh.money - 60) * 0.35); hh.money -= x; got += x; }
+    plan.saved = got;
     plan.since = sim.today - R.int(0, DAYS_PER_YEAR * 2);
   }
 }
