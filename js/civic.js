@@ -335,8 +335,8 @@ function layTile(sim, job, p) {
   const mat = t === T.RIVER ? 'wood' : 'stone';
   const m = sim.market(job.s);
   const need = t === T.RIVER ? 3 : 1;
-  if (m.stock[mat] >= need) { m.stock[mat] -= need; if (k) k.treasury -= need * m.price[mat]; }
-  else if (k) k.treasury -= need * GOODS[mat].base * 1.5;   // 足りない材料は国庫で遠くから取り寄せる
+  if (m.stock[mat] >= need) { m.stock[mat] -= need; if (k) { const c = need * m.price[mat]; k.treasury -= c; sim.mcash(job.s).cash += c; } }   // 材料の代金は市場の金庫へ
+  else if (k) { const c = need * GOODS[mat].base * 1.5; k.treasury -= c; const L = sim.S.ledger = sim.S.ledger || { seed: 0, outside: 0 }; L.outside -= c; }   // 足りない材料は国の外から取り寄せる（お金は世界の外へ出ていく）
   if (t === T.RIVER) w.tiles[i] = T.BRIDGE;
   else if (t !== T.BLD && t !== T.WALL && t !== T.FENCE && !isWater(t)) w.tiles[i] = T.ROAD;
   const c = cache(w); c.net = null;

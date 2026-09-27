@@ -91,6 +91,7 @@ export class Sim {
     this.slimDead();
     ensureExpansion(this);
     initTribes(this);
+    this.seedMarkets();
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
     return this;
@@ -115,6 +116,7 @@ export class Sim {
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     ensureExpansion(this);
     ensureTribes(this);
+    this.seedMarkets();
     computeDanger(this);
     return true;
   }
@@ -444,7 +446,13 @@ export class Sim {
   price(g, sid = 0) { return Math.max(1, Math.round(this.S.towns[sid].price[g])); }
   priceRatio(g, sid = 0) { return this.S.towns[sid].price[g] / GOODS[g].base; }
   // 市場の金庫：売り手への支払いはここから出て、買い手の代金はここに入る（お金は湧かず消えない）
-  mcash(sid) { const m = this.S.towns[sid]; if (m.cash == null) m.cash = 800; return m; }
+  // 市場の金庫。世界ができたとき（古いセーブは読み込んだとき）だけ、元手800銅貨を置く（S.ledger.seed に記録）。
+  // あとから開かれた町の市場は元手0から始まり、売り買いの代金だけでふくらむ
+  mcash(sid) { const m = this.S.towns[sid]; if (m.cash == null) m.cash = 0; return m; }
+  seedMarkets() {
+    const L = this.S.ledger = this.S.ledger || { seed: 0, outside: 0 };
+    for (const s of this.S.world.settlements) { const m = this.S.towns[s.id]; if (m && m.cash == null) { m.cash = 800; L.seed += 800; } }
+  }
   marketHasFood(sid) { const m = this.S.towns[sid]; return ['bread', 'fish', 'wheat', 'meat'].some((g) => m.stock[g] >= 1); }
   updatePrices() {
     for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {

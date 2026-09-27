@@ -48,7 +48,7 @@ function policyFor(sim, k, prev = null) {
     kingId: k.kingId,
     lv: prev ? prev.lv : r1(0.8 + greed * 0.6),     // 税の重さの水準（1.0 が標準）
     greed,
-    poll: 2 + (k.id % 2 ? 0.5 : 0),                  // 成人一人あたり（銅貨・徴税日ごと）
+    poll: 3 + (k.id % 2 ? 0.5 : 0),                  // 成人一人あたり（銅貨・徴税日ごと）
     land: 0.8 + land * 0.15,                         // 家と畑の値打ちの %（徴税日ごと）
     sales: 0.07 + (cap?.type === 'capital' ? 0.01 : 0), // 職人・商人のもうけの割合
     toll: 0.06 + ports * 0.03,                       // 他国から入る荷の値打ちの割合
@@ -738,7 +738,17 @@ export function taxesDaily(sim) {
     const king = S.people[k.kingId];
     // 王領（直轄地）からの上がり：旧 politics の基本収入 30＋町×10 をここに移した
     const towns = S.world.settlements.filter((s) => s.kingdom === k.id);
-    const crown = 30 + towns.filter((s) => !S.towns[s.id].occupied).length * 10;
+    // 王の直轄の畑・森・牧場の産物を町の市場に卸し、その代金を市場の金庫から受け取る（お金は湧かない）
+    let crown = 0;
+    for (const s of towns) {
+      if (S.towns[s.id].occupied || (s.tribal && s.annexed == null)) continue;
+      const want = s.id === k.capital ? 30 : 10, mc = sim.mcash(s.id), m = sim.market(s.id);
+      const g = s.type === 'port' ? 'fish' : s.type === 'village' ? 'wheat' : 'wood';
+      const price = Math.max(0.5, m.price[g] || 2);
+      const amt = Math.max(0, Math.min(want, mc.cash * 0.05));
+      if (amt < 0.5) continue;
+      mc.cash -= amt; m.stock[g] = (m.stock[g] || 0) + amt / price; crown += amt;
+    }
     k.treasury += crown; k.fisc.dayIn += crown; k.fisc.cur.crown += crown;
     kingPolicy(sim, k);
     royalBounty(sim, k);
