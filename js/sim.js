@@ -47,6 +47,7 @@ import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, bui
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
+import { ensureCarry, carryHourly, carryDaily, carryDecide, carryArrive, carryWork, carryWorkMul, carryWalk, carryLoot, carryTreasure, carryDungeon } from './carry.js';
 import { ensureLedger, ledgerDaily, moneyIn, flow, meal, newcomerMoney } from './ledger.js';
 import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCandidates, marketArrive, marketDaily, marketHourly } from './market.js';
 import { accrueWage, paydayDaily } from './payday.js';
@@ -107,6 +108,7 @@ export class Sim {
     initTribes(this);
     initVillages(this);
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
+    ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
     this.seedMarkets();
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
@@ -134,6 +136,7 @@ export class Sim {
     ensureTribes(this);
     ensureVillages(this);
     ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
+    ensureCarry(this); // 古いセーブ：持ち物の重さと枠・袋やかご
     this.seedMarkets();
     computeDanger(this);
     return true;
@@ -689,6 +692,7 @@ export class Sim {
     marketCandidates(this, p, add);
     matterCandidates(this, p, add);   // 世界の物を、欲求に合わせて選んで買う（matter.js）
     gearCandidates(this, p, add);
+    carryDecide(this, p, add);   // 袋やかごを買う・荷を置きに戻る・倉庫に預ける・力を鍛える（carry.js）
     laborCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
     healthDecide(this, p, cands, add);
@@ -939,6 +943,7 @@ export class Sim {
     civicArrive(this, p, a);
     buildingsArrive(this, p, a);
     gearArrive(this, p);
+    carryArrive(this, p);
     laborArrive(this, p);
     needsArrive(this, p, a);
     marketArrive(this, p, a);   // 市場で品を売る・市の露店（market.js）
@@ -1007,11 +1012,12 @@ export class Sim {
     if (tool) gearWearTool(this, p, tool, hr);
     const si = this.seasonIdx();
     const sm = [0.9, 1.3, 2.4, 0.25][si] * (this.hasTech(p, 'rotation') ? 1.25 : 1) * harvestMul(this, p.s);
-    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p) * laborWorkMul(p);
+    const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p) * laborWorkMul(p) * carryWorkMul(p);   // 仕事の袋やかごがないと運べる量が減る（carry.js）
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
     matterWork(this, p, dt, eff);   // 世界の物を採る・作る（matter.js）
     if (tribeWork(this, p, dt, eff)) return; // 民族の里：とれた物は家の蔵と里の蓄えへ（売らない・お金は動かない）
+    if (carryWork(this, p, dt, eff)) return; // かご編み・縄ない・袋縫い・革細工・荷運びと、麻・藁・柳などの素材（carry.js）
     switch (p.job) {
       case 'farmer': {
         // 収穫した麦は家の蔵へ（小作は地主に麦で納める）。家の食べ物が足りなければ、そのまま自炊にまわす
@@ -1511,15 +1517,17 @@ export class Sim {
           if (this.hh(p)) this.hh(p).money += gold; else p.purse = (p.purse || 0) + gold;
           p.needs.esteem = Math.min(100, p.needs.esteem + 30);
           let txt = `${b.name}を探索して${gold}銅貨ぶんの戦利品を持ち帰った`;
-          if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) addItem(p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk']))); gearDungeonLoot(this, p, b); autoEquip(p); Object.assign(p, humanStats(this, p)); }
+          if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) carryLoot(this, p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk'])), b); gearDungeonLoot(this, p, b); carryDungeon(this, p, b); autoEquip(p); Object.assign(p, humanStats(this, p)); }
           if (b.type !== 'hideout' && R.chance(0.06 + (b.type === 'pyramid' ? 0.08 : 0) + advTreasureBonus(this, p))) {
             const item = R.pick(TREASURE_ITEMS);
-            (p.treasures = p.treasures || []).push(item);
+            if (!carryTreasure(this, p, item, b)) txt = `${b.name}の奥で「${item}」を見つけたが、重くて持ち帰れなかった`;   // 持ちきれない宝は置いてくる（carry.js）
+            else {
             txt = `${b.name}の奥で「${item}」を見つけた`;
             p.fame += 15;
             this.gossip(p, `${b.name}で「${item}」を見つけた`, 0.6, this.living().filter((x) => x.s === p.s), { congrat: 'すごいお宝を見つけたんだってね' });
             this.news(`冒険者${p.given}が${b.name}で「${item}」を発見`, 2, b.door);
             if (item === 'ファラオの黄金仮面') p.curse = 'pharaoh';
+            }
           }
           if (b.type === 'hideout') {
             b.bounty = 0;
@@ -1542,8 +1550,9 @@ export class Sim {
   }
 
   walk(p, dt) {
+    const cm = carryWalk(this, p); if (!cm) return;   // 持てる重さを超えたら歩けない。立ち止まって荷を下ろす（carry.js）
     const age = this.ageOf(p);
-    let speed = (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' || p.action.type === 'rescue' || p.action.type === 'alert' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p);
+    let speed = cm * (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' || p.action.type === 'rescue' || p.action.type === 'alert' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p);
     const w = this.S.world;
     while (speed > 0 && p.path.length) {
       const t = p.path[0];
@@ -1817,6 +1826,7 @@ export class Sim {
     financeHourly(this);
     marketHourly(this);   // 終わった市の露店を片づける
     divineHourly(this);
+    carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
   }
 
   newDay() {
@@ -1939,6 +1949,7 @@ export class Sim {
     politicsDaily(this);
     taxesDaily(this);
     gearDaily(this);
+    carryDaily(this);    // 袋の傷み・荷獣の餌・倉庫代・職人と荷運びの募集（carry.js）
     expansionDaily(this);
     tribesDaily(this);
     villagesDaily(this);

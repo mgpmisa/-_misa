@@ -474,7 +474,7 @@ export function killCreature(sim, c, killer) {
     const p = killer;
     p.xp = (p.xp || 0) + Math.round(def.hp / 3 + c.lv * 5); sim.levelCheck(p);
     const hh = sim.hh(p);
-    matterHunt(sim, hh, c.sp, p.s);   // 部位ごとの物（matter.js）
+    matterHunt(sim, hh, c.sp, p.s, p);   // 部位ごとの物（matter.js）。仕留めた人が持って帰る（carry.js）
     for (const d of DROPS[c.sp] || []) if (sim.rng.chance(d === 'scale' || d === 'horn' || d === 'demoncore' ? 0.9 : 0.6)) splitLoot(sim, p, addItem(p, d === 'gemx' ? makeItem('magicstone') : makeItem(d)));
     if (!def.monster) {
       const meat = Math.max(1, Math.round(def.size * 3));

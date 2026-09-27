@@ -4,7 +4,7 @@ import { landlords as landlordList } from './perf.js';
 import { JOBS } from './data.js';
 import { lodgingKeeper } from './buildings.js';
 import { distrain } from './shops.js';
-import { ITEMS, addItem, autoEquip, itemName, itemValue } from './items.js';
+import { ITEMS, addItem, autoEquip, itemName, itemValue, carryHooks } from './items.js';
 
 const TOWN_MUL = { capital: 1.6, port: 1.2, village: 0.8 };
 
@@ -277,7 +277,7 @@ export function inherit(sim, p) {
   }
   heir.purse = (heir.purse || 0) + purse;
   const best = inv.filter((it) => ITEMS[it.id]?.type !== 'material').sort((a, b) => itemValue(b) - itemValue(a))[0];
-  for (const it of inv) addItem(heir, it);
+  for (const it of inv) { if (carryHooks.inherit) carryHooks.inherit(sim, heir, it); else addItem(heir, it); }
   p.inv = []; p.eq = {};
   autoEquip(heir);
   p.estate = { to: heir.id, purse, items: inv.length };

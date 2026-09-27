@@ -89,16 +89,18 @@ export function itemValue(it) {
 }
 
 // 所持品を扱う
+// carryHooks：持ち物の重さと枠（carry.js）が差し込む口。add はあふれた品の置き場所を決める（黙って消さない）
+export const carryHooks = { add: null, inherit: null, tradeQty: null };
 export function addItem(p, it) {
   p.inv = p.inv || [];
   const d = ITEMS[it.id];
   if (d && ['material', 'consumable'].includes(d.type)) {
     const same = p.inv.find((x) => x.id === it.id);
-    if (same) { same.n = (same.n || 1) + (it.n || 1); return same; }
+    if (same) { same.n = (same.n || 1) + (it.n || 1); carryHooks.add?.(p, same, true); return same; }
     it.n = it.n || 1;
   }
+  if (carryHooks.add) { const placed = carryHooks.add(p, it, false); if (placed) return placed; }   // 枠を超える品は入れかえるか、家の蔵か地面へ
   p.inv.push(it);
-  if (p.inv.length > 24) p.inv.splice(0, p.inv.length - 24);
   return it;
 }
 export function countItem(p, id) { return (p.inv || []).filter((x) => x.id === id).reduce((s, x) => s + (x.n || 1), 0); }

@@ -41,6 +41,7 @@ import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 import { advClassRows, advClassName } from './advclass.js';
 import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
+import { carryHtml, carryMarks, CARRY_LABEL, CARRY_GO, CARRY_PREF } from './carry.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const $ = (id) => document.getElementById(id);
@@ -80,6 +81,7 @@ Object.assign(ACTION_LABEL, BLD_LABEL); Object.assign(ACTION_GO, BLD_GO); Object
 Object.assign(ACTION_LABEL, MARKET_LABEL); Object.assign(ACTION_GO, MARKET_GO); Object.assign(PREF_LABEL, MARKET_PREF);
 Object.assign(ACTION_LABEL, MATTER_LABEL); Object.assign(ACTION_GO, MATTER_GO); Object.assign(PREF_LABEL, MATTER_PREF);
 Object.assign(ACTION_LABEL, NEEDS_LABEL); Object.assign(ACTION_GO, NEEDS_GO); Object.assign(PREF_LABEL, NEEDS_PREF);
+Object.assign(ACTION_LABEL, CARRY_LABEL); Object.assign(ACTION_GO, CARRY_GO); Object.assign(PREF_LABEL, CARRY_PREF);
 for (const t of Object.keys(BLD_TYPE_LABEL)) INTERIOR_TYPES.add(t);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const JA_ORDER = new Intl.Collator('ja');   // 名前の並べ替え（localeCompare を毎回作らない。並びは同じ）
@@ -297,6 +299,7 @@ export class UI {
       placed.push({ x, y, w, h });
       it.b.el.style.left = `${x}px`; it.b.el.style.top = `${y}px`;
     }
+    carryMarks(this);   // 重すぎる人の頭の上に「荷が重い」（carry.js）
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       const f = this.floaters[i];
       if (now > f.until) { f.el.remove(); this.floaters.splice(i, 1); continue; }
@@ -672,8 +675,9 @@ export class UI {
       const inv = (p.inv || []).filter((it) => !Object.values(eq).includes(it));
       const worth = (p.inv || []).reduce((s2, it) => s2 + itemValue(it), 0);
       h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}${gearItemNote(eq[k]) ? `<br><span class="sub">${esc(gearItemNote(eq[k]))}</span>` : ''}</dd>` : '').join('')}
-        <dt>持ち物</dt><dd>${inv.map((it) => esc(itemName(it))).join('、') || 'なし'}</dd>${p.treasures?.length ? `<dt>宝物</dt><dd>${p.treasures.map(esc).join('、')}</dd>` : ''}
+
         <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${wageText(sim, p) ? `<dt>給金</dt><dd>${esc(wageText(sim, p))}</dd>` : ''}${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
+      h += carryHtml(sim, p, esc);   // 持ち物：品・数・重さ、重さと枠、身に付けた袋、家の蔵、倉庫（carry.js）
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;

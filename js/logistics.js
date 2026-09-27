@@ -6,6 +6,7 @@ import { W, H, T, MinHeap, walkable, MOVE_COST } from './world.js';
 import { tariffConvoy } from './taxes.js';
 import { paidAtGate } from './diplomacy.js';
 import { GOODS, JOBS } from './data.js';
+import { carryHooks } from './items.js';
 import { dangerAt } from './danger.js';
 import { around } from './creatures.js';
 import { startFight, markWanted } from './society.js';
@@ -228,7 +229,7 @@ export function startTradeConvoy(sim, p, tr) {
     if (!path || path.length < 4) { p._tradeCd = S.t + 600; return false; }
   }
   const g = tr.good;
-  const qty = Math.min(kind === 'ship' ? 20 : 10, Math.floor(from.stock[g] / 2), Math.floor(hh.money / Math.max(0.1, from.price[g])));
+  const qty = Math.min(kind === 'ship' ? 20 : carryHooks.tradeQty ? carryHooks.tradeQty(sim, p, 10, g) : 10, Math.floor(from.stock[g] / 2), Math.floor(hh.money / Math.max(0.1, from.price[g])));
   if (qty <= 0) { p._tradeCd = S.t + 240; return false; }
   const cost = qty * from.price[g];
   if (marketBuy(sim, p.s, g, qty, hh, { force: true }) < qty - 1e-6) { p._tradeCd = S.t + 240; return false; }   // 代金は出発地の品の持ち主（商人・作り手）へ

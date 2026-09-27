@@ -92,6 +92,15 @@ function record(sim, id, ctx = {}) {
   if (D.q.length > 300) D.q.splice(0, D.q.length - 300);
 }
 
+// 出来事の欄に1行（名前を押せる）。imp が1以上なら速報にも出す（sim.news は同じ文を出来事の欄にもう1行書くので、ここでは速報の列にだけ積む）
+function tell(sim, text, ids, pos, imp) {
+  sim.pushLog(text, 'event', ids, pos);
+  if (!imp) return;
+  const S = sim.S, n = { t: S.t, text, imp, x: pos?.x, z: pos?.z };
+  (S.news || (S.news = [])).push(n);
+  if (S.news.length > 80) S.news.shift();
+  sim.events.push({ type: 'news', entry: n });
+}
 function dayName(d) {
   const doy = ((d % DAYS_PER_YEAR) + DAYS_PER_YEAR) % DAYS_PER_YEAR;
   return `${SEASONS[Math.floor(doy / DAYS_PER_SEASON)]}${(doy % DAYS_PER_SEASON) + 1}日`;
@@ -100,8 +109,7 @@ function flushDay(sim, D) {
   if (D.day >= 0 && D.names.length && D.dayN > D.shown) {
     const rest = D.dayN;
     const txt = `${dayName(D.day)}、この世界で新しく${rest}種類の物が見つかった（${D.names.slice(0, 4).map((n) => `〈${n.name}〉`).join('')}${rest > 4 ? 'など' : ''}）`;
-    sim.pushLog(txt, 'event', []);
-    if (rest >= 5) sim.news(txt, 1);
+    tell(sim, txt, [], null, rest >= 5 ? 1 : 0);
     sim.events.push({ type: 'discover', entry: { text: txt, mat: D.names[0]?.id, sum: true } });
     D.summaries = (D.summaries || 0) + 1;
   }
@@ -124,8 +132,7 @@ export function discoveryHourly(sim) {
     if (hour < PER_HOUR && D.shown < PER_DAY) {
       hour++; D.shown++; D.told++;
       const text = `新発見！ ${e.text}`;
-      sim.pushLog(text, 'event', e.pid != null ? [e.pid] : [], e.x != null ? { x: e.x, z: e.z } : null);
-      if (e.rare >= 2) sim.news(text, e.rare >= 3 ? 2 : 1, e.x != null ? { x: e.x, z: e.z } : null);
+      tell(sim, text, e.pid != null ? [e.pid] : [], e.x != null ? { x: e.x, z: e.z } : null, e.rare >= 3 ? 2 : e.rare >= 2 ? 1 : 0);
       sim.events.push({ type: 'discover', entry: { text, pid: e.pid, mat: e.id, who: e.who, name } });
       const p = e.pid != null ? sim.S.people[e.pid] : null;
       if (p && p.deathYear == null && p.memories) sim.remember(p, `この世界で誰も手にしたことのない${name}を、初めて手に入れた`, { emo: 0.7, imp: 0.6, k: 'discover' });

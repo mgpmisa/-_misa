@@ -26,7 +26,7 @@
 //   目安の値打ち v × 物価の水準 ×（在庫と需要）×（めずらしさで幅が広がる）× 季節 × 有限な物の残り
 // ■ 図鑑：S.matter.seen に、世界で初めて手に入れた日を記録する
 import { GOODS, JOBS, SPECIES, DAYS_PER_SEASON } from './data.js';
-import { ITEMS, makeItem, addItem, autoEquip } from './items.js';
+import { ITEMS, makeItem, addItem, autoEquip, carryHooks } from './items.js';
 import { T, W, H, tileAt } from './world.js';
 import { marketBuy, marketDeliver, ownStock, stash, personPayer, merchantsOf } from './market.js';
 import { moneyOut, flow, meal } from './ledger.js';
@@ -228,9 +228,10 @@ function pickWeighted(R, list, ok) {
   return null;
 }
 const sround = (R, q) => { const f = Math.floor(q); return f + (R.next() < q - f ? 1 : 0); };
-function give(sim, hh, sid, id, q, how) {
+function give(sim, hh, sid, id, q, how, p = null) {
   if (!hh || q <= 0) return 0;
-  stash(sim, hh, id, q);
+  const home = p && carryHooks.carry ? carryHooks.carry(sim, p, id, q, how) : q;   // 持ち物に入れる。家の中なら家の蔵へ（carry.js）
+  if (home > 0) stash(sim, hh, id, home);
   markSeen(sim, id);
   const M = MS(sim); M.stats.got += q; M.byHow[how] = (M.byHow[how] || 0) + q;
   return q;
@@ -255,7 +256,7 @@ export function matterWork(sim, p, dt, eff) {
       let q = sround(R, x.rate * Math.min(1.5, Math.max(0.4, eff * 1.6)));
       q = Math.min(q, 8);
       q = Math.floor(resOk(sim, p.s, it, q));
-      if (q > 0) { resTake(sim, p.s, it, q); give(sim, hh, p.s, x.id, q, 'work'); }
+      if (q > 0) { resTake(sim, p.s, it, q); give(sim, hh, p.s, x.id, q, 'work', p); }
     }
   }
   // 作る
@@ -324,7 +325,7 @@ function makeOne(sim, sid, hh, it) {
 }
 
 // ---------- 狩り・家畜・宝 ----------
-export function matterHunt(sim, hh, sp, sid) {
+export function matterHunt(sim, hh, sp, sid, who = null) {
   if (!hh) return;
   const R = sim.rng;
   for (const x of SRC.get('hunt:' + sp) || []) {
@@ -333,7 +334,7 @@ export function matterHunt(sim, hh, sp, sid) {
     if (q <= 0) continue;
     q = Math.floor(resOk(sim, sid, it, q)); if (q <= 0) continue;
     resTake(sim, sid, it, q);
-    give(sim, hh, sid, x.id, q, 'hunt');
+    give(sim, hh, sid, x.id, q, 'hunt', who);
     MS(sim).stats.hunt += q;
   }
 }
@@ -347,7 +348,7 @@ export function matterLoot(sim, p, place) {
     if (!x) break;
     const it = MAT.get(x.id);
     resTake(sim, p.s, it, 1);
-    give(sim, hh, p.s, x.id, 1, 'loot');
+    give(sim, hh, p.s, x.id, 1, 'loot', p);
     MS(sim).stats.loot++;
     got.push(it.name);
   }

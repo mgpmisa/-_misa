@@ -41,8 +41,8 @@ import { advClassName } from './advclass.js';
 // every：何時間ごとに生むか（力が弱ると間があく）、cap：同時に生きていられる子の数、lv：生まれる魔物の強さ
 const LEVELS = {
   cave: [
-    { depth: 1, sp: ['goblin', 'goblin', 'spider'], every: 20, cap: 3, lv: [1, 2] },
-    { depth: 2, sp: ['skeleton', 'spider', 'goblin'], every: 34, cap: 2, lv: [2, 3] },
+    { depth: 1, sp: ['goblin', 'goblin', 'spider'], every: 22, cap: 2, lv: [1, 2] },
+    { depth: 2, sp: ['skeleton', 'spider', 'goblin'], every: 40, cap: 2, lv: [2, 3] },
     { depth: 3, sp: ['skeleton', 'orc'], every: 70, cap: 1, lv: [3, 5] },
   ],
   dragon: [
@@ -50,16 +50,16 @@ const LEVELS = {
     { depth: 2, sp: ['wyvern'], every: 140, cap: 1, lv: [1, 2] },
   ],
   pyramid: [
-    { depth: 1, sp: ['mummy', 'scorpion', 'mummy'], every: 24, cap: 3, lv: [1, 2] },
-    { depth: 2, sp: ['mummy'], every: 48, cap: 2, lv: [3, 4] },
+    { depth: 1, sp: ['mummy', 'scorpion', 'mummy'], every: 26, cap: 2, lv: [1, 2] },
+    { depth: 2, sp: ['mummy'], every: 56, cap: 1, lv: [3, 4] },
   ],
   ruins: [
-    { depth: 1, sp: ['slime', 'goblin', 'slime'], every: 24, cap: 3, lv: [1, 2] },
+    { depth: 1, sp: ['slime', 'goblin', 'slime'], every: 26, cap: 2, lv: [1, 2] },
     { depth: 2, sp: ['skeleton', 'golem'], every: 56, cap: 1, lv: [2, 3] },
   ],
   demoncastle: [
-    { depth: 1, sp: ['imp'], every: 22, cap: 3, lv: [1, 2] },
-    { depth: 2, sp: ['imp', 'demonsoldier'], every: 50, cap: 2, lv: [1, 2] },
+    { depth: 1, sp: ['imp'], every: 26, cap: 2, lv: [1, 2] },
+    { depth: 2, sp: ['imp', 'demonsoldier'], every: 60, cap: 1, lv: [1, 2] },
   ],
 };
 // 国の中（開拓済み）のダンジョンは浅い層まで。未開の地の巣窟は深い層まであり、少し強い
@@ -126,6 +126,7 @@ function note(sim, text) {
   if (P.log.length > 14) P.log.length = 14;
 }
 const isSealed = (sim, sp) => (sp.sealedUntil != null && sim.today < sp.sealedUntil) || !!sim.building(sp.bld)?.sealed;
+const siteCap = (sim, site) => site.spawners.reduce((a, id) => a + capOf(sim.S.spawner.list[id]), 0);
 const capOf = (sp) => Math.max(1, Math.round(sp.cap * (1 + Math.min(GROW_MAX, sp.grow)) * Math.max(0.34, sp.power)));
 
 // ---------- 町の見つけ方 ----------
@@ -180,16 +181,18 @@ export function spawnerHourly(sim) {
   const S = sim.S, R = sim.rng;
   const P = ensureSpawner(sim);
   // 湧き口ごとの生きている子と、うろつき・荒らしの見回り
-  const count = {};
+  const count = {}, siteN = {};
   let hostileN = 0;
   for (const c of Object.values(S.creatures)) {
     if (c.hp <= 0) continue;
     if (hostileKind(c)) hostileN++;
     if (c.spawner) count[c.spawner] = (count[c.spawner] || 0) + 1;
+    const home = c.spawnSite ?? c.lair;
+    if (home != null && hostileKind(c) && !c.dormant) siteN[home] = (siteN[home] || 0) + 1;
     if (c.prowl) prowlStep(sim, c);
   }
   // 世界が魔物であふれそうなとき・人が大きく減ったときは、湧き口は静まる（安全弁）
-  const crowded = hostileN > (P.base || 100) * 1.9;
+  const crowded = hostileN > (P.base || 100) * 1.6;
   const hurt = sim.living().length < (P.pop0 || 1) * 0.85;
   for (const sp of Object.values(P.list)) {
     sp.alive = count[sp.id] || 0;
@@ -202,7 +205,10 @@ export function spawnerHourly(sim) {
     sp.next = S.t + sp.every * 60 * slow * R.range(0.8, 1.2);
     if (crowded) { stat(sim, 'pausedCrowded'); continue; }
     if (sp.alive >= capOf(sp)) continue;
-    if (spawnOne(sim, sp, b)) sp.alive++;
+    // ダンジョン全体の住人（もとから棲む魔物も含む）が多すぎるときも生まない
+    const site = P.sites[sp.bld];
+    if (site && (siteN[sp.bld] || 0) >= siteCap(sim, site) + 2) continue;
+    if (spawnOne(sim, sp, b)) { sp.alive++; siteN[sp.bld] = (siteN[sp.bld] || 0) + 1; }
   }
   for (const h of P.hordes.slice()) hordeStep(sim, h);
   departures(sim);
@@ -390,17 +396,19 @@ function computeThreat(sim) {
   const S = sim.S, P = S.spawner;
   const sites = Object.values(P.sites).map((site) => ({ site, b: sim.building(site.bid), sum: 0, n: 0 })).filter((x) => x.b);
   for (const c of Object.values(S.creatures)) {
-    if (c.hp <= 0 || c.dormant || !hostileKind(c) || c.sp === 'demonlord' || c.occupier != null) continue;
+    if (c.hp <= 0 || c.dormant || !hostileKind(c) || c.sp === 'demonlord' || c.occupier != null || c.general) continue;
+    const demonArmy = SPECIES[c.sp].kind === 'demon' && !c.spawner;   // 魔王軍の兵は魔王の采配で動く（politics.js・monsters.js）。ここでは数えない
     for (const x of sites) {
+      if (demonArmy) continue;
       const own = c.spawnSite === x.b.id || c.lair === x.b.id;
       if (!own && dist(c.pos.x, c.pos.z, x.b.door.x, x.b.door.z) > NEAR) continue;
-      x.sum += pw(c); x.n++;
+      x.sum += c.named ? 4 : pw(c); x.n++;   // 名のある主（竜など）は巣を守るだけなので、群れの脅威としては軽く見る
     }
   }
   for (const { site, b, sum, n } of sites) {
     let press = 0;
     for (const id of site.spawners) { const sp = P.list[id]; if (!isSealed(sim, sp)) press += sp.power * (1 + sp.grow * 3); }
-    const raw = Math.min(100, sum * 1.5 + press * 3);
+    const raw = Math.min(100, sum + press * 2);
     site.threat = Math.round((site.threat * 0.5 + raw * 0.5) * 10) / 10;
     site.count = n;
     const stage = site.sealed ? 0 : STAGE_AT.reduce((st, v, i) => (site.threat >= v ? i : st), 0);
@@ -418,7 +426,7 @@ function computeThreat(sim) {
 function roamers(sim, site, b, max) {
   const S = sim.S;
   return Object.values(S.creatures).filter((c) => alive(S, c) && hostileKind(c) && !c.named && !c.dormant && !c.fight && !c.raid && !c.prowl && !c.warParty && !c.general && c.occupier == null
-    && c.sp !== 'demonlord' && c.role !== 'young' && c.role !== 'leader' && c.role !== 'treasure' && !(c.band && S.bands?.[c.band]?.leader === c.id)
+    && c.sp !== 'demonlord' && !(SPECIES[c.sp].kind === 'demon' && !c.spawner) && c.role !== 'young' && c.role !== 'leader' && c.role !== 'treasure' && !(c.band && S.bands?.[c.band]?.leader === c.id)
     && (c.spawnSite === b.id || c.lair === b.id || dist(c.home.x, c.home.z, b.door.x, b.door.z) < 14) && c.hp > c.maxhp * 0.6)
     .sort((a, c2) => (a.inDungeon ? 1 : 0) - (c2.inDungeon ? 1 : 0)).slice(0, max);
 }
@@ -471,6 +479,7 @@ function horde(sim, site) {
     note(sim, `${b.name}の「${band.name}」が、増えすぎた仲間を抱えて人里を襲う相談を始めた`);
     return;
   }
+  if (b.type === 'demoncastle') return;   // 魔王城からの大群は魔王軍（politics.js の侵攻・monsters.js の魔将）に任せる
   const s = townsNear(sim, b.door.x, b.door.z)[0];
   if (!s) return;
   const grp = roamers(sim, site, b, MAX_HORDE);
@@ -504,7 +513,8 @@ function postQuests(sim) {
     const near = townsNear(sim, b.door.x, b.door.z)[0];
     if (!near && site.stage < 3) continue;   // 人里から遠い巣は、あふれそうになるまで誰も困らない
     const openHere = S.quests.filter((q) => q.s === cap.id && q.state === 'open').length;
-    if (openHere >= 12) continue;
+    const ours = S.quests.filter((q) => q.s === cap.id && live(q) && q.spawnSite != null).length;
+    if (openHere >= 11 || ours >= 6) continue;   // 掲示板があふれないように
     const mine = S.quests.filter((q) => live(q) && q.spawnSite === b.id);
     const k = S.kingdoms[cap.kingdom];
     const town = S.towns[cap.id];

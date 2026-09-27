@@ -7,9 +7,10 @@
 //   眠れる人数より家族が多い家は、はみ出た人が床に寝わらを敷いて寝る（interior.js の takeMat）。
 //
 // ■ 毎日（housingDaily：newDay の matterDaily のあと）
-//   手狭な家は、居心地（hh.comfort）が毎日少しずつ下がり、機嫌が悪くなる（不満）。3日ほど様子を見てから、家族で考える。
+//   手狭な家は、居心地（hh.comfort）が毎日少しずつ下がり、機嫌が悪くなる（不満）。2日ほど様子を見てから、家族で考える。
 //   持ち家：家計に余裕があれば、大工と石工に頼んで二階建てに増築する。
-//     材料（材木14・石材6・鉄の釘1袋）は、施主が市場で持ち主から買う（marketBuy）。そろわないときは数日待ち、10日で古材で間に合わせる。
+//     材料（材木14・石材6・鉄の釘1袋）は、施主が市場で持ち主から買う（marketBuy）。そろわないときは数日待ち、4日目には古材で間に合わせる。
+//     家計だけで足りなければ、家族の大人が財布の小遣いを出し合う（財布 → 家計。同じ家の中のお金の移し替え）。
 //     工事は4日。毎日、施主の家計から大工・石工の家計へ日当を払う（flow で帳簿に残す）。払えない日は工事が止まる。
 //     できあがると b.floors = 2。家の値打ち（property.js の houseValue）は1.7倍になる。
 //   借家：同じ町の空き家で、家族がみな寝台で眠れる家を探して引っ越す（家賃は新しい家の値打ちから決まる）。
@@ -92,7 +93,7 @@ function findWorker(sim, sid, jobs, notHh, busy) {
   // 町にいなければ、同じ国のいちばん近い町から呼ぶ
   const s = sim.town(sid);
   const others = sim.S.world.settlements.filter((t) => t.id !== sid && t.kingdom === s.kingdom && !t.tribal).sort((a, b) => Math.hypot(a.x - s.x, a.z - s.z) - Math.hypot(b.x - s.x, b.z - s.z));
-  for (const t of others.slice(0, 3)) { const l = workersIn(sim, t.id).filter(ok); if (l.length) return l[0]; }
+  for (const t of others.slice(0, 6)) { const l = workersIn(sim, t.id).filter(ok); if (l.length) return l[0]; }
   return null;
 }
 function busyWorkers(sim) {
@@ -154,7 +155,7 @@ function progressJobs(sim) {
       }
       const left = Object.entries(j.need).filter(([, n]) => n >= 0.05);
       j.wait++;
-      if (!left.length || j.wait >= 10) {
+      if (!left.length || j.wait >= 4) {
         if (left.length) { j.makeshift = left.map(([g]) => MAT_JP[g]).join('と'); }
         j.stage = 'build';
       }
@@ -309,6 +310,23 @@ function tryLeave(sim, hh, b, mem, empties) {
   return true;
 }
 
+// 家計で足りなければ、家族の大人が財布から出し合う。足りる見込みがなければ何も動かさない
+function pool(sim, hh, mem, need) {
+  if (hh.money >= need) return true;
+  const adults = mem.filter((p) => sim.ageOf(p) >= 14);
+  const purses = adults.reduce((s, p) => s + Math.max(0, (p.purse || 0) - 3), 0);
+  if (hh.money + purses < need) return false;
+  let short = need - hh.money;
+  for (const p of adults.sort((a, c) => (c.purse || 0) - (a.purse || 0))) {
+    if (short <= 0) break;
+    const x = Math.min(short, Math.max(0, (p.purse || 0) - 3));
+    if (x <= 0) continue;
+    p.purse -= x; hh.money += x; short -= x;
+    sim.remember(p, `家の建て増しのために、財布から${Math.round(x)}銅貨を出した`, { emo: 0.2, imp: 0.35, k: 'house' });
+  }
+  return true;
+}
+
 // ---------- 毎日 ----------
 export function housingDaily(sim) {
   const S = sim.S, R = sim.rng, Hs = HS(sim);
@@ -331,12 +349,12 @@ export function housingDaily(sim) {
     hh.crowd = (hh.crowd || 0) + 1;
     hh.comfort = Math.max(-4, (hh.comfort || 0) - 0.3);   // 寝わらで寝る日が続くと、家族みんなの機嫌が下がる
     if (hh.crowd === 1 || hh.crowd % 20 === 0) for (const p of mem) if (sim.ageOf(p) >= 8) sim.remember(p, `家族が${n}人になり、寝台が足りない。${n - cap}人が床に寝わらを敷いて寝ている`, { emo: -0.35, imp: 0.4, k: 'crowded' });
-    if (Hs.jobs[b.id] || hh.crowd < 3 || (hh.housingTry || 0) > sim.today) continue;
+    if (Hs.jobs[b.id] || hh.crowd < 2 || (hh.housingTry || 0) > sim.today) continue;
     hh.housingTry = sim.today + R.int(3, 7);
     const own = b.owner === hh.id || b.owner == null || !S.households[b.owner];
     const cost = estimate(sim, hh.s);
     if (own) {
-      if ((b.floors || 1) < 2 && hh.money >= cost + 40 && startExpand(sim, hh, b, hh, false)) continue;
+      if ((b.floors || 1) < 2 && pool(sim, hh, mem, cost + 30) && startExpand(sim, hh, b, hh, false)) continue;
       tryLeave(sim, hh, b, mem, empties);
       continue;
     }
