@@ -125,8 +125,10 @@ export function spotThreats(sim, p, grid, around) {
       sim.startAction(p, { type: 'flee', place: home, dur: 40 });
       if (sim.rng.chance(0.4)) sim.remember(p, `${sim.placeName(c.pos.x, c.pos.z)}で${c.name}を見かけて、あわてて逃げ帰った`, { emo: -0.6, imp: 0.55, k: 'sight', where: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) } });
       if (sim.isWatched(p)) sim.events.push({ type: 'say', id: p.id, text: sim.rng.pick([`${c.name}だ！ 逃げろ！`, 'ひっ……！', `だ、誰か！ ${c.name}が出た！`]) });
+      return true;
     }
-    return true;
+    // すでに逃げている人は、そのまま走り続ける（相手が見えているあいだ立ちすくんで、飢えるまで動けなくなっていた）
+    return false;
   }
   return false;
 }

@@ -9,6 +9,7 @@ import { W } from './world.js';
 import { equipBonus, countItem, takeItem } from './items.js';
 import { gearOnHit, gearMoraleMul } from './gear.js';
 import { advReach, advOnAttack } from './advclass.js';
+import { merchantsOf } from './market.js';
 import { tacticsMonsterTurn, tacticsHumanTurn, tacticsIncoming, tacticsAfterHit, tacticsIntercept, tacticsReach } from './tactics.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
@@ -252,12 +253,14 @@ export function crimeArrive(sim, p) {
     const skill = p.skill.thief || 0.2;
     const ok = R.chance(clamp(0.55 + p.pers.C * 0.15 + skill * 0.3 - witnesses.length * 0.15 - guards * 0.2, 0.05, 0.95));
     if (ok) {
-      const loot = victims ? Math.min(30, Math.max(3, victims.money * 0.2)) : R.int(5, 15);
-      if (victims) victims.money -= loot; else sim.market(p.s).stock.bread = Math.max(0, sim.market(p.s).stock.bread - 2);
+      // 市場で盗むときは、商人の売上箱から（お金は湧かない）。売上箱が空ならパンだけ
+      const till = victims ? null : merchantsOf(sim, p.s).find((h) => h.money >= 1) || null;
+      const loot = victims ? Math.min(30, Math.max(3, victims.money * 0.2)) : till ? Math.min(R.int(5, 15), till.money) : 0;
+      if (victims) victims.money -= loot; else { if (till) till.money -= loot; sim.market(p.s).stock.bread = Math.max(0, sim.market(p.s).stock.bread - 2); }
       sim.hh(p).money += loot;
       p.skill.thief = Math.min(1, skill + 0.03);
       p.needs.esteem = Math.min(100, p.needs.esteem + 10);
-      sim.remember(p, `夜の闇にまぎれて${b.name}から${Math.round(loot)}銅貨を盗んだ`, { emo: 0.2, imp: 0.5, k: 'crime' });
+      sim.remember(p, loot >= 1 ? `夜の闇にまぎれて${b.name}から${Math.round(loot)}銅貨を盗んだ` : `夜の闇にまぎれて${b.name}からパンを盗んだ`, { emo: 0.2, imp: 0.5, k: 'crime' });
       if (victims) {
         for (const id of victims.members) { const q = sim.S.people[id]; if (q && sim.ageOf(q) >= 10) sim.remember(q, `家から${Math.round(loot)}銅貨が盗まれていた`, { emo: -0.7, imp: 0.7, k: 'theft' }); }
         sim.S.towns[p.s].crime = (sim.S.towns[p.s].crime || 0) + 1;

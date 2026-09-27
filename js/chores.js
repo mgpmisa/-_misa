@@ -102,6 +102,7 @@ function wellSpot(sim, p) {
         if (!walkable(t) || t === T.BLD || t === T.RIVER || t === T.WALL) continue;
         if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b2]) => tileAt(w, x + a, z + b2) === T.RIVER)) continue;
         const d = Math.hypot(x - s.x, z - s.z);
+        if (d > s.r + 5) continue;   // 町の外の遠い川までは汲みに行かない（王都から37マス先の川へ通い、獣に出会って立ち往生していた）。なければ広場の水場
         if (d < bd) { bd = d; spot = { x, z, well: false, river: true }; }
       }
       if (!spot) spot = { x: s.x, z: s.z, well: false, plaza: true };

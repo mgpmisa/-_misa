@@ -271,6 +271,12 @@ function needsCandsImpl(sim, p, cands) {
   // 寝不足だと判断が鈍る：いちばん良い行動を選びそこねる
   const ss = p.nd ? sleepStage(p.nd) : 0;
   if (ss) { for (const c of cands) c.score += sim.rng.range(-1.6, 1.6) * ss; NX(sim).stats.daze++; }
+  // 飢えて弱った人は、逃げ込む先の家で食べる（体力が落ちて「逃げたい」が勝ち続け、家に食べ物があっても食べずに弱っていた）
+  if (p.needs.hunger < 25) {
+    const flee = cands.find((c) => c.type === 'flee');
+    const eat = flee && cands.find((c) => c.type === 'eat' && !c.food && c.place && flee.place && dist(c.place, flee.place) < 2);
+    if (eat && eat.score <= flee.score) { eat.score = flee.score + 0.5; NX(sim).stats.eatAtRefuge = (NX(sim).stats.eatAtRefuge || 0) + 1; }
+  }
   const busy = p.quest != null || p.mission || p.pilgrim;
   if (!busy) return;
   const ai = awayInfo(sim, p);
