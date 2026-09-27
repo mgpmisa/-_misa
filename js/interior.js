@@ -15,6 +15,7 @@ import * as SPR from './sprites.js';
 import { makeRng } from './rng.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家の内装
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物の内装
+import * as CI from './castleint.js'; // 王城の中（いくつもの部屋・身分ごとの寝台）
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const DUNGEONS = new Set(['cave', 'pyramid', 'demoncastle']);
@@ -695,6 +696,7 @@ const BUILD = {
   },
 
   castle(K, ctx) {
+    if (CI.buildCastle(K, ctx, F)) return; // 部屋に分けた王城（js/castleint.js）。大きさが合わないときだけ下の昔の玉座の間
     const { M, R, W, D } = K;
     const col = KINGDOMS[ctx.b.kingdom]?.color || '#c93a32';
     const cx = W / 2;
@@ -1629,7 +1631,7 @@ export class InteriorView {
       K = new Kit(G.W, G.D, seed ^ 0x5bd1e995, M);
       buildDungeon(K, G, type);
     } else {
-      const [W, D] = sizeOf(b);
+      const [W, D] = type === 'castle' ? CI.castleSize(b, sim) : sizeOf(b);
       K = new Kit(W, D, seed, M);
       const ctx = { b, sim, hh: b.hh != null ? sim.S.households[b.hh] : null };
       if (!(b.tribe && b.style && TH.tribalInterior(K, ctx, F))) { if (BN.NEW_INTERIOR[type]) BN.NEW_INTERIOR[type](K, ctx, F); else (BUILD[type] || BUILD.house)(K, ctx); }
@@ -1648,7 +1650,7 @@ export class InteriorView {
     scene.add(this.hemi, this.sun, this.sun.target);
     this.points = [];
     let ls = K.lights;
-    const cap = this.dungeon ? 14 : 10;
+    const cap = this.dungeon ? 14 : K.lightCap || 10;
     if (ls.length > cap) { const step = ls.length / cap; ls = Array.from({ length: cap }, (_, i) => ls[Math.floor(i * step)]); }
     for (const l of ls) {
       const p = new THREE.PointLight(l.color, l.intensity, l.dist, 1.2);
@@ -1690,6 +1692,7 @@ export class InteriorView {
     } else if (type === 'house') sub += '・空き家';
     if (type === 'house' && (b.floors || 1) >= 2) sub += '・二階建て';
     if (this.dungeon) sub += `・${G.rooms.length}つの部屋`;
+    if (K.roomCount) sub += `・${K.roomCount}の部屋`;
     const n = this.countInside();
     sub += n.people || n.monsters ? `・中に${n.people ? `${n.people}人` : ''}${n.people && n.monsters ? '・' : ''}${n.monsters ? `魔物${n.monsters}体` : ''}` : '・誰もいない';
     if (town && type !== 'house') sub = `${town.name}の${sub}`;
@@ -1794,6 +1797,7 @@ export class InteriorView {
     }
     if (e.jail === this.bid) return 'cell';
     if (this.dungeon) return 'explore';
+    if (t === 'castle') { const ck = CI.castleKindFor(e, this.K); if (ck) return ck; }
     { const nk = BN.newKindFor(t, e); if (nk) return nk; }
     const a = e.action?.type;
     switch (a) {
@@ -1840,6 +1844,8 @@ export class InteriorView {
           list = pref.length ? pref : free;
         }
       }
+      // 城：その人専用の部屋・寝台を優先（王と王妃は王の寝室の夫婦の寝台）
+      if (k === 'bed' && this.K.bedPick) { const own = this.K.bedPick(this.K.slots.filter((s) => s.k === 'bed' && s.n < s.cap), e); if (own) list = own; }
       if (!list.length) continue;
       // 同じ人はなるべく同じ席に（id から選ぶ）
       const h = typeof e.id === 'number' ? e.id : strHash(e.id);
@@ -1978,7 +1984,7 @@ export class InteriorView {
     return [room.cx + r.ofs[0], room.cz + r.ofs[1]];
   }
   retarget(r) {
-    r.path = this.dungeon ? this.gridPath(r.x, r.z, r.tx, r.tz) : [[r.tx, r.tz]];
+    r.path = this.dungeon ? this.gridPath(r.x, r.z, r.tx, r.tz) : this.K.nav ? this.K.nav(r.x, r.z, r.tx, r.tz) : [[r.tx, r.tz]];
   }
 
   // ---------- 毎フレーム ----------
@@ -2178,4 +2184,6 @@ export class InteriorView {
 
 // 町の暮らしの建物（js/bldnew.js）：居場所の種類と題名
 Object.assign(InteriorView.FALLBACK, BN.NEW_FALLBACK);
+Object.assign(InteriorView.FALLBACK, CI.CASTLE_FALLBACK); // 城の居場所（王妃の居間・執務机・厨房など）
+LABEL.castle = '王城の中';
 Object.assign(LABEL, BN.NEW_LABEL);
