@@ -1952,9 +1952,10 @@ export class Sim {
     // 寿命・病
     for (const p of this.living()) {
       const age = this.ageOf(p);
-      const hungerMul = p.needs.hunger < 5 ? 4 : 1;
+      const starving = (p.nd?.h0 || 0) >= 24;   // まる1日以上食べられていない人だけ（夜中にお腹がすいているだけの人を「飢え」で死なせない）
+      const hungerMul = starving ? 4 : 1;
       const med = this.hasTech(p, 'medicine') ? 0.7 : 1;
-      if (R.chance(mortY(age) / DAYS_PER_YEAR * hungerMul * med)) this.die(p, p.needs.hunger < 5 ? 'hunger' : age >= 70 ? 'old' : R.pick(['accident', 'winter', 'sick']));
+      if (R.chance(mortY(age) / DAYS_PER_YEAR * hungerMul * med)) this.die(p, starving ? 'hunger' : age >= 70 ? 'old' : R.pick(['accident', 'winter', 'sick']));
     }
     // 妊娠・誕生
     const pop = this.living().length;

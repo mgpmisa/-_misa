@@ -2022,7 +2022,6 @@ export const ANIM_NAMES = ['idle', 'talk', 'attack', 'hurt', 'dying', 'death', '
 export function addWorkMotions(defs) { for (const [k, v] of Object.entries(defs)) if (!WORK[k]) WORK[k] = v; }
 const STATE_HOOKS = [];
 export function addAnimStateHook(fn) { if (!STATE_HOOKS.includes(fn)) STATE_HOOKS.push(fn); }
-export const POSE_KIT = { A, AT, TL, TO, MO, hands4 };
 
 // ================================================================ シートの組み立て
 function ctxOf(p, pt) {
