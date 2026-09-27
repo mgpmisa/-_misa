@@ -54,6 +54,7 @@ import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCan
 import { accrueWage, paydayDaily } from './payday.js';
 import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
 import { tacticsDaily, tacticsHourly } from './tactics.js';
+import { ensureFormation, formationHourly } from './formation.js';   // 隊列と職業による能力の補正
 import { combatStep, combatDaily } from './combat.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
@@ -116,6 +117,7 @@ export class Sim {
     initVillages(this);
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
     ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
+    ensureFormation(this); // 隊列と職業の補正（formation.js）
     this.seedMarkets();
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
@@ -143,6 +145,7 @@ export class Sim {
     ensureTribes(this);
     ensureVillages(this);
     ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
+    ensureFormation(this); // 古いセーブ：隊列と職業の補正の記録（formation.js）
     ensureCarry(this); // 古いセーブ：持ち物の重さと枠・袋やかご
     this.seedMarkets();
     computeDanger(this);
@@ -1847,6 +1850,7 @@ export class Sim {
     divineHourly(this);
     partyLifeHourly(this);   // 絆・家族恋しさ・宿の数（partylife.js）
     tacticsHourly(this);   // 盾役のいないパーティの助っ人（騎士・兵士）の雇い入れと雇いの終わり（tactics.js）
+    formationHourly(this);   // 職業による能力の補正を付け直し、務めの伸びを足す（formation.js）
     carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
   }
 

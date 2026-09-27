@@ -59,6 +59,7 @@ import { marketBuy } from './market.js';
 import { SCARS, fallIll } from './health.js';
 import { T, walkable, tileAt } from './world.js';
 import { around } from './creatures.js';
+import { formationArmorStrain } from './formation.js';
 
 // ---------- 数の目安（docs/戦闘の研究.md の案。調整はここだけで） ----------
 export const TUNE = {
@@ -804,7 +805,7 @@ function humanTurn(sim, e, t) {
       if (w) { c.phN++; healAmt(sim, w, w.maxhp * TUNE.PALADIN_HEAL); ST(sim).heal++; say(sim, e, '光よ、癒しを！'); return false; }
     }
   }
-  useSta(sim, e, (weaponInfo(e).heavy ? TUNE.STA_HEAVY : TUNE.STA_HAND) * (TUNE.STA_ARMOR[armorOf(e)] || 1));
+  useSta(sim, e, (weaponInfo(e).heavy ? TUNE.STA_HEAVY : TUNE.STA_HAND) * formationArmorStrain(e, TUNE.STA_ARMOR[armorOf(e)] || 1));   // 筋力が高いほど重い鎧で疲れにくい（formation.js）
   // 大きな魔物：狙う部位を決める
   if (hasParts(t)) cbOf(t).aim = choosePart(sim, e, t);
   return null;

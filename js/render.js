@@ -14,6 +14,7 @@ import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import { convoyViews } from './logistics.js';
 import { ShadowPool, CrowdDots, dotColor } from './crowd.js';
+import { formationPos, formationFace } from './formation.js'; // パーティの隊列（見た目の位置だけ。開発部）
 import { spacingBegin, spacedPos, spacingFace, spacingSlideCorpse } from './spacing.js'; // 立ち止まった者どうしが重ならない立ち位置（技術部）
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
@@ -851,7 +852,7 @@ export class Renderer {
       if (!r.sprite.visible) { r.hid = true; return; }
       // 表示の位置：世界は0.5分きざみ（数フレームに1回）で動くので、前の位置から今の位置へ一定の速さでつなぐ
       // 立ち止まっている者は、ほかと重ならない立ち位置へ（見た目だけ。本当の位置は変えない。spacing.js）
-      const sp = spacedPos(sim, e, isHuman), ex = sp.x, ez = sp.z;
+      const sp = formationPos(sim, e, isHuman) || spacedPos(sim, e, isHuman), ex = sp.x, ez = sp.z;   // パーティは隊列の位置（formation.js）
       if (r.tx !== ex || r.tz !== ez || r.hid) {
         const jump = r.hid || Math.abs(e.pos.x - (r.rx ?? r.tx)) + Math.abs(e.pos.z - (r.rz ?? r.tz)) > 3;
         r.fx = jump ? ex : r.sx; r.fz = jump ? ez : r.sz;
@@ -865,7 +866,7 @@ export class Renderer {
       const moved = Math.hypot(dx, dz);
       let target = null;
       if (e.fight) { const o = sim.entity(e.fight.target); if (o) target = o; }
-      const fc = !target && isHuman && moved < 0.0005 ? spacingFace(sim, e) : null;   // 立ち止まったら、話し相手や輪の中心を向く
+      const fc = !target && isHuman && moved < 0.0005 ? (formationFace(sim, e) || spacingFace(sim, e)) : null;   // 立ち止まったら、話し相手や輪の中心を向く
       const vx = target ? target.pos.x - e.pos.x : fc ? fc.x - r.sx : dx, vz = target ? target.pos.z - e.pos.z : fc ? fc.z - r.sz : dz;
       if (Math.hypot(vx, vz) > 0.001) {
         const sx = vx * right.x + vz * right.y, sf = vx * fwd.x + vz * fwd.y;

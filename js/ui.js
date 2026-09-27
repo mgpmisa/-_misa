@@ -43,6 +43,7 @@ import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 import { advClassRows, advClassName } from './advclass.js';
 import { partyBondRows } from './partylife.js';
 import { tacticsRows, tacticsRoleName, tacticsLineup } from './tactics.js';
+import { formationBonusHtml, formationRows } from './formation.js';   // 職業の補正・隊列での位置
 import { combatRows, combatCreatureRows } from './combat.js';
 import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
 import { carryHtml, carryMarks, CARRY_LABEL, CARRY_GO, CARRY_PREF } from './carry.js';
@@ -675,6 +676,7 @@ export class UI {
         <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}${needsLabel(p) ? `<dt>欲求のつらさ</dt><dd>${esc(needsLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
         </dl></div>`;
       if (p.deathYear == null) h += growthHtml(sim, p) || '';
+      if (p.deathYear == null) h += formationBonusHtml(sim, p);   // 職業の補正（formation.js）
       if (p.deathYear == null) h += gearHtml(sim, p, esc);
       // 装備と所持品
       const eq = p.eq || {};
@@ -689,7 +691,7 @@ export class UI {
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;
-        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${advClassRows(sim, p, (x) => this.pLink(x))}${tacticsRows(sim, p, (x) => this.pLink(x))}${partyBondRows(sim, p)}</dl></div>`;
+        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${advClassRows(sim, p, (x) => this.pLink(x))}${tacticsRows(sim, p, (x) => this.pLink(x))}${formationRows(sim, p)}${partyBondRows(sim, p)}</dl></div>`;
       } else if (p.tHire) h += `<div class="section"><h4>助っ人</h4><dl class="kv">${tacticsRows(sim, p, (x) => this.pLink(x))}</dl></div>`;   // パーティに雇われた騎士・兵士（tactics.js）
       // 学んだこと
       const likes = Object.entries(p.q || {}).sort((a, b) => b[1] - a[1]);
