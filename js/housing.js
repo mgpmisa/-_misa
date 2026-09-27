@@ -29,6 +29,7 @@
 import { JOBS } from './data.js';
 import { houseValue, weeklyRent, headOf } from './property.js';
 import { marketBuy } from './market.js';
+import { matterWant } from './matter.js';
 import { flow, income, whoLabel } from './ledger.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -157,8 +158,10 @@ function progressJobs(sim) {
       }
       const left = Object.entries(j.need).filter(([, n]) => n >= 0.05);
       j.wait++;
+      // 市場に無い材料は、職人に注文する（鍛冶屋が釘を打つ。できた品は市場に出て、施主が買う）
+      for (const [g, n] of left) matterWant(sim, sid, g, n);
       const onlyNails = left.length === 1 && left[0][0] === 'iron_nail';
-      if (!left.length || j.wait >= 4 || (onlyNails && j.wait >= 2)) {
+      if (!left.length || j.wait >= 4 || (onlyNails && j.wait >= 3)) {
         // 釘が手に入らなければ木の栓で組む。ほかの材料が足りなければ古材で間に合わせる
         const other = left.filter(([g]) => g !== 'iron_nail').map(([g]) => MAT_JP[g]);
         if (left.length) j.makeshift = [left.some(([g]) => g === 'iron_nail') ? '釘が手に入らず、木の栓で組んだ' : '', other.length ? `${other.join('と')}がそろわず、古材で間に合わせた` : ''].filter(Boolean).join('。');

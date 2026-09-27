@@ -342,8 +342,8 @@ function callAdventurers(sim, s, h) {
   h.adv = sent.length; h.advIds = sent.map((p) => p.id);
   if (!sent.length) return;
   const pts = [...new Set(sent.map((p) => partyOf(sim, p)).filter(Boolean))];
-  const who = pts.length ? pts.map((pt) => `〈${pt.name}〉`).join('・') + (sent.some((p) => !partyOf(sim, p)) ? 'と冒険者たち' : '') : '冒険者たち';
-  const text = `${cap.name}の冒険者ギルドから${who}（${sent.length}人）が、${s.name}の守りに出陣した`;
+  const who = pts.length ? pts.map((pt) => `〈${pt.name}〉`).join('・') + (sent.some((p) => !partyOf(sim, p)) ? 'と冒険者たち' : '') : sent.length === 1 ? `${advClassName(sent[0]) || JOBS[sent[0].job]?.name || '冒険者'}の${sent[0].given}` : '冒険者たち';
+  const text = `${cap.name}の冒険者ギルドから${who}${sent.length > 1 ? `（${sent.length}人）` : ''}が、${s.name}の守りに${cap.id === s.id ? '立った' : '出陣した'}`;
   sim.news(text, 2, s);
   note(sim, text);
   stat(sim, 'advCalled', sent.length);

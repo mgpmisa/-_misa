@@ -481,7 +481,12 @@ function topicWonder(api, A, B, v) {
 }
 
 function topicGrief(api, A, B, v, m) {
-  const who = m.txt.split('が')[0];
+  // 記憶の文から、亡くした人の呼び名を取り出す（「母のエマが〜亡くなった」「パーティー「〜」の仲間ルイーゼを失った」など）
+  const mate = m.txt.match(/仲間(.+?)を失った/);
+  if (mate) return { kind: 'grief', text: v.s(`仲間の${mate[1]}がいなくなって、旅の火のまわりが寂しい`, 'v'), sentiment: -0.8 };
+  const lost = m.txt.match(/^(.+?)を失った/);
+  let who = lost ? lost[1] : m.txt.split('が')[0];
+  if (/[、。]/.test(who) || who.length > 16) { const q = m.about?.length ? api.person?.(m.about[0]) : null; who = q ? q.given : 'あの人'; }
   return { kind: 'grief', text: v.s(`${who}がいなくなって、家の中が静かすぎる`, 'v'), sentiment: -0.8 };
 }
 

@@ -7,7 +7,7 @@
 //   c.forage（人里へ降りている）、c.mig（季節移動・渡り）、c.hibernate（冬眠）、c.mourn（主人の墓守り）
 import { SPECIES, KINGDOMS, DAYS_PER_YEAR, DAYS_PER_SEASON } from './data.js';
 import { T, W, H, CORE, walkable, tileAt, biomeOf, isWater } from './world.js';
-import { makeCreature, killCreature, applyStats, townMask } from './creatures.js';
+import { makeCreature, killCreature, applyStats, townMask, ranchRoom, herdUnits, stockUnit } from './creatures.js';
 import { startFight } from './society.js';
 import { stash } from './market.js';
 import { matterHunt } from './matter.js';
@@ -335,8 +335,9 @@ export function faunaThink(sim, c, def, all, humans) {
     if (isLive(c)) {
       const s = c.owner != null ? sim.town(c.owner) : null;
       if (s?.ranch && c.range === 0) {
-        // 牧場の家畜は夜は小屋（牧場の隅）に集まる
-        const barn = { x: s.ranch.x0 + (['chicken', 'duck'].includes(c.sp) ? 0 : 1), z: s.ranch.z0 + (['sheep', 'goat'].includes(c.sp) ? 1 : 0) };
+        // 牧場の家畜は夜は柵の中で寝る。1頭ずつ寝床のマスを分けて、ひとところに重ならない
+        const rw = s.ranch.x1 - s.ranch.x0 + 1, rh = s.ranch.z1 - s.ranch.z0 + 1, k = (parseInt(String(c.id).replace(/\D/g, ''), 10) || 0) % (rw * rh);
+        const barn = { x: s.ranch.x0 + (k % rw), z: s.ranch.z0 + Math.floor(k / rw) };
         c.sleeping = true;
         c.goal = Math.hypot(c.pos.x - barn.x, c.pos.z - barn.z) > 1.2 ? { x: barn.x + R.range(-0.5, 0.5), z: barn.z + R.range(-0.5, 0.5) } : null;
         return true;
@@ -1410,8 +1411,9 @@ function livestockCare(sim, animals, si, dos) {
   // 牧場の家畜が増えすぎたら、年をとった食肉用を売る
   for (const s of S.world.settlements) {
     if (!s.ranch) continue;
-    const herd = animals.filter((c) => c.owner === s.id && c.range === 0 && S.creatures[c.id] && !c.juv).sort((a, b) => b.age - a.age);
-    if (herd.length <= 12) continue;
+    const herd = animals.filter((c) => c.owner === s.id && c.range === 0 && S.creatures[c.id] && !c.juv && c.sp !== 'dog').sort((a, b) => b.age - a.age);
+    const all = animals.filter((c) => c.owner === s.id && c.range === 0 && S.creatures[c.id]);
+    if (!herd.length || (herd.length <= 12 && herdUnits(all) <= ranchRoom(s))) continue;   // 数が多すぎるか、柵の中に入りきらないとき
     const c = herd.find((x) => ['meat', 'layer'].includes(x.role)) || herd[0];
     const hh = S.households[c.keeper];
     const m = S.towns[s.id];
@@ -1439,7 +1441,8 @@ function restock(sim, animals) {
   for (const s of S.world.settlements) {
     if (!s.ranch) continue;
     const herd = animals.filter((c) => c.owner === s.id && c.range === 0 && S.creatures[c.id] && c.sp !== 'dog');
-    if (herd.length >= 5) continue;
+    const room = ranchRoom(s);
+    if (herd.length >= 5 || herdUnits(herd) + 1 > room) continue;
     const want = s.kingdom === 2 ? ['goat', 'goat', 'chicken', 'chicken', 'sheep', 'cow'] : ['cow', 'sheep', 'sheep', 'pig', 'chicken', 'chicken', 'duck'];
     const have = new Set(herd.map((c) => c.sp));
     const hhs = Object.values(S.households).filter((h) => h.s === s.id && h.members.some((id) => ['rancher', 'shepherd'].includes(S.people[id]?.job)));
@@ -1448,6 +1451,7 @@ function restock(sim, animals) {
     const bought = [];
     for (let i = 0; i < 2 && herd.length + bought.length < 5; i++) {
       const sp = want.find((x) => !have.has(x)) || R.pick(want);
+      if (herdUnits(herd) + herdUnits(bought) + stockUnit(sp) > room) break;   // 柵の中に入りきらない
       const price = SPECIES[sp].size >= 0.9 ? 30 : SPECIES[sp].size >= 0.5 ? 16 : 6;
       if (hh.money < price + 40) break;
       const x = R.int(s.ranch.x0, s.ranch.x1), z = R.int(s.ranch.z0, s.ranch.z1);

@@ -115,6 +115,16 @@ function tilesOfBiome(world, biomes, n, rng, pred) {
   return out;
 }
 
+// 牧場の広さ：柵の中1マスに大きな家畜1.5頭ぶんまで（鶏・アヒルは半頭と数える。牧羊犬は数えない）
+const SMALL_STOCK = new Set(['chicken', 'duck', 'goose']);
+export const stockUnit = (sp) => (sp === 'dog' ? 0 : SMALL_STOCK.has(sp) ? 0.5 : 1);
+export function ranchRoom(s) {
+  const r = s?.ranch;
+  if (!r) return 0;
+  return Math.max(2, Math.floor((r.x1 - r.x0 + 1) * (r.z1 - r.z0 + 1) * 1.5));
+}
+export function herdUnits(list) { let u = 0; for (const c of list) u += stockUnit(c.sp); return u; }
+
 export function spawnInitialCreatures(sim) {
   const S = sim.S, w = S.world, R = sim.rng;
   const farFromTown = (x, z) => w.settlements.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + 4);
@@ -122,9 +132,19 @@ export function spawnInitialCreatures(sim) {
   for (const s of w.settlements) {
     if (s.ranch) {
       const herd = s.kingdom === 2 ? { goat: 3, chicken: 3, sheep: 2, cow: 1, donkey: 1 } : { cow: 3, sheep: 4, pig: 2, chicken: 3, duck: 2, donkey: 1 };
-      for (const [sp, n] of Object.entries(herd)) for (let i = 0; i < n; i++) {
-        const x = R.int(s.ranch.x0, s.ranch.x1), z = R.int(s.ranch.z0, s.ranch.z1);
-        makeCreature(sim, sp, x, z, { owner: s.id, range: 0 });
+      // 柵の中の広さに見合う数だけ放す（種類がかたよらないよう、1頭ずつ順に）
+      const left = { ...herd }, room = ranchRoom(s);
+      let units = 0;
+      for (let more = true; more;) {
+        more = false;
+        for (const sp of Object.keys(left)) {
+          if (left[sp] <= 0) continue;
+          const u = stockUnit(sp);
+          if (units + u > room) continue;
+          const x = R.int(s.ranch.x0, s.ranch.x1), z = R.int(s.ranch.z0, s.ranch.z1);
+          makeCreature(sim, sp, x, z, { owner: s.id, range: 0 });
+          units += u; left[sp]--; more = true;
+        }
       }
     }
     // 馬は厩舎の前だけ
@@ -563,8 +583,8 @@ export function creatureDaily(sim) {
   // 家畜の繁殖
   for (const s of w.settlements) {
     if (!s.ranch) continue;
-    const herd = all.filter((c) => c.owner === s.id && c.range === 0);
-    if (herd.length < 10 && herd.length >= 2 && R.chance(0.3)) {
+    const herd = all.filter((c) => c.owner === s.id && c.range === 0 && c.sp !== 'dog');
+    if (herd.length < 10 && herd.length >= 2 && herdUnits(herd) + 1 <= ranchRoom(s) && R.chance(0.3)) {
       const p = R.pick(herd);
       makeCreature(sim, p.sp, p.pos.x, p.pos.z, { owner: s.id, range: 0, age: 0 });
     }
