@@ -733,9 +733,11 @@ export function villagesHourly(sim) {
   if (!X.list.length) return;
   const m0 = sim._vAudit ? moneyTotal(sim) : 0;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  sim._vIn = true;
   pollGraves(sim);
   stepTrips(sim);
   stepRaids(sim);
+  sim._vIn = false;
   if (t0) sim._vMs = (sim._vMs || 0) + performance.now() - t0;
   if (sim._vAudit) { const d = moneyTotal(sim) - m0; X.stats.leak = (X.stats.leak || 0) + d; }
 }
@@ -1034,6 +1036,7 @@ export function villagesDaily(sim) {
   if (!X.list.length) return;
   const m0 = sim._vAudit ? moneyTotal(sim) : 0;
   const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+  sim._vIn = true;
   for (const V of X.list) {
     if (V.state === 'ruin') { resettle(sim, V); continue; }
     const s = sim.town(V.sid);
@@ -1054,6 +1057,7 @@ export function villagesDaily(sim) {
   stepPacts(sim);
   peaceDaily(sim);
   relDecay(sim);
+  sim._vIn = false;
   if (t0) sim._vMs = (sim._vMs || 0) + performance.now() - t0;
   if (sim._vAudit) { const d = moneyTotal(sim) - m0; X.stats.leak = (X.stats.leak || 0) + d; }
 }
@@ -2422,10 +2426,11 @@ function checkRuin(sim, V, s) {
   ruin(sim, V, by);
   return true;
 }
+// 村を追いつめた相手：この40日で、村を打ち負かした出陣の主
 function lastEnemy(sim, V) {
-  const me = 's' + V.sid, X = XV(sim);
-  const e = X.hist.slice().reverse().find((h) => h.keys.includes(me) && h.keys.length > 1 && /破れた|荒らし|焼/.test(h.text));
-  return e ? e.keys.find((k) => k !== me) : null;
+  const me = 's' + V.sid;
+  const r = XV(sim).raids.filter((q) => q.toKey === me && q.res === 'win' && sim.today - (q.d0 ?? 0) <= 40).sort((a, b) => b.d0 - a.d0)[0];
+  return r ? r.from : null;
 }
 function ruin(sim, V, byKey) {
   const S = sim.S, s = sim.town(V.sid), me = 's' + V.sid;
@@ -2457,7 +2462,8 @@ function refugeeHousehold(sim, V, hh, why) {
     if (d > 360) continue;
     const k = partyKeyOfSid(sim, q.id);
     const kin = head ? sim.living().filter((x) => x.s === q.id && sim.kinTerm(head, x)).length : 0;
-    const sc = kin * 1.5 + feel(sim, me, k) / 25 + (hasLaw(sim, k, 'guest') || hasLaw(sim, k, 'shelter') ? 1 : 0) - d / 120 + (q.type === 'capital' ? 0.3 : 0) + R.range(0, 0.6) - (k === V.ruinBy ? 5 : 0);
+    const took = Object.values(S.households).filter((h) => h.fromV === V.id && h.s === q.id).length;
+    const sc = kin * 1.5 + feel(sim, me, k) / 25 + (hasLaw(sim, k, 'guest') || hasLaw(sim, k, 'shelter') ? 1 : 0) - d / 120 + (q.type === 'capital' ? 0.3 : 0) + R.range(0, 1) - took * 0.7 - (k === V.ruinBy || k === lastEnemy(sim, V) ? 5 : 0);
     if (sc > bs) { bs = sc; best = q; }
   }
   if (!best) return;
@@ -2471,7 +2477,7 @@ function refugeeHousehold(sim, V, hh, why) {
 // 廃村に、のちに人が住みつく（盗賊・王国の開拓者・生き残り）
 function resettle(sim, V) {
   const S = sim.S, R = sim.rng, s = sim.town(V.sid);
-  if (sim.today - V.ruinDay < 20 || !R.chance(0.06)) return;
+  if (sim.today - V.ruinDay < 20 || !R.chance(0.08)) return;
   const opts = {};
   const den = S.world.buildings.filter((b) => b.type === 'hideout' && Math.hypot(b.x - V.x, b.z - V.z) < 170 && banditsOf(sim, b.id).length >= 2).sort((a, b) => Math.hypot(a.x - V.x, a.z - V.z) - Math.hypot(b.x - V.x, b.z - V.z))[0];
   if (den) { const ch = chiefOf(sim, 'h' + den.id); if (ch) opts.bandit = ch.values.ambition + (1 - ch.pers.A) * 0.5 - 0.6 + R.range(0, 0.4); }
@@ -2481,6 +2487,7 @@ function resettle(sim, V) {
   if (survivors.length >= 2) opts.return = survivors.reduce((a, p) => a + p.values.courage, 0) / survivors.length + survivors.length * 0.05 + R.range(0, 0.4);
   const how = choose(sim, opts);
   if (!how) return;
+  stat(sim, 'resettleTry:' + how);
   let movers = [];
   if (how === 'bandit') {
     const gang = banditsOf(sim, den.id);

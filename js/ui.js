@@ -30,6 +30,7 @@ import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 import { advClassRows, advClassName } from './advclass.js';
+import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const $ = (id) => document.getElementById(id);
@@ -80,6 +81,7 @@ export class UI {
     this.buildMinimap();
     this.renderLogAll();
     this.ticker = [];
+    this.divine = mountDivine(this);
   }
 
   bind() {
@@ -382,6 +384,7 @@ export class UI {
     const D = this.sim.S.demon;
     $('clock').textContent = `${d.era} ${d.season}の${d.day}日目 ${d.time}　${this.sim.S.wxHere ? `${this.sim.S.wxHere.name} ${this.sim.S.wxHere.temp}℃` : WEATHER[this.sim.S.weather]}${extra}　人口${this.sim.living().length}人${D?.active ? '　⚠魔王復活中' : ''}`;
     this.updateOverlay();
+    this.divine?.update();
     const now = performance.now();
     if (now - this.lastPanel > 1000) { this.lastPanel = now; this.refreshPanel(false); this.renderInspector(false); this.drawMinimap(); }
   }
@@ -639,6 +642,7 @@ export class UI {
       h += `<div class="psub">いま：${esc(this.actionText(p))}${fin ? `<br>${esc(fin)}` : ''}${uwl.length ? `<br>${esc(uwl.join('・'))}` : ''}${(() => { const cv = convoyOf(this.sim, p); return cv ? `<br>${esc(convoyLabel(this.sim, cv))}` : ''; })()}${p.mission ? `<br>使命：${esc(ACTION_LABEL[p.mission.type] || p.mission.type)}` : ''}${S.wanted[p.id] ? `<br><b class="up">お尋ね者（${esc(S.wanted[p.id].crime)}）</b>` : ''}</div>`;
       h += `<div class="thought"><b>心の声</b>${esc(p.thought || '……')}</div>`;
       h += `<div class="row-btns"><button id="followBtn" class="${this.follow === p.id ? 'on' : ''}">${this.follow === p.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">この人を見る</button></div>`;
+      h += divinePersonHTML(this.sim, p);
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
       h += `<div class="section"><h4>7つの欲求（満たされ具合）</h4><div class="bars">${bar('気分', p.mood)}${Object.entries(DESIRES).map(([k, n]) => bar(n, p.needs[k])).join('')}</div>
         <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
@@ -709,6 +713,7 @@ export class UI {
     h += `<div class="pname">${esc(c.given && !c.name.includes(c.given) ? `${c.name}の${c.given}` : c.name)}</div><div class="psub">${KIND_NAME[d.kind]}・Lv${c.lv}${c.named ? '・名のある個体' : ''}<br>役割：<span class="rank">${esc(ROLES[c.role] || 'なし')}</span><br>${esc(this.sim.placeName(c.pos.x, c.pos.z))}</div>`;
     h += `<div class="psub">いま：${esc(state)}</div>`;
     h += `<div class="row-btns"><button id="followBtn" class="${this.follow === c.id ? 'on' : ''}">${this.follow === c.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">見る</button></div>`;
+    h += divineCreatureHTML(this.sim, c);
     const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(Math.max(0, Math.min(100, v)))}%"></i></div>`;
     h += `<div class="section"><h4>ようす</h4><div class="bars">${bar('体力', c.hp / c.maxhp * 100)}${bar('満腹', c.hunger)}</div>
       <dl class="kv" style="margin-top:8px"><dt>強さ</dt><dd>攻${c.atk} 守${c.def}</dd><dt>倒した数</dt><dd>${c.kills || 0}</dd><dt>経験</dt><dd>${Math.round(c.xp || 0)}${d.evolve ? `（いずれ${esc(SPECIES[d.evolve].name)}に進化する）` : ''}</dd>

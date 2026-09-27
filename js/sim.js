@@ -42,6 +42,7 @@ import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily,
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
 import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth } from './tribes.js';
+import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -680,6 +681,7 @@ export class Sim {
     laborCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
     healthDecide(this, p, cands, add);
+    divineDecide(this, p, cands, add);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -1772,6 +1774,7 @@ export class Sim {
     faunaHourly(this);
     rescueHourly(this);
     financeHourly(this);
+    divineHourly(this);
   }
 
   newDay() {
@@ -1892,6 +1895,7 @@ export class Sim {
     expansionDaily(this);
     tribesDaily(this);
     diplomacyDaily(this);
+    divineDaily(this);
     // 市場の運上金と町の上納金：市場の金庫と町の蓄えにたまりすぎたお金を、町→国庫へ戻す（兵や役人の給金になって家計へ還る）
     for (const st of this.S.world.settlements) {
       if ((st.tribal || st.indep) && st.annexed == null) continue;

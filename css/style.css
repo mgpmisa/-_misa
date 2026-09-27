@@ -221,3 +221,88 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .talklog summary { cursor: pointer; font-size: 12px; line-height: 1.5; }
 .talklog .tl-line { font-size: 12px; margin: 2px 0 2px 10px; }
 .talklog .tl-line.me b { color: #7a4b16; }
+
+/* ===== 神の力（divineui.js） ===== */
+.dv-ic, .dv-bic, .dv-hic { width: 24px; height: 24px; image-rendering: pixelated; flex: none; }
+.dv-btn { position: fixed; right: 236px; bottom: calc(env(safe-area-inset-bottom, 0px) + 12px); z-index: 4; display: flex; align-items: center; gap: 6px; padding: 5px 10px 5px 6px; background: var(--wood); color: var(--amber); border: 2px solid var(--line); box-shadow: inset 0 0 0 2px var(--wood3), 3px 3px 0 rgba(0, 0, 0, .35); cursor: pointer; }
+.dv-btn:hover { background: var(--wood3); }
+.dv-btn .dv-bl { font-size: 14px; text-shadow: 1px 1px 0 var(--line); }
+.dv-btn .dv-bg { width: 56px; height: 8px; background: var(--wood2); border: 1px solid var(--line); }
+.dv-btn .dv-bg i { display: block; height: 100%; background: linear-gradient(90deg, #e8a93a, #ffe066); }
+.dv-btn .dv-bn { font-size: 12px; color: var(--parch); min-width: 2.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.dv-btn.wish::after { content: attr(data-w); position: absolute; top: -9px; right: -9px; min-width: 18px; height: 18px; padding: 0 4px; background: var(--rose); color: #fff; border: 2px solid var(--line); font-size: 11px; line-height: 14px; text-align: center; }
+#inspector:not([hidden]) ~ .dv-btn { right: 384px; }
+.dv-panel { right: 12px; bottom: calc(env(safe-area-inset-bottom, 0px) + 58px); width: 380px; max-height: calc(100vh - 200px); z-index: 5; display: flex; flex-direction: column; }
+.dv-head { display: flex; align-items: center; gap: 8px; padding: 8px 44px 6px 10px; color: var(--amber); font-size: 16px; text-shadow: 2px 2px 0 var(--line); }
+.dv-gauge { padding: 0 10px 8px; border-bottom: 2px solid var(--line); }
+.dv-gt { display: flex; align-items: baseline; gap: 6px; font-size: 13px; }
+.dv-gt b { font-size: 20px; color: #ffe066; text-shadow: 2px 2px 0 var(--line); font-variant-numeric: tabular-nums; }
+.dv-gb { height: 12px; background: var(--wood2); border: 2px solid var(--line); margin: 4px 0; }
+.dv-gb i { display: block; height: 100%; background: repeating-linear-gradient(90deg, #ffe066 0 6px, #e8a93a 6px 8px); }
+.dv-gs { font-size: 11px; color: var(--parch2); line-height: 1.5; }
+.dv-tabs { display: flex; border-bottom: 2px solid var(--line); }
+.dv-tabs button { flex: 1; background: var(--wood2); color: var(--parch2); border: 0; padding: 6px 2px; cursor: pointer; font-size: 12px; }
+.dv-tabs button + button { border-left: 2px solid var(--line); }
+.dv-tabs button.on { background: var(--wood); color: var(--amber); }
+.dv-body { overflow-y: auto; padding: 6px 10px 10px; min-height: 0; flex: 1; }
+.dv-cat { color: var(--moss); font-size: 12px; letter-spacing: .08em; border-bottom: 1px dashed var(--wood3); margin: 8px 0 4px; padding-bottom: 2px; }
+.dv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.dv-m { position: relative; display: grid; grid-template-columns: 24px 1fr auto; grid-template-rows: auto auto; column-gap: 6px; align-items: center; text-align: left; background: var(--wood2); color: var(--parch); border: 2px solid var(--line); padding: 3px 5px; cursor: pointer; }
+.dv-m .dv-ic { grid-row: 1 / span 2; }
+.dv-m .dv-mn { font-size: 13px; }
+.dv-m .dv-mc { font-size: 12px; color: #ffe066; font-variant-numeric: tabular-nums; }
+.dv-m .dv-md { grid-column: 2 / span 2; font-size: 10px; color: var(--muted); line-height: 1.3; }
+.dv-m .dv-cd { position: absolute; right: 3px; bottom: 1px; font-size: 10px; color: var(--rose); }
+.dv-m:hover { background: var(--wood3); }
+.dv-m.wrath { border-left: 4px solid #a0203a; }
+.dv-m.off, .dv-act.off, .dv-wb .off { opacity: .45; }
+.dv-hint { font-size: 11px; color: var(--parch2); line-height: 1.6; margin: 8px 0 0; }
+.dv-wish { background: var(--wood2); border: 1px solid var(--line); border-left: 4px solid var(--amber); padding: 5px 7px; margin-bottom: 6px; }
+.dv-wt { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.dv-ws { font-size: 11px; color: var(--parch2); margin: 2px 0; line-height: 1.5; }
+.dv-wb { display: flex; gap: 6px; margin-top: 3px; }
+.dv-wb button { background: var(--wood); color: var(--parch); border: 2px solid var(--line); padding: 2px 8px; cursor: pointer; font-size: 12px; }
+.dv-wb button[data-wyes] { background: var(--moss); color: var(--ink); }
+.dv-stat { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--parch2); }
+.dv-towns { display: flex; flex-direction: column; gap: 3px; }
+.dv-town { display: grid; grid-template-columns: 7.5em 1fr 2em auto auto auto; gap: 6px; align-items: center; font-size: 12px; }
+.dv-fb { height: 6px; background: var(--wood2); border: 1px solid var(--line); }
+.dv-fb i { display: block; height: 100%; background: #ffe066; }
+.dv-ch { color: var(--muted); font-size: 11px; }
+.dv-log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font-size: 12px; line-height: 1.45; }
+.dv-log .t { color: var(--muted); font-size: 11px; margin-right: 6px; }
+.dv-log .grace { color: #ffe9a0; } .dv-log .wrath { color: #f0b0a0; }
+.dv-bar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 60px); z-index: 6; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 16px); background: rgba(42, 31, 23, .95); color: var(--parch); border: 2px solid var(--line); box-shadow: inset 0 0 0 2px #e8a93a; padding: 6px 8px; font-size: 13px; animation: dvpulse 1.2s steps(4) infinite; }
+.dv-bar b { color: #ffe066; }
+.dv-bar button { background: var(--rose); color: #fff; border: 2px solid var(--line); padding: 6px 12px; cursor: pointer; flex: none; }
+@keyframes dvpulse { 50% { box-shadow: inset 0 0 0 2px #ffe066; } }
+body.dv-aiming #view { cursor: crosshair; }
+.dv-toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 118px); z-index: 7; max-width: min(560px, calc(100vw - 24px)); background: var(--parch); color: var(--ink); border: 2px solid var(--line); box-shadow: 3px 3px 0 rgba(0, 0, 0, .35); padding: 6px 10px; font-size: 13px; line-height: 1.5; }
+.dv-toast.ok { border-left: 6px solid #e8a93a; } .dv-toast.ng { border-left: 6px solid var(--rose); }
+.dv-goal { left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 8; padding: 12px; width: min(340px, calc(100vw - 24px)); }
+.dv-goal h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 6px; color: var(--amber); font-weight: normal; }
+.dv-goals { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.dv-goals button, .dv-goal .dv-x { background: var(--wood2); color: var(--parch); border: 2px solid var(--line); padding: 8px 4px; cursor: pointer; }
+.dv-goals button:hover { background: var(--amber); color: var(--ink); }
+.dv-goal .dv-x { margin-top: 8px; width: 100%; }
+.dv-sec summary { list-style: none; cursor: pointer; }
+.dv-sec summary::-webkit-details-marker { display: none; }
+.dv-sec summary h4::before { content: '▸ '; } .dv-sec[open] summary h4::before { content: '▾ '; }
+.dv-tags { margin-left: 8px; color: var(--amber); font-size: 11px; letter-spacing: 0; }
+.dv-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.dv-act { display: flex; align-items: center; gap: 4px; background: var(--wood2); color: var(--parch); border: 2px solid var(--line); padding: 2px 6px 2px 3px; cursor: pointer; font-size: 12px; }
+.dv-act b { color: #ffe066; font-weight: normal; }
+.dv-act:hover { background: var(--wood3); }
+.dv-note { font-size: 11px; color: var(--muted); margin-top: 4px; }
+#dvFlash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 9; }
+#dvFlash.on { animation: dvflash .5s steps(5); }
+@keyframes dvflash { 0% { opacity: .55; } 30% { opacity: .08; } 45% { opacity: .35; } 100% { opacity: 0; } }
+@media (max-width: 760px) {
+  .dv-btn { right: 8px; bottom: calc(34vh + 20px); padding: 4px 8px 4px 4px; }
+  .dv-btn .dv-bg { width: 40px; }
+  #inspector:not([hidden]) ~ .dv-btn { right: 8px; bottom: calc(62vh + 16px); }
+  .dv-panel { left: 8px; right: 8px; width: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); max-height: 70vh; }
+  .dv-bar { left: 8px; right: 8px; transform: none; bottom: calc(34vh + 64px); font-size: 12px; }
+  .dv-m .dv-md { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .dv-bar { animation: none; } #dvFlash.on { animation: none; } }
