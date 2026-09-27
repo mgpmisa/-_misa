@@ -3,7 +3,8 @@
 // 地図の上の形（render.js の buildingParts から）と、建物の中（interior.js の InteriorView から）を描く。
 // 建物の種類：inn 宿屋（旅籠）・bathhouse 公衆浴場・library 図書館・theater 劇場・tailorshop 仕立て屋・apothecary 薬屋・
 //            genstore よろず屋・granary 穀物倉・orphanage 孤児院・cemetery 墓地
-// 看板：軒先に腕木で吊るす木の板に、店の印（寝台・湯桶・本・仮面・はさみ・薬瓶・袋・麦・子ども）をドット絵で描く（drawSign）。
+// 看板：グラフィック部の drawSign（js/bldgfx.js）を使う（寝台 bed・本 book・麦 wheat）。まだ絵がない印（湯桶 bath・仮面 masks・はさみ scissors・
+//       薬瓶 bottle・袋 sack・子ども child）は、このファイルの板で代わりに描く。bldgfx.js の SIGN_KINDS に同じ名前が足されれば自動でそちらに切り替わる。
 //
 // 本体からの呼び方（小さな差し込みだけ）
 //   render.js   buildingParts の民族の家の行のあと … if (BN.NEW_TYPES.has(b.type)) { BN.newBldParts(this, b, add, M, W_, D_, face, door, { houseLike, gable, windows, banner, flat, south, kcol }); return parts; }
@@ -13,6 +14,7 @@
 //               クラスのあと … Object.assign(InteriorView.FALLBACK, BN.NEW_FALLBACK); Object.assign(LABEL, BN.NEW_LABEL);
 import * as THREE from 'three';
 import { canvasTex } from './textures.js';
+import * as BG from './bldgfx.js'; // グラフィック部の看板（あればこちらを使う）
 import { KINGDOMS } from './data.js';
 import { innPlan, bldInteriorSize, cemeteryGraves, orphanCount } from './buildings.js';
 export { bldInteriorSize };
@@ -28,7 +30,7 @@ const rect = (g, x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
 
 // ================================================================ 看板の印（16×12 のドット絵）
 const ICONS = {
-  inn(g) { rect(g, 3, 5, 10, 3, '#f2eee4'); rect(g, 3, 4, 3, 2, '#ffffff'); rect(g, 6, 4, 7, 2, '#b8323a'); rect(g, 2, 3, 1, 6, '#6a4222'); rect(g, 13, 5, 1, 4, '#6a4222'); px(g, 12, 1, '#ffe070'); px(g, 11, 2, '#ffe070'); px(g, 12, 2, '#ffe070'); },
+  bed(g) { rect(g, 3, 5, 10, 3, '#f2eee4'); rect(g, 3, 4, 3, 2, '#ffffff'); rect(g, 6, 4, 7, 2, '#b8323a'); rect(g, 2, 3, 1, 6, '#6a4222'); rect(g, 13, 5, 1, 4, '#6a4222'); px(g, 12, 1, '#ffe070'); px(g, 11, 2, '#ffe070'); px(g, 12, 2, '#ffe070'); },
   bath(g) { rect(g, 3, 6, 10, 4, '#8a5a32'); rect(g, 3, 6, 10, 1, '#5aa8e0'); rect(g, 4, 9, 1, 1, '#5a3a22'); rect(g, 11, 9, 1, 1, '#5a3a22'); for (const x of [5, 8, 11]) { px(g, x, 4, '#e8f0f8'); px(g, x - 1, 3, '#e8f0f8'); px(g, x, 2, '#e8f0f8'); } },
   book(g) { rect(g, 2, 3, 6, 7, '#f2eee4'); rect(g, 8, 3, 6, 7, '#f2eee4'); rect(g, 7, 3, 2, 8, '#6a2a2a'); for (let y = 5; y < 9; y += 2) { rect(g, 3, y, 4, 1, '#8a7a6a'); rect(g, 9, y, 4, 1, '#8a7a6a'); } rect(g, 2, 10, 12, 1, '#6a2a2a'); },
   masks(g) { rect(g, 2, 2, 6, 7, '#f2e6a0'); px(g, 3, 4, '#222'); px(g, 6, 4, '#222'); rect(g, 3, 6, 4, 1, '#222'); px(g, 3, 5, '#222'); px(g, 6, 5, '#222'); rect(g, 8, 4, 6, 7, '#8ab0e8'); px(g, 9, 6, '#222'); px(g, 12, 6, '#222'); rect(g, 10, 9, 2, 1, '#222'); px(g, 9, 10, '#222'); px(g, 12, 10, '#222'); },
@@ -55,7 +57,7 @@ function mats(R) {
   R._bldNewM = m;
   return m;
 }
-// 看板：扉の脇の壁から腕木を出し、板を吊るす。板は通りと直角（通りの両側から読める）
+// 看板（グラフィック部の看板に絵がないときの代わり）：扉の脇の壁から腕木を出し、板を吊るす。板は通りと直角（通りの両側から読める）
 export function drawSign(R, add, face, W_, D_, y, icon, side = 1) {
   const m = mats(R), M = R.mats;
   const along = face[1] !== 0 ? [1, 0] : [0, 1];              // 壁に沿う向き
@@ -72,6 +74,11 @@ export function drawSign(R, add, face, W_, D_, y, icon, side = 1) {
 // ================================================================ 地図の上の形
 export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
   const m = mats(R), south = H.south;
+  // 看板：グラフィック部の看板（js/bldgfx.js）にその絵があればそれを、なければこのファイルの絵を使う
+  const sign = (kind, y, side = 1, w = W_, d = D_) => {
+    if (BG.SIGN_KINDS?.includes(kind)) { const tmp = []; BG.drawSign(tmp, b, kind, { y, side }); for (const o of tmp) add(o.g, o.mat, 0, 0, 0); }
+    else drawSign(R, add, face, w, d, y, kind, side);
+  };
   const box = (w, h, d) => R.box(w, h, d);
   switch (b.type) {
     case 'inn': {
@@ -85,7 +92,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
         for (const [x, z] of [[-hw, -hd], [hw, -hd], [-hw, hd], [hw, hd]]) { add(R.cyl(0.3, 0.34, 1.8, 8), M.sandstone, x + Math.sign(-x) * 0.2, 0.9, z + Math.sign(-z) * 0.2); add(R.cone(0.36, 0.4, 8), M.tileRoofS, x + Math.sign(-x) * 0.2, 2.0, z + Math.sign(-z) * 0.2); }
         add(box(face[0] ? 0.12 : 0.9, 1.0, face[1] ? 0.12 : 0.9), M.black, face[0] * (hw + 0.01), 0.5, face[1] * (hd + 0.01));
         add(box(0.5, 0.25, 0.5), M.fire, 0.4, 0.12, 0.2);   // 中庭の炊き火
-        drawSign(R, add, face, W_, D_, 1.15, 'inn');
+        sign('bed', 1.15);
       } else {
         // 二階建ての旅籠：木組みの壁、張り出した二階、脇に馬小屋
         H.houseLike(1.9, M.timber, M.tileRoof);
@@ -97,7 +104,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
         add(box(sx ? 0.95 : W_ * 0.65, 0.08, sz ? 0.95 : D_ * 0.65), M.thatch, lx, 0.8, lz);
         add(box(sx ? 0.4 : 0.5, 0.25, sz ? 0.4 : 0.5), m.hay, lx + face[0] * 0.2, 0.12, lz + face[1] * 0.2);
         add(box(0.12, 0.2, 0.12), M.lamp, face[0] * (W_ / 2 + 0.1) - (face[1] ? 0.5 : 0), 0.85, face[1] * (D_ / 2 + 0.1) - (face[0] ? 0.5 : 0));
-        drawSign(R, add, face, W_, D_, 1.25, 'inn');
+        sign('bed', 1.25);
       }
       break;
     }
@@ -112,7 +119,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
       }
       add(box(0.3, 0.9, 0.3), M.darkStone, -W_ * 0.3, 1.9, -D_ * 0.2);
       for (let i = 0; i < 3; i++) add(box(0.22 + i * 0.06, 0.16, 0.22 + i * 0.06), m.steam, -W_ * 0.3 + i * 0.07, 2.45 + i * 0.22, -D_ * 0.2 - i * 0.05);
-      drawSign(R, add, face, W_, D_, 0.95, 'bath');
+      sign('bath', 0.95);
       break;
     }
     case 'library': {
@@ -122,7 +129,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
       for (const s of [-1, 1]) for (let i = 0; i < Math.floor(W_); i++) add(box(0.2, 0.6, 0.05), M.win, -W_ / 2 + 0.5 + i, 1.1, s * (D_ / 2 + 0.01));
       door(W_, D_, 0.8);
       add(box(face[0] ? 0.08 : W_ * 0.5, 0.12, face[1] ? 0.08 : D_ * 0.5), M.gold, face[0] * (W_ / 2 + 0.03), 1.6, face[1] * (D_ / 2 + 0.03));
-      drawSign(R, add, face, W_, D_, 1.05, 'book');
+      sign('book', 1.05);
       break;
     }
     case 'theater': {
@@ -134,21 +141,21 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
       add(new THREE.PlaneGeometry(0.55, 0.35), m.clothR, 0.3, 3.6, 0);
       for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + Math.PI / 8; add(box(0.3, 0.2, 0.05), M.win, Math.sin(a) * (r + 0.01), 1.2, Math.cos(a) * (r + 0.01), a); }
       door(r * 2, r * 2, 0.8);
-      drawSign(R, add, face, r * 2, r * 2, 1.1, 'masks');
+      sign('masks', 1.1, 1, r * 2, r * 2);
       break;
     }
     case 'tailorshop': {
       H.houseLike(1.15, M.timber2, M.thatch);
       add(box(face[0] ? 0.5 : W_ * 0.8, 0.05, face[1] ? 0.5 : D_ * 0.8), M.awning2, face[0] * (W_ / 2 + 0.25), 0.95, face[1] * (D_ / 2 + 0.25));
       for (let i = 0; i < 3; i++) add(R.cyl(0.07, 0.07, 0.4, 6), [m.clothR, m.clothB, m.clothY][i], face[0] * (W_ / 2 + 0.15) + (face[1] ? -0.5 + i * 0.2 : 0), 0.3, face[1] * (D_ / 2 + 0.15) + (face[0] ? -0.5 + i * 0.2 : 0));
-      drawSign(R, add, face, W_, D_, 0.95, 'scissors', -1);
+      sign('scissors', 0.95, -1);
       break;
     }
     case 'apothecary': {
       H.houseLike(1.15, M.timber, south ? M.tileRoofS : M.slate);
       add(box(face[0] ? 0.5 : W_ * 0.8, 0.05, face[1] ? 0.5 : D_ * 0.8), m.green, face[0] * (W_ / 2 + 0.25), 0.95, face[1] * (D_ / 2 + 0.25));
       for (let i = 0; i < 4; i++) add(box(0.08, 0.2, 0.08), i % 2 ? m.green : M.gold, face[0] * (W_ / 2 + 0.05) + (face[1] ? -0.55 + i * 0.12 : 0), 0.85, face[1] * (D_ / 2 + 0.05) + (face[0] ? -0.55 + i * 0.12 : 0));
-      drawSign(R, add, face, W_, D_, 0.95, 'bottle', -1);
+      sign('bottle', 0.95, -1);
       break;
     }
     case 'genstore': {
@@ -157,7 +164,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
       add(R.cyl(0.18, 0.18, 0.4, 8), M.wood, fx + ax * 0.9, 0.2, fz + az * 0.9);
       add(box(0.32, 0.32, 0.32), M.planks, fx - ax * 0.9, 0.16, fz - az * 0.9);
       add(box(0.3, 0.3, 0.25), m.hay, fx + ax * 0.5, 0.15, fz + az * 0.5);
-      drawSign(R, add, face, W_, D_, 0.95, 'sack', -1);
+      sign('sack', 0.95, -1);
       break;
     }
     case 'granary': {
@@ -167,7 +174,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
       H.gable(W_, D_, 1.35, south ? M.tileRoofS : M.thatch);
       add(box(face[0] ? 0.08 : 0.5, 0.55, face[1] ? 0.08 : 0.5), M.door, face[0] * (W_ / 2 + 0.02), 0.75, face[1] * (D_ / 2 + 0.02));
       add(box(face[0] ? 0.5 : 0.4, 0.06, face[1] ? 0.5 : 0.4), M.wood, face[0] * (W_ / 2 + 0.25), 0.3, face[1] * (D_ / 2 + 0.25));   // はしご段
-      drawSign(R, add, face, W_, D_, 1.0, 'wheat');
+      sign('wheat', 1.0);
       break;
     }
     case 'orphanage': {
@@ -177,7 +184,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
       // 前庭の低い柵
       const fx = face[0] * (W_ / 2 + 0.6), fz = face[1] * (D_ / 2 + 0.6);
       add(box(face[0] ? 0.05 : W_ * 0.4, 0.3, face[1] ? 0.05 : D_ * 0.4), M.wood, fx + (face[1] ? -W_ * 0.28 : 0), 0.15, fz + (face[0] ? -D_ * 0.28 : 0));
-      drawSign(R, add, face, W_, D_, 1.1, 'child');
+      sign('child', 1.1);
       break;
     }
     case 'cemetery': {
