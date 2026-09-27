@@ -302,16 +302,29 @@ export function matterWant(sim, sid, id, q) {
   const w = W[sid] || (W[sid] = {});
   w[id] = { q: Math.max(q, w[id]?.q || 0), day: sim.today };
 }
+// 職人のいない町（1日ごとに数え直す）
+function townsWith(sim, job) {
+  const c = sim._makerTowns?.d === sim.today ? sim._makerTowns : (sim._makerTowns = { d: sim.today, by: {} });
+  if (!c.by[job]) { const set = new Set(); for (const p of sim.living()) if (p.job === job && p.jail == null) set.add(p.s); c.by[job] = set; }
+  return c.by[job];
+}
+// 注文の一覧：自分の町の注文が先。職人のいない町の注文も、よその町の職人が受けて荷を送る
 function wantedFor(sim, sid, job) {
-  const w = MS(sim).want?.[sid];
-  if (!w) return [];
+  const W = MS(sim).want;
+  if (!W) return [];
   const mine = recipes().get(job) || [];
-  const out = [];
-  for (const [id, x] of Object.entries(w)) {
-    if (x.q <= 0.05 || sim.today - x.day > 5) { delete w[id]; continue; }
-    if (mine.includes(id)) out.push(id);
+  const local = [], remote = [];
+  let has = null;
+  for (const [ws, w] of Object.entries(W)) {
+    for (const [id, x] of Object.entries(w)) {
+      if (x.q <= 0.05 || sim.today - x.day > 5) { delete w[id]; continue; }
+      if (!mine.includes(id)) continue;
+      if (+ws === sid) local.push({ id, sid });
+      else if (!(has || (has = townsWith(sim, job))).has(+ws)) remote.push({ id, sid: +ws });
+    }
+    if (!Object.keys(w).length) delete W[ws];
   }
-  return out;
+  return local.concat(remote);
 }
 function craftHour(sim, p, hh, speed) {
   const R = sim.rng, sid = p.s;
@@ -320,27 +333,28 @@ function craftHour(sim, p, hh, speed) {
     const m = sim.S.towns[sid];
     const room = (x) => (hh.stock?.[x] || 0) < 6 && inputsAvail(sim, sid, hh, MAT.get(x));
     // 1. 注文のある品 → 2. 町に足りない、よく要る品 → 3. いつもの品
-    const id = wantedFor(sim, sid, p.job).find(room)
-      || (STAPLES[p.job] || []).find((x) => MAT.has(x) && (m?.stock?.[x] || 0) < matterGood(x).target && room(x))
+    const order = wantedFor(sim, sid, p.job).find((o) => room(o.id));
+    if (order) { p.mk = { id: order.id, prog: 0, to: order.sid }; }
+    const id = order ? order.id : (STAPLES[p.job] || []).find((x) => MAT.has(x) && (m?.stock?.[x] || 0) < matterGood(x).target && room(x))
       || p.mrep.find((x) => { const g = matterGood(x); return (m?.stock?.[x] || 0) < g.target * 1.5 && room(x); });
     if (!id) return;
-    p.mk = { id, prog: 0 };
+    if (!order) p.mk = { id, prog: 0 };
   }
   p.mk.prog += speed;
   const it = MAT.get(p.mk.id);
   if (p.mk.prog < (it.make.t || 1)) return;
-  const id = p.mk.id; p.mk = null;
+  const id = p.mk.id, to = p.mk.to ?? sid; p.mk = null;
   if (makeOne(sim, sid, hh, it)) {
     const n = it.make.n || 1;
     give(sim, hh, sid, id, n, 'craft', null, { p: p.id }); MS(sim).stats.made += n;
-    const w = MS(sim).want?.[sid]?.[id];
+    const w = MS(sim).want?.[to]?.[id];
     if (w) {
-      // 注文の品は、できたらすぐ市場へ出す（商人が買い取る。お金は商人から作り手へ）
+      // 注文の品は、できたらすぐ注文のあった町の市場へ出す（その町の商人が買い取る。お金は商人から作り手へ）
       w.q -= n;
       const st = hh.stock || {};
       const q = Math.min(n, st[id] || 0);
       if (q > 0) {
-        const r = marketDeliver(sim, sid, id, q, hh);
+        const r = marketDeliver(sim, to, id, q, hh);
         const sold = q - r.left;
         if (sold > 0) { st[id] -= sold; if (st[id] < 1e-4) delete st[id]; }
       }

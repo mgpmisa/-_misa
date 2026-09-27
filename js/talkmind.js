@@ -105,7 +105,7 @@ const TIC = {
 };
 const AFTER = {
   plain: { 0: ['ほんとに。', 'うん。', 'いや、ほんと。', 'まあ、そういうこと。'], 1: ['へへ。', 'いいもんだね。', 'うれしいね。'], '-1': ['まったく。', 'やれやれ。', '参ったよ。', '困ったもんだ。'] },
-  rough: { 0: ['まあな。', 'ってわけだ。', 'ほんとだぜ。'], 1: ['へへっ。', '悪くねえ。'], '-1': ['ちっ。', 'まったくよ。', 'やってらんねえ。'] },
+  rough: { 0: ['まあな。', 'ま、そんなとこだ。', 'ほんとだぜ。'], 1: ['へへっ。', '悪くねえ。'], '-1': ['ちっ。', 'まったくよ。', 'やってらんねえ。'] },
   polite: { 0: ['本当に。', 'ええ。'], 1: ['ありがたいことです。'], '-1': ['困ったものです。', 'やれやれです。'] },
   elder: { 0: ['うむ。', 'ほっほ。'], 1: ['ありがたいことじゃ。', 'ほっほっほ。'], '-1': ['やれやれじゃ。', '困ったもんじゃ。'] },
   child: { 0: ['ほんとだよ。', 'うん！'], 1: ['えへへ。', 'やったね！'], '-1': ['むー。', 'やだなあ。'] },
@@ -547,7 +547,9 @@ function topicMem(api, A, B, v, m) {
     return { kind: 'memory', text, sentiment: 0.6, about: [B.id], lead: false, mind: { t: 'shared', m }, src: `相手とのことの記憶「${m.txt}」` };
   }
   let first;
-  const st = R.int(0, 3);
+  let st = R.int(0, 3);
+  // 「〜のが昨日のこと」は、ひとつの文で「〜た」と終わる記憶だけ（「楽しみだのが」「らしいのが」にならないように）
+  if (st === 2 && (/[。！？]/.test(stripEnd(txt)) || !/(た|んだ)$/.test(stripEnd(txt)))) st = 0;
   if (st === 0) first = say1(v, `${when}、${txt}`);
   else if (st === 1) first = v.r({ polite: '聞いてください。', elder: 'まあ聞いておくれ。', child: 'あのね、', rough: '聞いてくれよ。', royal: '聞け。', knight: 'ご報告します。', default: ['聞いてよ。', 'ちょっと聞いて。'] }) + say1(v, `${when}、${txt}`);
   else if (st === 2) first = say1(v, `${txt}のが${when === '今日' || when === 'さっき' || when === '今朝' ? when : when + 'のこと'}`);
@@ -762,14 +764,15 @@ function topicKnow(api, A, B, v, k) {
 
 function topicNews(api, A, B, v, n) {
   const R = api.rng;
-  const t = stripEnd(n.text).replace(/（.*?）/g, '').replace(/らしい$/, '');
+  // 速報の見出しを話し言葉に：「国名：〜」は「国名の〜」に。「群れは3体に」のように途中で切れた文は「なった」で結ぶ
+  const t = stripEnd(n.text).replace(/（.*?）/g, '').replace(/らしい$/, '').replace(/：/g, 'の').replace(/(\d+(?:体|人|頭|匹)?に)$/, '$1なった');
   const opener = v.r({ polite: 'お聞きになりました？ ', elder: '聞いたかね。', rough: 'おい、聞いたか。', child: 'ねえねえ、', plain: ['聞いた？ ', 'ねえ、知ってる？ '], royal: '耳にしたか。', noble_f: 'お聞きになって？ ', knight: 'ご存じでありますか。', sage: '聞いたかね。' });
   let c;
   if (/亡くなった|倒れ|命を落と/.test(t)) c = R.pick(['気の毒に', '明日は我が身', '祈るしかない']);
   else if (/捕らえ|牢/.test(t)) c = R.pick(['当然の報い', 'これで少しは町も静かになる']);
   else if (/討ち取|倒した|退治/.test(t)) c = A.values?.courage > 0.6 ? R.pick(['{me}もいつか', 'たいしたもの']) : R.pick(['たいしたもの', '頼もしい']);
   else if (/戦|攻め/.test(t)) c = R.pick(['戦はいやだ', '若い者が取られなければいいけど']);
-  else c = R.pick(['世の中いろいろある', 'どうなることやら']);
+  else c = R.pick(['世の中いろいろある', 'この先が気になる']);
   const text = v.fill(opener) + `${t}って。` + say1(v, c);
   return { kind: 'neutral', text, sentiment: /亡く|戦|倒れ/.test(t) ? -0.4 : 0.1, mind: { t: 'news', n }, teach: { key: 'nw' + n.t, k: 'nw', txt: t }, src: `速報「${n.text}」` };
 }
