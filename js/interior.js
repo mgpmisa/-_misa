@@ -25,7 +25,7 @@ const OPEN_AIR = new Set(['market', 'ruins']);
 const INSIDE_ROLES = new Set(['guardian', 'leader', 'treasure', 'overlord', 'castleguard', 'aide']);
 const BOSS_ROLES = new Set(['leader', 'treasure', 'overlord']);
 const LABEL = {
-  house: '民家', castle: '玉座の間', church: '聖堂', tavern: '酒場', bakery: 'パン屋', smithy: '鍛冶場', workshop: '工房', market: '市場',
+  house: '民家', bank: '両替商の館', castle: '玉座の間', church: '聖堂', tavern: '酒場', bakery: 'パン屋', smithy: '鍛冶場', workshop: '工房', market: '市場',
   guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '魔法の塔', mansion: '屋敷', clinic: '診療所', school: '学校',
   stable: '厩舎', mill: '風車小屋', lighthouse: '灯台', observatory: '展望台', mine: '坑道', hideout: '盗賊のアジト', ruins: '遺跡',
   well: '井戸の底', cave: '洞窟の迷宮', pyramid: 'ピラミッドの回廊', demoncastle: '魔王城',

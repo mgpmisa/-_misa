@@ -2041,7 +2041,7 @@ function resolveDef(anim, c) {
   if (name === 'work') {
     const m = sub || (c.kid ? 'play' : c.motion);
     if (!sub && c.kid) return { ...LIFE.play, motion: 'play' };
-    let d = WORK[m] || LIFE[m] || WORK.handwork;
+    let d = WORK[m] || LIFE[m] || extraWork(m) || WORK.handwork;
     if (d.attack) {
       const am = d.attack === true ? (c.wk.motion === 'punch' ? 'punch' : c.wk.motion) : d.attack;
       const cc = am === 'shoot' ? c : c;
@@ -2203,6 +2203,7 @@ export function personAnimState(sim, p, moving = false) {
     return 'walk';
   }
   if (p.maxhp && p.hp < p.maxhp * 0.2) return 'dying';
+  if (p.fxAnim && sim?.S && p.fxAnim.until > sim.S.t) return p.fxAnim.anim;   // ほかの仕組みが決めた、いまのしぐさ（両替など）
   if (p.talk) return 'talk';
   if (p.jail != null) return (p.mood ?? 50) < 25 ? 'cry' : 'sit';
   { const ax = AX.actAnimState(sim, p, a, age, kid); if (ax) return ax; } // 季節の畑仕事・売り買い・休み方など（anim_acts.js）
@@ -2246,6 +2247,13 @@ export function personAnimState(sim, p, moving = false) {
 }
 
 // ================================================================ 試験用：姿勢なしのコマで歩行シートを組む（drawPerson と一致するか確かめる）
+// ================================================================ 外から仕事の動きを足す（coinagegfx.js の両替のしぐさなど）
+// fn(名前) → hands4 の定義か null。名前は 'work:' のあとの部分（'xweigh:0:20' など）
+const EXTRA_WORK = [];
+function extraWork(m) { for (const fn of EXTRA_WORK) { const d = fn(m); if (d) return d; } return null; }
+export function addWorkResolver(fn) { EXTRA_WORK.push(fn); }
+export const POSE_KIT = { hands4, A, AT, TO, TL, MO, OBJ };
+
 export function __walkSheet(p, opts = {}) {
   const pt = makePainter(p, opts);
   const frame = (view, f) => pt.frame(view, { legs: ['w0', 'stand', 'w2'][f] }).P;

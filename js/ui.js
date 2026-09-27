@@ -13,6 +13,8 @@ import { bldTypeLabel } from './bldgfx.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
+import { coinageNationHTML, coinageBuildingHTML, coinagePersonHTML } from './coinage.js';
+import './coinagegfx.js'; // 硬貨の絵・両替のしぐさ・両替商の館の内装（読み込むだけでつながる）
 import { mintBuildingHTML, mintPersonHTML, MINT_LABEL, MINT_GO, MINT_PREF } from './mintflow.js';   // 造幣の流れの詳細欄
 import { elderCard, elderBuildingRows } from './elder.js';
 import { BLD_LABEL, BLD_GO, BLD_PREF, BLD_TYPE_LABEL, buildingRows } from './buildings.js';
@@ -467,6 +469,7 @@ export class UI {
         ${diplomacyNationHTML(this.sim, k, esc) || ''}
         ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
         ${bankNationHTML(this.sim, k, esc) || ''}
+        ${coinageNationHTML(this.sim, k, esc) || ''}
         ${laborNationHTML(this.sim, k, esc) || ''}
         ${spawnerNationHTML(this.sim, k, esc) || ''}
         <dt>技術</dt><dd>${k.techs.map((t) => esc(TECHS.find((x) => x.id === t)?.name)).join('、') || 'なし'}（研究${Math.round(k.research)}）</dd>
@@ -694,7 +697,7 @@ export class UI {
       const worth = (p.inv || []).reduce((s2, it) => s2 + itemValue(it), 0);
       h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}${gearItemNote(eq[k]) ? `<br><span class="sub">${esc(gearItemNote(eq[k]))}</span>` : ''}</dd>` : '').join('')}
 
-        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${wageText(sim, p) ? `<dt>給金</dt><dd>${esc(wageText(sim, p))}</dd>` : ''}${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
+        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${wageText(sim, p) ? `<dt>給金</dt><dd>${esc(wageText(sim, p))}</dd>` : ''}${bankPersonHTML(sim, p, esc) || ''}${coinagePersonHTML(sim, p, esc) || ''}</dl></div>`;
       h += mintPersonHTML(sim, p, esc);   // 造幣所行きの鉱石・運んだ記録・造幣の仕事（mintflow.js）
       h += carryHtml(sim, p, esc);   // 持ち物：品・数・重さ、重さと枠、身に付けた袋、家の蔵、倉庫（carry.js）
       { const cr = combatRows(sim, p); if (cr) h += `<div class="section"><h4>戦い</h4><dl class="kv">${cr}</dl></div>`; }   // 戦い方・息・魔力・状態異常・大けが・苦手な相手（combat.js）
@@ -835,6 +838,7 @@ export class UI {
     const er = elderBuildingRows(sim, b);
     if (er.length) h += `<div class="section"><h4>救貧院</h4><dl class="kv">${er.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     h += mintBuildingHTML(sim, b, esc, (x, l) => this.pLink(x, l));   // 造幣所：入荷・地金・打った枚数・誰に払ったか・硬貨の質／鉱山：鉱石置き場（mintflow.js）
+    h += coinageBuildingHTML(sim, b, esc);   // 両替商の館：相場表と最近の両替／造幣所：打っている硬貨
     const inside = isLeisureHouse(b) ? [] : sim.living().filter((q) => q.inside === b.id);   // 歓楽の館は中の人を出さない
     if (inside.length) h += `<div class="section"><h4>いま中にいる人</h4>${inside.map((q) => this.pLink(q)).join('、')}</div>`;
     const bandits = sim.living().filter((q) => q.hideout === b.id);

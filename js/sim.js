@@ -35,6 +35,7 @@ import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade 
 import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
 import { diplomacyDaily, diplomacyHourly, diplomacyStep } from './diplomacy.js';
+import { ensureCoinage, coinageDaily, coinageHourly, coinageThought } from './coinage.js';   // 国ごとの硬貨と両替の商い
 import { monstersDaily, monstersHourly } from './monsters.js';
 import { spawnerDaily, spawnerHourly, spawnerDanger, spawnerExplored } from './spawner.js';
 import { elderDaily } from './elder.js';
@@ -125,6 +126,7 @@ export class Sim {
     ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
     ensureFormation(this); // 隊列と職業の補正（formation.js）
     this.seedMarkets();
+    ensureCoinage(this); // 国ごとの硬貨の名前と意匠（coinage.js）
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
     return this;
@@ -155,6 +157,7 @@ export class Sim {
     ensureFormation(this); // 古いセーブ：隊列と職業の補正の記録（formation.js）
     ensureCarry(this); // 古いセーブ：持ち物の重さと枠・袋やかご
     this.seedMarkets();
+    ensureCoinage(this); // 古いセーブ：国ごとの硬貨（coinage.js）
     computeDanger(this);
     return true;
   }
@@ -1825,7 +1828,7 @@ export class Sim {
       let mood = needAvg * 0.65 + 25 + moneyF + memF + (this.hh(p)?.comfort || 0) * 1.5 + (p.jail != null ? -15 : 0) + weatherMoodDelta(this, p);
       if (mood < 50) mood -= (p.pers.N - 0.5) * 20;
       p.mood = clamp(p.mood * 0.6 + mood * 0.4, 0, 100);
-      if (!p.talk && this.isWatched(p) && this.rng.chance(0.35)) p.thought = mindThought(this, p) || innerThought(this, p);
+      if (!p.talk && this.isWatched(p) && this.rng.chance(0.35)) p.thought = coinageThought(this, p) || mindThought(this, p) || innerThought(this, p);
       // 危険の記憶は少しずつ薄れる
       if (p.danger) for (const k of Object.keys(p.danger)) { p.danger[k] *= 0.985; if (p.danger[k] < 0.2) delete p.danger[k]; }
       needsHourly(this, p);
@@ -1854,6 +1857,7 @@ export class Sim {
     tribesHourly(this);
     villagesHourly(this);
     diplomacyHourly(this);
+    coinageHourly(this);   // 国境を越えた旅人・荷車の両替（手数料は旅人の財布→両替商の家計／館の金庫）
     demonHourly(this);
     monstersHourly(this);
     spawnerHourly(this);   // 湧き口・うろつき・荒らし・大群・討伐に向かうパーティーのお知らせ（spawner.js）
@@ -1989,6 +1993,7 @@ export class Sim {
     elderDaily(this);
     financeDaily(this);
     bankDaily(this, GOODS);
+    coinageDaily(this);   // 新しい王の肖像の硬貨・悪鋳の噂（coinage.js）
     mintDaily(this);   // 造幣所の1日の締め・給料日の手間賃・預かり証（mintflow.js）
     marketDaily(this);
     matterDaily(this);   // 世界の物（matter.js）
