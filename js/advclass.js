@@ -21,6 +21,7 @@
 //
 // お金の出入りはない（職業は見た目と戦い方の小さな差だけ）。
 import { JOBS } from './data.js';
+import { teamHeal } from './partylife.js';
 
 export const ADV_CLASSES = {
   swordsman: { name: '剣士', role: '前衛', look: '青い上着に鉢巻き、背丈ほどの大剣' },
@@ -172,7 +173,7 @@ export function advOnAttack(sim, e, t, dmg) {
       if (!best || m.hp / m.maxhp < best.hp / best.maxhp) best = m;
     }
     if (best) {
-      const amt = Math.round(3 + (e.lv || 1) * 0.6 + statsOf(e).wis * 0.15);
+      const amt = Math.round((3 + (e.lv || 1) * 0.6 + statsOf(e).wis * 0.15) * teamHeal(sim, e, best));   // 絆で癒しが効く（partylife.js）
       best.hp = Math.min(best.maxhp, best.hp + amt);
       sim.events?.push({ type: 'heal', id: best.id });
     }

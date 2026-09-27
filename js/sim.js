@@ -51,6 +51,7 @@ import { ensureCarry, carryHourly, carryDaily, carryDecide, carryArrive, carryWo
 import { ensureLedger, ledgerDaily, moneyIn, flow, meal, newcomerMoney } from './ledger.js';
 import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCandidates, marketArrive, marketDaily, marketHourly } from './market.js';
 import { accrueWage, paydayDaily } from './payday.js';
+import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
 
@@ -584,6 +585,7 @@ export class Sim {
     }
     const sick = sickAction(this, p);
     if (sick) { this.startAction(p, sick); return; }
+    if (partyDecide(this, p)) return;   // パーティは一緒に食べて寝る・リーダーについて行く（partylife.js）
     if (needsDecide(this, p)) return;   // 旅先で食べる・寝る、野で食べ物を探す（needs.js）
     // 特別な任務（行軍・討伐・逃走）
     if (p.mission) {
@@ -698,6 +700,7 @@ export class Sim {
     healthDecide(this, p, cands, add);
     divineDecide(this, p, cands, add);
     needsCands(this, p, cands);
+    partyCands(this, p, cands);   // パーティの人は家に帰らない（partylife.js）
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -705,6 +708,7 @@ export class Sim {
       if (helper && (job !== 'beggar' || R.chance(0.4))) c = { ...c, type: 'askfood', place: this.placeFor(helper, 'home'), helper: helper.id };
     }
     this.startAction(p, c);
+    partyAfterDecide(this, p);   // リーダーが決めたら仲間も合わせる（partylife.js）
   }
 
   strollSpot(p) {
@@ -1552,7 +1556,7 @@ export class Sim {
   walk(p, dt) {
     const cm = carryWalk(this, p); if (!cm) return;   // 持てる重さを超えたら歩けない。立ち止まって荷を下ろす（carry.js）
     const age = this.ageOf(p);
-    let speed = cm * (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' || p.action.type === 'rescue' || p.action.type === 'alert' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p);
+    let speed = cm * (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * dt * (p.mission?.type === 'march' || p.action.type === 'flee' || p.action.type === 'rescue' || p.action.type === 'alert' ? 1.2 : 1) * moveMul(p) * healthSpeedMul(p) * partySpeedMul(this, p, dt);
     const w = this.S.world;
     while (speed > 0 && p.path.length) {
       const t = p.path[0];
@@ -1826,6 +1830,7 @@ export class Sim {
     financeHourly(this);
     marketHourly(this);   // 終わった市の露店を片づける
     divineHourly(this);
+    partyLifeHourly(this);   // 絆・家族恋しさ・宿の数（partylife.js）
     carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
   }
 
@@ -1927,6 +1932,7 @@ export class Sim {
     this.immigration();
     guildDaily(this);
     partiesDaily(this);
+    partyLifeDaily(this);   // 絆の増減・解散後の友情（partylife.js）
     advClassDaily(this);
     propertyDaily(this);
     choreDaily(this);

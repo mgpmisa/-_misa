@@ -40,6 +40,7 @@ import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 import { advClassRows, advClassName } from './advclass.js';
+import { partyBondRows } from './partylife.js';
 import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
 import { carryHtml, carryMarks, CARRY_LABEL, CARRY_GO, CARRY_PREF } from './carry.js';
 
@@ -681,7 +682,7 @@ export class UI {
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;
-        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${advClassRows(sim, p, (x) => this.pLink(x))}</dl></div>`;
+        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${advClassRows(sim, p, (x) => this.pLink(x))}${partyBondRows(sim, p)}</dl></div>`;
       }
       // 学んだこと
       const likes = Object.entries(p.q || {}).sort((a, b) => b[1] - a[1]);

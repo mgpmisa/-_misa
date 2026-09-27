@@ -72,6 +72,7 @@ const NEAR = 22;                      // ダンジョンのまわり（マス）
 const REACH = 85;                     // この距離より遠い町は、そのダンジョンの魔物に襲われない
 const GROW_MAX = 1;                   // 湧き口が育つ上限（同時に生きていられる子が最大で2倍）
 const MAX_HORDE = 10;
+const FARM = new Set(['cow', 'sheep', 'pig', 'chicken', 'goat', 'duck', 'donkey']);   // 荒らされる家畜（犬・猫・馬は外す）
 
 const alive = (S, c) => !!c && c.hp > 0 && S.creatures[c.id] === c;
 const pw = (c) => (c.atk || 5) * Math.sqrt(c.maxhp || 20) / 10 * (c.named ? 0.35 : 1);
@@ -246,7 +247,7 @@ function ravage(sim, c, s, n) {
   const S = sim.S, R = sim.rng, town = S.towns[s.id];
   const bits = [];
   // 家畜（その町の飼い主のいる動物）を1頭襲う
-  const stock = Object.values(S.creatures).filter((o) => o.hp > 0 && o.owner === s.id && SPECIES[o.sp]?.kind === 'livestock');
+  const stock = Object.values(S.creatures).filter((o) => o.hp > 0 && o.owner === s.id && FARM.has(o.sp));
   if (stock.length && R.chance(0.6)) {
     const v = R.pick(stock);
     bits.push(`${v.name}が襲われた`);
@@ -657,10 +658,10 @@ function recruit(sim) {
     let best = null, bestSc = 0, why = '';
     for (const p of people) {
       const age = sim.ageOf(p);
-      if (age < 17 || age > 40 || p.spouseId != null || p.jail != null || p.quest || p.pregnant > 0) continue;
+      if (age < 16 || age > 42 || p.spouseId != null || p.jail != null || p.quest || p.pregnant > 0) continue;
       if (['king', 'royal', 'noble'].includes(p.rank) || isAdventurer(p) || p.job === 'guildmaster' || JOBS[p.job]?.guardTown) continue;
       if (p.job && (byJob[p.s + ':' + p.job] || 0) < 3) continue;
-      if ((p.values?.courage ?? 0.5) < 0.45) continue;
+      if ((p.values?.courage ?? 0.5) < 0.35) continue;
       const hh = sim.hh(p);
       const reasons = [];
       let sc = 0;
@@ -671,7 +672,7 @@ function recruit(sim) {
       if (age <= 24 && (p.values?.courage ?? 0) > 0.6) { sc += 1; reasons.push(['冒険に憧れて旅立つ', 1]); }
       if (!p.job) sc += 1;
       sc *= R.range(0.6, 1.4);
-      if (sc > bestSc && sc >= 2) { bestSc = sc; best = p; why = reasons.sort((a, b) => b[1] - a[1])[0]?.[0] || '冒険者になる'; }
+      if (sc > bestSc && sc >= 1.5) { bestSc = sc; best = p; why = reasons.sort((a, b) => b[1] - a[1])[0]?.[0] || '冒険者になる'; }
     }
     if (!best) continue;
     becomeAdventurer(sim, best, cap, why, t);

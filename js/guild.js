@@ -4,6 +4,7 @@ import { bandBounty } from './monsters.js';
 import { ITEMS, DROPS, addItem, makeItem, countItem, takeItem, itemName } from './items.js';
 import { startFight, arrest } from './society.js';
 import { advRole } from './advclass.js';
+import { questFamilyOk, questNearMul } from './partylife.js';
 
 export const RANKS_ADV = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
 const RANK_PTS = [0, 3, 8, 15, 30, 55, 100];
@@ -138,9 +139,9 @@ export function takeQuest(sim, p) {
   const crew = pt ? pt.members.map((id) => S.people[id]).filter((o) => o && o.deathYear == null && !o.quest && o.jail == null && o.s === p.s && o.hp > o.maxhp * 0.5) : [p];
   if (pt && !crew.includes(p)) crew.unshift(p);
   const rank = pt ? Math.round(crew.reduce((s2, o) => s2 + advRank(o), 0) / crew.length + (crew.length >= 3 ? 1 : 0)) : advRank(p);
-  const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1);
+  const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1 && questFamilyOk(sim, crew, q));   // 家族持ちは長い遠征を受けない（partylife.js）
   if (!cands.length) return;
-  const q = R.weighted(cands, (x) => x.reward / 20 + (x.rank === rank ? 2 : 1) + p.values.ambition);
+  const q = R.weighted(cands, (x) => (x.reward / 20 + (x.rank === rank ? 2 : 1) + p.values.ambition) * questNearMul(sim, crew, x));   // 家族持ちは近場を選ぶ
   const members = pt ? crew : [p];
   if (!pt && q.rank >= 2) {
     const mates = sim.living().filter((o) => o !== p && isAdventurer(o) && !o.quest && o.s === p.s && o.jail == null && sim.rel(p, o).a > -10 && o.hp > o.maxhp * 0.6).sort((a, b) => sim.rel(p, b).a - sim.rel(p, a).a).slice(0, Math.min(3, q.rank));

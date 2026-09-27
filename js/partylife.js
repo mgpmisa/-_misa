@@ -29,12 +29,20 @@
 //   宿代・馬小屋代・食事代 … 各自の財布（足りなければ家計）→ 宿・酒場の主（needs.js の旅先の宿・食事の処理をそのまま使う）
 //   立て替え               … 払えない仲間の分を、いちばん余裕のある仲間が自分の財布から渡す（人 → 人。flow に記録）
 //   報酬と素材の分け方     … 今の splitCoins・splitLoot・reportQuest のまま（この仕組みではお金を動かさない）
+//   荷運びの日当の割り勘   … 荷運びを雇った仲間へ、ほかの仲間が1日分の日当を頭割りで渡す（人 → 人。日当そのものは carry.js が雇い主 → 荷運びへ払う）
+//
+// ■ パーティの荷（持ち物の仕組み carry.js に合わせる。carry.js は編集しない）
+//   ・重すぎる仲間（持てる量の85%以上）の荷を、そばにいる余裕のある仲間が引き取る（品物が人から人へ移るだけ。お金は動かない）。
+//     それでも重ければ、パーティが雇った荷運びに預ける（carry.js の預かり荷 p.held。雇いが終われば雇い主へ渡る）。
+//   ・荷運びはパーティで1人：雇うのはリーダー（carry.js の hirePorters）。ほかの仲間はその時間は雇わない印を付ける。
+//   ・歩く速さの「一番遅い人」は、荷の重さによる遅れ（carry.js の carryWalk と同じ 0.85／0.35）も入れて決める。
 import { T } from './world.js';
 import { spendable, pay } from './property.js';
 import { sleepPlan } from './chores.js';
 import { moveMul } from './growth.js';
 import { healthSpeedMul } from './health.js';
 import { flow } from './ledger.js';
+import { carryState, itemWeight, BAGS } from './carry.js';
 
 // ---------- 目安の数 ----------
 const BONUS_MAX = 0.15;     // 絆100でチームの力 +15%
@@ -55,7 +63,7 @@ const grade = (s) => (s.type === 'capital' ? 'capital' : s.type === 'port' || s.
 const alive = (m) => !!m && m.deathYear == null && !!m.needs;
 
 // ---------- 状態 ----------
-const STAT_KEYS = ['together', 'apart', 'groupSleep', 'groupEat', 'follow', 'waitSteps', 'slowSteps', 'innNights', 'stableNights', 'campNights', 'roughNights', 'homeNights',
+const STAT_KEYS = ['loadShared', 'porterShared', 'porterSplit', 'together', 'apart', 'groupSleep', 'groupEat', 'follow', 'waitSteps', 'slowSteps', 'innNights', 'stableNights', 'campNights', 'roughNights', 'homeNights',
   'familyLeave', 'reunion', 'homesick', 'farRefused', 'feeCover', 'bondFought', 'bondCrisis', 'bondHelp', 'bondQuest', 'bondQuarrel', 'bondShare', 'abandoned', 'friendsAfter', 'loveAfter', 'injuredOut'];
 export function partyLifeState(sim) {
   const S = sim.S;
@@ -148,7 +156,9 @@ export function teamHeal(sim, e, best) {
 // ---------- 歩く速さ ----------
 function baseSpeed(sim, m) {
   const age = sim.ageOf(m);
-  return (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * moveMul(m) * healthSpeedMul(m);
+  let load = 1;
+  if (sim.S.carry) { const st = carryState(sim, m); load = st.over ? 0.35 : st.ratio > 0.85 ? 0.85 : 1; }   // 荷が重い人は遅い（carry.js の carryWalk と同じ）
+  return (age < 13 ? 1.1 : age > 65 ? 0.6 : 0.95) * moveMul(m) * healthSpeedMul(m) * load;
 }
 // 一番遅い仲間に合わせた速さの掛け算。先に行きすぎたら 0（待つ）
 export function partySpeedMul(sim, p, dt) {
@@ -443,6 +453,91 @@ function leaveParty(sim, m, pt, why) {
   }
 }
 
+// ---------- パーティの荷（carry.js に合わせる） ----------
+const HEAVY = 0.85;
+// 手放してよい品（身に付けた武具・袋・依頼の品・薬は手放さない）
+function spareOf(sim, p) {
+  const eq = new Set(Object.values(p.eq || {}).filter(Boolean));
+  const keep = new Set((sim.S.quests || []).filter((q) => q.id === p.quest && q.item).map((q) => q.item));
+  return (p.inv || []).filter((it) => !eq.has(it) && !BAGS[it.id] && !keep.has(it.id) && it.id !== 'potion');
+}
+function hasRoom(sim, o, w, maxRatio) {
+  const st = carryState(sim, o, true);
+  if (st.slots >= st.maxSlots) return false;
+  if (st.carried + w * st.light > st.personCap + st.beast + 1e-6) return false;
+  return st.cap > 0 && (st.total + w) / st.cap <= maxRatio;
+}
+function moveItem(from, to, it) {
+  const i = (from.inv || []).indexOf(it);
+  if (i < 0) return false;
+  from.inv.splice(i, 1);
+  to.inv = to.inv || [];
+  const same = it.n != null && to.inv.find((x) => x.id === it.id && x.n != null && !BAGS[x.id] && x.q == null && it.q == null && x.dur == null && it.dur == null);
+  if (same) same.n = (same.n || 1) + (it.n || 1); else to.inv.push(it);
+  from._cd = true; to._cd = true;
+  return true;
+}
+// パーティの誰かが雇っている荷運び（そばにいる者）
+function partyPorter(sim, pt, near) {
+  const S = sim.S;
+  for (const id of pt.members) {
+    const x = S.people[id];
+    if (!alive(x) || !x.hire || x.hire.porter == null || S.t > x.hire.until) continue;
+    const q = S.people[x.hire.porter];
+    if (!alive(q) || q.porterFor?.by !== x.id) continue;
+    if (near && Math.abs(q.pos.x - near.pos.x) + Math.abs(q.pos.z - near.pos.z) > 10) continue;
+    return { porter: q, boss: x };
+  }
+  return null;
+}
+function shareLoads(sim, pt, ms) {
+  if (!sim.S.carry) return;
+  const st = ST(sim);
+  const av = ms.filter((m) => available(sim, m) && !m.fight);
+  for (const m of av) {
+    let cs = carryState(sim, m, true);
+    if (!cs.over && cs.ratio < HEAVY) continue;
+    const spare = spareOf(sim, m).sort((a, b) => itemWeight(b) - itemWeight(a));
+    let gave = 0, toWho = null;
+    for (const it of spare) {
+      cs = carryState(sim, m, true);
+      if (!cs.over && cs.ratio < HEAVY - 0.1) break;
+      const w = itemWeight(it);
+      const mate = av.filter((o) => o !== m && together(o, m) && hasRoom(sim, o, w, 0.7)).sort((a, b) => carryState(sim, a).ratio - carryState(sim, b).ratio)[0];
+      if (mate) { if (moveItem(m, mate, it)) { gave++; toWho = mate; st.loadShared++; addBond(sim, pt, m, 0.3, 'bondHelp'); addBond(sim, pt, mate, 0.3); } continue; }
+      const pp = partyPorter(sim, pt, m);
+      if (pp && hasRoom(sim, pp.porter, w, 1)) {
+        const i = m.inv.indexOf(it);
+        if (i >= 0) { m.inv.splice(i, 1); m._cd = true; (pp.porter.held = pp.porter.held || []).push({ it }); pp.porter._cd = true; gave++; st.porterShared++; }
+        continue;
+      }
+      break;
+    }
+    if (gave && toWho && m.memories && sim.rng.chance(0.2)) sim.remember(m, `荷が重くて足が止まりかけたら、${toWho.given}が荷を分けて持ってくれた`, { emo: 0.4, imp: 0.35, about: [toWho.id], k: 'party' });
+  }
+}
+// 荷運びはパーティで1人（リーダーが雇う）。日当の1日分は仲間で割り勘にする
+function partyPorterRules(sim, pt, ms, L) {
+  if (!sim.S.carry) return;
+  const X = ptl(pt), now = sim.S.t;
+  for (const m of ms) if (m !== L && available(sim, m) && !m.hire) m.hire = { porter: null, until: now + 70 };   // carry.js の「今回は雇わない」印
+  const pp = partyPorter(sim, pt, null);
+  if (!pp) return;
+  const key = pp.porter.id + ':' + Math.round(pp.boss.hire.until);
+  if (X.porterKey === key) return;
+  X.porterKey = key;
+  const others = ms.filter((m) => m !== pp.boss && available(sim, m));
+  if (!others.length) return;
+  const share = Math.round((8 / (others.length + 1)) * 10) / 10;   // 荷運びの日当8銅貨（carry.js の DAY_WAGE）の1日分を頭割り
+  for (const o of others) {
+    if (spendable(sim, o) < share + 5) continue;
+    pay(sim, o, share);
+    pp.boss.purse = (pp.boss.purse || 0) + share;
+    flow(sim, 'パーティの仲間', 'パーティの仲間', share, '荷運びの日当の割り勘');
+    ST(sim).porterSplit++;
+  }
+}
+
 // ---------- 1時間ごと ----------
 export function partyLifeHourly(sim) {
   const S = sim.S;
@@ -491,6 +586,8 @@ export function partyLifeHourly(sim) {
       }
       trackFamily(sim, m, pt);
     }
+    shareLoads(sim, pt, ms);
+    partyPorterRules(sim, pt, ms, L);
   }
   // 家族のもとへ帰る途中の人
   const LV = partyLifeState(sim);
@@ -628,6 +725,8 @@ export function partyBondRows(sim, p) {
     const near = teamBonus(sim, p) > 0;
     h += `<dt>絆</dt><dd>${escH(t)}${near ? '・仲間がそばにいる' : '・仲間と離れている'}</dd>`;
     const L = leaderOf(sim, pt);
+    const pp = partyPorter(sim, pt, null);
+    if (pp && pp.boss !== p) h += `<dt>荷運び</dt><dd>${escH(pp.porter.given)}（${escH(pp.boss.given)}が雇った。日当は仲間で割り勘）</dd>`;
     if (L) h += `<dt>行き先</dt><dd>${L === p ? '自分が決める（リーダー）' : `リーダーの${escH(L.given)}について行く`}・泊まりは宿屋</dd>`;
   }
   const me = p.pl;

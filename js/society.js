@@ -1,5 +1,6 @@
 // 戦い・犯罪・裁き
 import { clamp } from './rng.js';
+import { teamMul, teamAim, teamNerve } from './partylife.js';
 import { growthStats, growthAttack } from './growth.js';
 import { monsterTactics } from './monsters.js';
 import { JOBS, SPECIES } from './data.js';
@@ -74,17 +75,17 @@ export function stepCombat(sim, dt) {
     if (!isHuman(e) && monsterTactics(sim, e, t)) continue;
     // 危なくなったら回復薬を飲む
     if (isHuman(e) && e.hp < e.maxhp * 0.35 && countItem(e, 'potion') > 0) { takeItem(e, 'potion', 1); e.hp = Math.min(e.maxhp, e.hp + 45); sim.events.push({ type: 'heal', id: e.id }); continue; }
-    let dmg = Math.max(1, Math.round(e.atk * R.range(0.7, 1.3) - (t.def || 0) * 0.5));
+    let dmg = Math.max(1, Math.round(e.atk * teamMul(sim, e) * R.range(0.7, 1.3) - (t.def || 0) * teamMul(sim, t) * 0.5));   // 絆によるチームの力（partylife.js）
     // 魔王の耐性
     if (t.sp === 'demonlord' && isHuman(e)) dmg = Math.round(dmg * (e.eq?.weapon?.id === 'holysword' ? (sim.S.demon?.resist?.includes('holy') ? 1.1 : 1.6) : 0.6));
     if (isHuman(t) && sim.hasTech(t, 'barrier') && !isHuman(e) && sim.townOf(t) && Math.hypot(t.pos.x - sim.townOf(t).x, t.pos.z - sim.townOf(t).z) < sim.townOf(t).r) dmg = Math.max(1, Math.round(dmg * 0.7));
-    dmg = growthAttack(sim, e, t, dmg);
+    { const d0 = dmg; dmg = growthAttack(sim, e, t, dmg); if (dmg <= 0) dmg = teamAim(sim, e, d0); }   // 仲間との連携で当てる（partylife.js）
     if (dmg <= 0) continue; // かわされた
     if (isHuman(e) && e.advClass) dmg = advOnAttack(sim, e, t, dmg); // 冒険者の職業ごとの差（僧侶は仲間を癒す など）
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp - dmg <= 0) dmg = Math.max(0, t.hp - 1);
     t.hp -= dmg;
     gearOnHit(sim, e, t, dmg);
-    if (isHuman(t)) { t.needs.survival = Math.max(0, t.needs.survival - 12); sim.learnDanger(t, t.pos.x, t.pos.z, 1); }
+    if (isHuman(t)) { t.needs.survival = Math.max(0, t.needs.survival - 12 * teamNerve(sim, t)); sim.learnDanger(t, t.pos.x, t.pos.z, 1); }
     sim.events.push({ type: 'hit', id: t.id, dmg });
     // 殴り合い：相手が弱ったら終わる
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp < t.maxhp * 0.35) {
