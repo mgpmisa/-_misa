@@ -629,7 +629,7 @@ function execute(sim, e) {
   { const tt = S.towns[e.sid]; if (tt && tt.unrest != null) tt.unrest = clamp(tt.unrest + (e.sev > 0.7 ? 3 : 0.8) + shocked * 0.2 + frowned * 0.2, 0, 100); }
   // 見ていない町の人にも、処刑があったことが伝わる
   for (const q of L) if (q.s === e.sid && !e.crowd.includes(q.id) && q.jail == null && sim.ageOf(q) >= 12 && R.chance(0.35)) {
-    sim.remember(q, `広場で${e.given}が${e.crime}の罪で処刑されたと聞いた`, { emo: -0.3, imp: 0.45, about: [p.id], k: 'execution' });
+    sim.remember(q, R.pick([`広場で${e.given}が${e.crime}の罪で処刑されたと聞いた`, `昼に鐘が三度鳴った。${e.given}の刑が済んだのだと分かった`, `${e.given}が処刑されたと、近所の人から聞いた`, `市場で、${e.given}の最期の様子を聞かされた`, `${e.crime}の罪で${e.given}が処刑されたらしいと耳にした`]) + (R.chance(0.4) ? '。' + R.pick(['見に行かなくてよかったと思った', '自分には関わりのないことだと思おうとした', '罪を犯せばああなるのだと思った', '子どもにはまだ話さないでおいた']) : ''), { emo: -0.3, imp: 0.45, about: [p.id], k: 'execution' });
     q.jsFear = Math.max(q.jsFear || 0, 0.2 + q.pers.N * 0.2); q.jsFearDay = sim.today;
   }
   sim.news(`${e.name}の${m ? '処刑' : '刑'}が${cap.name}の広場で執り行われた（${e.crime}の罪）。見物人はおよそ${watchers.length}人`, 3, { x: e.x, z: e.z });
