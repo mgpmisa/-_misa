@@ -8,6 +8,7 @@ import { SPECIES, KINGDOMS } from './data.js';
 import * as SPR from './sprites.js';
 import { TerrainChunks } from './terrain_chunks.js';
 import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
+import { PartyRings } from './partyring.js';
 import { convoyViews } from './logistics.js';
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
@@ -56,6 +57,7 @@ export class Renderer {
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
     this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false;
     this.scene.add(this.selRing);
+    this.partyRings = new PartyRings(this.scene); // パーティの輪（まとめて1回で描く）
     this.raycaster = new THREE.Raycaster();
     this.lastSeason = -1;
     const cap = sim.S.world.settlements[0];
@@ -661,7 +663,7 @@ export class Renderer {
   }
   ensure(e, isHuman) {
     let r = this.ents.get(e.id);
-    const key = isHuman ? `${this.ageKey(e)}|${e.job}|${e.rank}|${e.jail != null}` : `${e.sp}|${e.lv}`;
+    const key = isHuman ? `${this.ageKey(e)}|${e.job}|${e.rank}|${e.jail != null}|${e.advClass || ''}` : `${e.sp}|${e.lv}`;
     if (r && r.key === key) return r;
     if (r) this.drop(e.id);
     const sheet = this.makeSheet(e, isHuman);
@@ -771,6 +773,7 @@ export class Renderer {
     const t = this.controls.target;
     const viewR = 22 / this.camera.zoom + 8;
     const nowMs = performance.now(); this._animMs = 0;
+    this.partyRings.begin();
     const place = (e, isHuman) => {
       const near = Math.abs(e.pos.x - (t.x + W / 2)) < viewR * 1.6 && Math.abs(e.pos.z - (t.z + H / 2)) < viewR * 1.6;
       if (!near && !this.ents.has(e.id)) return;
@@ -814,6 +817,7 @@ export class Renderer {
       if (!anim && r.sheet.cols < 3 && walking) y += Math.abs(Math.sin(r.phase * 1.5)) * 0.06;
       r.sprite.position.set(p.x, y, p.z);
       r.shadow.position.set(p.x, p.y + 0.015, p.z);
+      if (isHuman && e.party != null) this.partyRings.add(sim, e, p.x, p.y, p.z);
       r.shadow.visible = !def?.swims;
       if (r.flash > 0) { r.flash -= realDt; r.sprite.material.color.set('#ff6a6a'); } else r.sprite.material.color.set('#ffffff');
     };
@@ -838,6 +842,7 @@ export class Renderer {
       }
     }
     for (const id of [...this.ents.keys()]) if (!seen.has(id)) this.drop(id);
+    this.partyRings.end(now);
   }
 
   // ---------- 隊商（荷車と船）：logistics.js の convoyViews を毎フレーム映す ----------

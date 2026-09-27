@@ -1921,7 +1921,7 @@ export class InteriorView {
     const add = (e, human) => {
       seen.add(e.id);
       let r = this.ents.get(e.id);
-      const key = human ? `${e.job}|${e.rank}|${e.jail != null}|${this.sim.ageOf(e) < 13}` : `${e.sp}|${e.lv}`;
+      const key = human ? `${e.job}|${e.rank}|${e.jail != null}|${this.sim.ageOf(e) < 13}|${e.advClass || ''}` : `${e.sp}|${e.lv}`;
       if (r && r.key !== key) { this.drop(e.id); r = null; }
       if (!r) {
         const sheet = this.makeSheet(e, human);

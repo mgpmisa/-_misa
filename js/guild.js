@@ -3,6 +3,7 @@ import { JOBS, SPECIES } from './data.js';
 import { bandBounty } from './monsters.js';
 import { ITEMS, DROPS, addItem, makeItem, countItem, takeItem, itemName } from './items.js';
 import { startFight, arrest } from './society.js';
+import { advRole } from './advclass.js';
 
 export const RANKS_ADV = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
 const RANK_PTS = [0, 3, 8, 15, 30, 55, 100];
@@ -295,7 +296,7 @@ export function huntBounty(sim, p, target) {
 const PARTY_A = ['銀の', '暁の', '黄昏の', '鋼の', '紅の', '蒼き', '風の', '星降る', '灰色の', '獅子の', '白銀の', '炎の', '月影の', '北風の', '砂漠の', '黒鉄の'];
 const PARTY_B = ['牙', '剣', '翼', '盾', '誓い', '旅団', '狼', '灯火', '矢', '一団', '同盟', '爪', '風', '鷹'];
 const ROLE_OF = { warrior: '前衛', paladin: '前衛', adventurer: '遊撃', archer: '後衛', sage: '魔法', cleric: '回復', guildmaster: '前衛' };
-export const partyRole = (p) => ROLE_OF[p.job] || '遊撃';
+export const partyRole = (p) => advRole(p) || ROLE_OF[p.job] || '遊撃';
 export function partyOf(sim, p) { const pt = p.party != null ? sim.S.advParties?.[p.party] : null; return pt && !pt.gone ? pt : null; }
 
 // 毎日：気の合う冒険者どうしがパーティーを組み、仲たがいすると解散する

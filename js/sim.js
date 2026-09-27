@@ -18,6 +18,7 @@ import { around } from './creatures.js';
 import { ITEMS, makeItem, addItem, autoEquip, starterKit, countItem, takeItem, itemName, itemValue, TREASURE_ITEMS } from './items.js';
 import { initProperty, propertyDaily, inherit, transferEstate, spendable, pay, earn, fieldShare, houseValue, weeklyRent } from './property.js';
 import { partiesDaily } from './guild.js';
+import { advClassDaily, advExploreMul, advTreasureBonus } from './advclass.js';
 import { rumorBirth, rumorRelay, rumorHeardText, rumorCorrect } from './rumor.js';
 import { calendarDaily, calendarHalfDay } from './calendar.js';
 import { weatherDaily, weatherHourly, weatherMood, weatherBias, weatherWorkMul, harvestMul, roadsClosed, weatherMoodDelta, legacyWeatherAt } from './weather.js';
@@ -85,6 +86,7 @@ export class Sim {
     ensureTaxes(this);
     ensureGear(this);
     for (let i = 0; i < 4; i++) partiesDaily(this);
+    advClassDaily(this); // 冒険者の職業（剣士・魔法使い など）
     this.slimDead();
     ensureExpansion(this);
     computeDanger(this);
@@ -107,6 +109,7 @@ export class Sim {
     if (!data.uw) initUnderworld(this);
     ensureTaxes(this);
     ensureGear(this);
+    advClassDaily(this); // 古いセーブ：冒険者の職業をここで決める
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     ensureExpansion(this);
     computeDanger(this);
@@ -1392,7 +1395,7 @@ export class Sim {
       if (!a.explored && this.S.t > a.until - 20) {
         a.explored = true;
         const danger = { cave: 14, pyramid: 20, ruins: 10, hideout: 12 }[b.type] || 10;
-        const power = p.atk + p.lv * 3 + p.hp / 5;
+        const power = (p.atk + p.lv * 3 + p.hp / 5) * advExploreMul(this, p); // シーフは罠を外し鍵を開ける
         const R = this.rng;
         const win = R.chance(clamp(power / (power + danger * (1 + this.dayIndex / 400)), 0.1, 0.92));
         if (win) {
@@ -1402,7 +1405,7 @@ export class Sim {
           p.needs.esteem = Math.min(100, p.needs.esteem + 30);
           let txt = `${b.name}を探索して${gold}銅貨ぶんの戦利品を持ち帰った`;
           if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) addItem(p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk']))); gearDungeonLoot(this, p, b); autoEquip(p); Object.assign(p, humanStats(this, p)); }
-          if (b.type !== 'hideout' && R.chance(0.06 + (b.type === 'pyramid' ? 0.08 : 0))) {
+          if (b.type !== 'hideout' && R.chance(0.06 + (b.type === 'pyramid' ? 0.08 : 0) + advTreasureBonus(this, p))) {
             const item = R.pick(TREASURE_ITEMS);
             (p.treasures = p.treasures || []).push(item);
             txt = `${b.name}の奥で「${item}」を見つけた`;
@@ -1793,6 +1796,7 @@ export class Sim {
     this.immigration();
     guildDaily(this);
     partiesDaily(this);
+    advClassDaily(this);
     propertyDaily(this);
     choreDaily(this);
     civicDaily(this);

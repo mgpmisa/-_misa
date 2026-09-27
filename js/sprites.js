@@ -242,6 +242,9 @@ const GOLD = '#e8c040', GOLD_D = '#b08a20', STEEL = '#c8ccd4', STEEL_D = '#8a909
 const HAIR_M = { short: 5, crop: 3, sidepart: 4, spiky: 3, curly: 2, bald: 1.5, mohawk: 0.4, long: 0.8, ponytail: 0.6, bun: 0.3, messy: 2.5, wavy: 1 };
 const HAIR_F = { long: 4, bob: 3, ponytail: 3, bun: 2, twintails: 1.5, curly: 1.5, braid: 2, sidepart: 1, short: 0.8, wavy: 2.5, messy: 0.8, pigtailbuns: 0.8 };
 
+// 冒険者の職業（js/advclass.js の p.advClass）ごとの装い。戦士・弓使いは今ある装いを使う
+const ADV_JOB_LOOK = new Set(['adventurer', 'warrior', 'archer', 'cleric', 'sage']);
+const ADV_LOOK = { swordsman: 'adv_swordsman', hero: 'adv_hero', monk: 'adv_monk', squire: 'adv_squire', bandit: 'adv_bandit', thief: 'adv_thief', wizard: 'adv_wizard', sorcerer: 'adv_sorcerer', priest: 'adv_priest', fighter: 'warrior', archer: 'archer' };
 function outfitOf(p, stage) {
   const rank = p.rank;
   if (rank === 'prisoner') return 'prisoner';
@@ -252,6 +255,7 @@ function outfitOf(p, stage) {
     return 'kid';
   }
   if (rank === 'king' || p.job === 'king') return 'king';
+  if (p.advClass && ADV_JOB_LOOK.has(p.job) && ADV_LOOK[p.advClass]) return ADV_LOOK[p.advClass];
   if (p.job) return p.job;
   switch (rank) {
     case 'royal': return 'royal';
@@ -333,6 +337,7 @@ export function drawPerson(p, opts = {}) {
   let overlay = null, capeC = null, hood = null, helmet = null, mask = false, stripes = null, apron = null, shield = null, tabard = false, forcePatch = false, plumeGold = false;
   let accentOverride = null, forceGlasses = false, forceSkirt = false, dirtForce = false, scarfForce = null;
   const skinTop = () => skin;
+  let handWrap = null;
   switch (outfit) {
     case 'king': top = rich('#b0282a'); long = top; capeC = rich('#8a1a22'); hat = 'crown'; item = itemRoll < 0.5 ? 'scepter' : null; overlay = 'ermine'; break;
     case 'royal': top = rich(pickBy(['#3a4ab0', '#2a7a5a', '#8a2a6a', '#b04a6a', '#d8d0e8'], o1)); long = f ? top : null; bottom = rich('#e8e0d0');
@@ -432,6 +437,16 @@ export function drawPerson(p, opts = {}) {
     case 'banditchief': top = rich('#3a2a22'); bottom = rich('#2a1e18'); hat = 'bandana'; hatC = rich('#8a1a1a'); capeC = rich('#4a1a1a'); item = 'bigaxe'; overlay = 'fur'; break;
     case 'pickpocket': top = rich('#4a4a3a'); hat = 'cap'; hatC = rich('#3a3a2a'); item = 'dagger'; break;
     case 'swindler': top = rich(pickBy(['#8a2a6a', '#2a6a5a', '#8a6a2a'], o1)); overlay = 'vest'; hat = 'tophat'; item = 'purse'; break;
+    // ---- 冒険者の職業（advclass.js）。地図の上の小ささでも、かぶり物・色・持ち物で見分ける
+    case 'adv_swordsman': top = rich(pickBy(['#2a5aa0', '#2a6a8a', '#3a4a9a'], o1)); bottom = rich('#3a3a4a'); overlay = 'leather'; hat = 'headband'; accentOverride = pickBy(['#f0f0ea', '#d0302a', '#2a2a30'], o2); item = 'greatsword'; capeC = null; break;
+    case 'adv_hero': top = rich('#2a50c0'); bottom = rich('#e8e0c8'); capeC = rich('#c0282a'); hat = 'circlet'; overlay = 'goldtrim'; item = 'sword'; shield = '#3a62d8'; accentOverride = GOLD; plumeGold = true; break;
+    case 'adv_monk': top = rich(pickBy(['#e8e2d0', '#e07a20', '#c83a2a'], o1)); bottom = rich(pickBy(['#e8e2d0', '#2a2a30', '#6a4a2a'], o2)); sleeve = 'bare'; overlay = 'gi'; hat = 'headband'; accentOverride = '#d02a2a'; barefoot = true; item = 'fists'; handWrap = '#f4f0e4'; skirt = false; capeC = null; break;
+    case 'adv_squire': top = '#8a8e96'; bottom = rich('#4a3a2a'); helmet = 'kettle'; overlay = 'squire'; tabard = true; item = 'sword'; shield = rich(accent); hat = null; skirt = false; break;
+    case 'adv_bandit': top = rich(pickBy(['#6a3a22', '#5a4a2a', '#4a2a22'], o1)); bottom = rich('#2a1e18'); sleeve = 'bare'; hat = 'bandana'; hatC = rich(pickBy(['#b01a1a', '#8a1a1a', '#c04a1a'], o2)); overlay = 'fur'; item = o3 < 0.55 ? 'axe' : 'dagger'; forcePatch = o4 < 0.3; skirt = false; if (build === 'thin') build = 'normal'; break;
+    case 'adv_thief': top = rich(pickBy(['#3a2e26', '#2a2a30', '#3a3a2a'], o1)); bottom = rich('#1e1c20'); hood = rich(pickBy(['#6a2a2a', '#5a3a26', '#3e3a44'], o2)); mask = true; item = 'dagger'; overlay = 'thiefbelt'; skirt = false; build = 'thin'; hat = null; break;
+    case 'adv_wizard': top = rich(pickBy(['#6a2a8a', '#3a3a9a', '#8a2a3a', '#2a5a6a'], o1)); long = top; hat = 'wizard'; hatC = dk(top, 0.1); item = 'staff'; overlay = 'stars'; break;
+    case 'adv_sorcerer': top = rich(pickBy(['#1e2a5a', '#3a2a5a', '#1e4a4a', '#1e1e4a'], o1)); long = top; hood = rich(pickBy(['#2a3a7a', '#4a3a7a', '#2a5a5a', '#2a2a5a'], o1)); overlay = 'sorcerer'; item = 'tome'; hat = null; capeC = null; break;
+    case 'adv_priest': top = '#f4f2ea'; long = top; overlay = 'stole'; hat = 'miter'; hatC = '#f4f2ea'; item = 'holystaff'; accentOverride = GOLD; break;
     case 'kid': hat = o1 < 0.12 ? (o2 < 0.5 ? 'cap' : 'knit') : null; break;
     default: break;
   }
@@ -625,6 +640,32 @@ export function drawPerson(p, opts = {}) {
         if (!B) for (let x = tx0; x <= tx1; x += 2) P.px(x, torsoBot + 1, GOLD);
         break;
       case 'nunbib': if (!B) P.rect(S ? sx0 : 5, nk, S ? 3 : 6, 2, '#f4f4f4'); break;
+      case 'gi': // 道着：胸元を V に開け、黒帯を締める
+        if (F) { P.px(7, nk, skin); P.px(8, nk, skin); P.px(7, nk + 1, skin); P.px(8, nk + 1, dk(top, 0.12)); }
+        if (S) P.px(sx0, nk, skin);
+        P.rect(tx0, torsoBot, tx1 - tx0 + 1, 1, '#1a1a1e');
+        if (F) { P.px(bx1 - 1, torsoBot + 1, '#1a1a1e'); P.px(bx1 - 2, torsoBot + 2, '#1a1a1e'); }
+        if (S) P.px(sx1 + 1, torsoBot + 1, '#1a1a1e');
+        break;
+      case 'squire': // 鎖かたびらに、紋章色の前垂れ
+        for (let y = nk; y < torsoBot; y++) for (let x = tx0; x <= tx1; x++) if ((x + y) & 1) P.px(x, y, '#6a6e76');
+        if (!B) P.rect(S ? sx0 : 6, nk + 1, S ? 2 : 4, torsoH, accent);
+        if (F) P.rect(7, nk + 2, 2, 2, lt(accent, 0.25));
+        break;
+      case 'thiefbelt': // 腰の道具袋と鍵束（鍵開け・罠外し）
+        P.rect(tx0, torsoBot, tx1 - tx0 + 1, 1, '#4a3222');
+        if (F) { P.rect(bx0, torsoBot, 2, 2, '#7a5230'); P.px(bx1 - 1, torsoBot + 1, GOLD); P.px(bx1, torsoBot + 1, '#c8ccd4'); }
+        if (S) { P.rect(sx1, torsoBot, 2, 2, '#7a5230'); P.px(sx0, torsoBot + 1, GOLD); }
+        if (B) P.rect(bx1 - 1, torsoBot, 2, 2, '#7a5230');
+        P.rect(S ? sx0 : bx0, nk, S ? sw : tw, 1, dk(top, 0.1));
+        break;
+      case 'sorcerer': // 学者のローブ：金の縁取りと、胸の青く光る紋
+        P.rect(tx0 - 1, FEET - 2, tx1 - tx0 + 3, 1, GOLD);
+        if (!B) P.rect(S ? sx0 : 7, nk + 1, S ? 1 : 2, FEET - nk - 3, dk(top, 0.12));
+        if (F) { P.rect(6, nk, 4, 1, GOLD); P.px(7, nk + 2, '#70e8ff'); P.px(8, nk + 2, '#70e8ff'); }
+        if (S) P.px(sx0, nk + 2, '#70e8ff');
+        if (B) P.rect(bx0, nk, tw, 1, GOLD);
+        break;
       case 'fur': P.rect(S ? sx0 - 1 : armL, nk, S ? sw + 3 : armR - armL + 1, 2, '#8a6a4a'); P.rect(S ? sx0 : armL + 1, nk, 2, 1, '#a88a6a'); break;
       case 'rags':
         for (let i = 0; i < 3; i++) { const x = tx0 + Math.floor(rp[i] * (tx1 - tx0)), y = nk + 1 + Math.floor(rp[3 + i] * (torsoH - 1)); const xx = B ? 14 - x : x; const c = i & 1 ? dk(top, 0.14) : lt(top, 0.1); P.over(xx, y, c); P.over(xx + 1, y, c); }
@@ -650,7 +691,7 @@ export function drawPerson(p, opts = {}) {
 
     // ---------------- 腕（16pxの腕は1px幅）
     const sleeveC = sleeve === 'bare' ? skin : outfit === 'knight' ? '#b8bcc6' : (capeC && B ? capeC : top);
-    const handC = outfit === 'knight' ? STEEL_D : skin;
+    const handC = outfit === 'knight' ? STEEL_D : (handWrap || skin);
     if (!S) {
       for (const side of ['L', 'R']) {
         const ax = side === 'L' ? armL : armR;
@@ -860,6 +901,7 @@ export function drawPerson(p, opts = {}) {
       case 'skullcap': HT(6, t - 1, 4, 1, '#f4f2ea'); HT(5, t, 6, 1, '#f4f2ea'); break;
       case 'wizard': HT(3, t, 10, 1); HT(5, t - 1, 6, 1); HT(6, t - 2, 4, 1); HT(7, t - 3, 2, 1); P.px(8, t - 4, hatC); P.px(9, t - 5, hatC); P.px(10, t - 5, dk(hatC, 0.1));
         HT(5, t - 1, 6, 1, pickBy([GOLD, lt(hatC, 0.2)], rp[11])); HT(4, t, 8, 1, dk(hatC, 0.2)); brimShadow(); break;
+      case 'miter': HT(5, t - 1, 6, 2); HT(6, t - 3, 4, 2); P.rect(7, t - 4, 2, 1, hatC); HT(5, t, 6, 1, GOLD); if (!B) P.rect(7, t - 3, 2, 3, GOLD); break; // 僧侶の司教帽
       case 'beret': HT(4, t - 1, 7, 2); P.px(11, t, hatC); P.px(7, t - 2, hatC); break;
       case 'cap': HT(5, t - 2, 6, 2); if (F) HT(5, t, 6, 1, dk(hatC, 0.15)); if (S) HT(3, t, 3, 1, dk(hatC, 0.15)); if (B) HT(5, t, 6, 1, hatC); P.rect(6, t - 2, 2, 1, lt(hatC, 0.12)); break;
       case 'knit': HT(5, t - 2, 6, 3); HT(4, t, 8, 1, lt(hatC, 0.1)); P.px(8, t - 3, lt(hatC, 0.2)); break;
@@ -927,6 +969,10 @@ export function drawPerson(p, opts = {}) {
       case 'mace': P.rect(hx, hy - 4, 1, 5, wood); P.rect(hx - 1, hy - 6, 3, 2, '#a8acb4'); P.px(hx, hy - 7, '#a8acb4'); break;
       case 'bigaxe': P.rect(hx, hy - 8, 1, 10, wood); P.rect(dir > 0 ? hx + 1 : hx - 3, hy - 8, 3, 4, steel); P.rect(dir > 0 ? hx - 1 : hx + 1, hy - 7, 1, 2, steel); break;
       case 'smoker': P.rect(hx - 1, hy - 1, 2, 3, '#8a8a8a'); P.px(hx, hy - 3, '#d8d8d8'); P.px(hx + 1, hy - 4, '#e8e8e8'); break;
+      case 'greatsword': { const bx = dir > 0 ? hx : hx - 1; P.rect(bx, hy - 11, 2, 10, '#d0d4dc'); P.rect(dir > 0 ? bx : bx + 1, hy - 11, 1, 10, '#f4f6fa'); P.px(dir > 0 ? bx + 1 : bx, hy - 12, '#d0d4dc'); P.rect(hx - 1, hy - 1, 4, 1, '#8a6a3a'); P.px(hx, hy, '#5a3a22'); break; }
+      case 'tome': P.rect(hx - 1, hy - 2, 3, 3, B ? '#3a1e5a' : '#4a2a7a'); P.px(hx - 1, hy - 2, GOLD); if (!B) { P.px(hx, hy - 1, '#70e8ff'); P.rect(hx - 1, hy, 1, 1, '#f0e8d0'); } break;
+      case 'holystaff': P.rect(hx, t, 1, FEET - t, '#d8c890'); P.rect(hx, t - 4, 1, 4, GOLD); P.rect(hx - 1, t - 3, 3, 1, GOLD); P.px(hx, t - 5, '#fff4c0'); break;
+      case 'fists': break; // 武闘家：拳の布は手の色で描く
       case 'lute':
         if (F) { P.rect(bx0 + 1, torsoBot - 3, 3, 3, '#c08a40'); P.px(bx0 + 2, torsoBot - 2, '#3a2616'); P.line(bx0 + 3, torsoBot - 3, bx1 + 1, nk, '#8a5a2a'); }
         if (B) { P.rect(bx0 + 2, nk + 1, 4, 5, '#a8763a'); P.line(bx0 + 4, nk + 1, bx1, t + 2, '#8a5a2a'); }

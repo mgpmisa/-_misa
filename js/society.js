@@ -7,6 +7,7 @@ import { killCreature } from './creatures.js';
 import { W } from './world.js';
 import { equipBonus, countItem, takeItem } from './items.js';
 import { gearOnHit, gearMoraleMul } from './gear.js';
+import { advReach, advOnAttack } from './advclass.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 
@@ -60,7 +61,7 @@ export function stepCombat(sim, dt) {
     if (!t || t.hp <= 0 || (isHuman(t) && (t.deathYear != null || t.jail != null))) { e.fight = null; continue; }
     const dx = t.pos.x - e.pos.x, dz = t.pos.z - e.pos.z, d = Math.hypot(dx, dz);
     if (d > 12) { e.fight = null; continue; }
-    if (d > 1.3) {
+    if (d > (isHuman(e) && e.advClass ? advReach(e) : 1.3)) { // 魔法使い・魔導士・弓使いは離れて撃つ
       const sp = (isHuman(e) ? 1.1 : (SPECIES[e.sp]?.speed || 1)) * dt;
       const m = Math.min(sp, d - 1);
       e.pos.x += (dx / d) * m; e.pos.z += (dz / d) * m;
@@ -79,6 +80,7 @@ export function stepCombat(sim, dt) {
     if (isHuman(t) && sim.hasTech(t, 'barrier') && !isHuman(e) && sim.townOf(t) && Math.hypot(t.pos.x - sim.townOf(t).x, t.pos.z - sim.townOf(t).z) < sim.townOf(t).r) dmg = Math.max(1, Math.round(dmg * 0.7));
     dmg = growthAttack(sim, e, t, dmg);
     if (dmg <= 0) continue; // かわされた
+    if (isHuman(e) && e.advClass) dmg = advOnAttack(sim, e, t, dmg); // 冒険者の職業ごとの差（僧侶は仲間を癒す など）
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp - dmg <= 0) dmg = Math.max(0, t.hp - 1);
     t.hp -= dmg;
     gearOnHit(sim, e, t, dmg);
