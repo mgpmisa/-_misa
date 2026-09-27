@@ -932,7 +932,7 @@ export function buildingRows(sim, b) {
       break;
     }
     case 'bathhouse': rows.push(['湯屋の主', keeper('bathkeeper')], ['入浴料', `${FEE.bath[grade(s)]}銅貨`]); break;
-    case 'library': rows.push(['司書', keeper('librarian')], ['蔵書', `${40 + (b.id % 7) * 12}冊（鎖でつながれている）`], ['使い賃', '無料（町の蓄えで営む）']); break;
+    case 'library': rows.push(['司書', keeper('librarian')], ['蔵書', `${160 + (b.id % 7) * 20}冊（貴重な本は鎖でつながれている）`], ['使い賃', '無料（町の蓄えで営む）']); break;
     case 'theater': {
       const sh = B.show[s.id];
       rows.push(['役者', sim.living().filter((q) => q.s === s.id && q.job === 'actor').map((q) => q.given).join('・') || 'いない'], ['木戸銭', `${FEE.play[grade(s)]}銅貨（子どもは半分）`], ['今夜の演目', sh && sh.until > S.t ? `「${sh.play}」` : 'なし']);
