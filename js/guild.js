@@ -5,6 +5,21 @@ import { ITEMS, DROPS, addItem, makeItem, countItem, takeItem, itemName } from '
 import { startFight, arrest } from './society.js';
 import { advRole } from './advclass.js';
 import { questFamilyOk, questNearMul } from './partylife.js';
+import { deadlyAt, strongEnough, crewUnsafe } from './deadly.js';
+
+// 依頼の行き先が竜など手に負えない相手の縄張りなら、その相手（deadly.js）
+function questDeadly(sim, q) {
+  const S = sim.S;
+  let spot = q.where || null;
+  if (q.type === 'hunt') { const c = S.creatures[q.target]; if (c && c.hp > 0) spot = c.pos; }
+  else if ((q.type === 'explore' || q.type === 'bandits') && typeof q.target === 'string') spot = sim.building(+q.target.slice(1))?.door || spot;
+  return spot ? deadlyAt(sim, spot.x, spot.z) : null;
+}
+// その顔ぶれで受けてよい依頼か：手に負えない相手の縄張りへ行く依頼は、相手の 1.6 倍の力がそろうパーティだけ
+function crewCanTake(sim, crew, q) {
+  const c = questDeadly(sim, q);
+  return !c || strongEnough(crew, c);
+}
 
 export const RANKS_ADV = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
 const RANK_PTS = [0, 3, 8, 15, 30, 55, 100];
@@ -139,7 +154,7 @@ export function takeQuest(sim, p) {
   const crew = pt ? pt.members.map((id) => S.people[id]).filter((o) => o && o.deathYear == null && !o.quest && o.jail == null && o.s === p.s && o.hp > o.maxhp * 0.5) : [p];
   if (pt && !crew.includes(p)) crew.unshift(p);
   const rank = pt ? Math.round(crew.reduce((s2, o) => s2 + advRank(o), 0) / crew.length + (crew.length >= 3 ? 1 : 0)) : advRank(p);
-  const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1 && questFamilyOk(sim, crew, q));   // 家族持ちは長い遠征を受けない（partylife.js）
+  const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1 && questFamilyOk(sim, crew, q) && crewCanTake(sim, crew, q));   // 竜の縄張りへは強いパーティだけ（deadly.js）   // 家族持ちは長い遠征を受けない（partylife.js）
   if (!cands.length) return;
   const q = R.weighted(cands, (x) => (x.reward / 20 + (x.rank === rank ? 2 : 1) + p.values.ambition) * questNearMul(sim, crew, x));   // 家族持ちは近場を選ぶ
   const members = pt ? crew : [p];
@@ -169,6 +184,7 @@ export function questPlace(sim, p) {
     case 'hunt': {
       const c = S.creatures[q.target];
       if (!c || c.hp <= 0) { completeQuest(sim, q); return questPlace(sim, p); }
+      if (crewUnsafe(sim, [p], c.pos.x, c.pos.z)) return null;   // 獲物が竜の縄張りに入った：出てくるまで待つ
       return { type: 'quest', place: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) }, quest: { target: c.id } };
     }
     case 'gather': {
@@ -184,7 +200,7 @@ export function questPlace(sim, p) {
         const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
         if (d > 80) continue;
         const threat = Math.max(powerOf(c), threatNear(sim, c.pos.x, c.pos.z, 12));
-        if (threat * Math.sqrt(threat) > mine * 1.5 || isDeadly(sim, c.pos.x, c.pos.z)) continue; // 竜の縄張りのような所には近づかない
+        if (threat * Math.sqrt(threat) > mine * 1.5 || isDeadly(sim, c.pos.x, c.pos.z) || deadlyAt(sim, c.pos.x, c.pos.z)) continue; // 竜の縄張りのような所には近づかない
         const sc = d + threat * 2;
         if (sc < bestScore) { bestScore = sc; best = c; bd = d; }
       }
@@ -193,6 +209,7 @@ export function questPlace(sim, p) {
     }
     case 'explore': case 'bandits': {
       const b = sim.building(+q.target.slice(1));
+      if (crewUnsafe(sim, [p], b.door.x, b.door.z)) return null;   // 竜の縄張りの中：討伐できる強さがなければ行かない
       return { type: 'quest', place: { x: b.door.x, z: b.door.z }, quest: { target: q.target, questId: q.id } };
     }
     case 'bounty': {

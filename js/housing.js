@@ -155,6 +155,7 @@ function progressJobs(sim) {
         const before = payer.money;
         const got = marketBuy(sim, sid, g, j.need[g], wallet, { who: whoLabel(sim, payer.id) });
         j.need[g] -= got; j.spent += before - payer.money;
+        if (j.need[g] >= 0.05) (j.poor || (j.poor = {}))[g] = (sim.S.towns[sid]?.stock?.[g] || 0) >= 0.05;   // 品はあったが、お金が足りなかった
       }
       const left = Object.entries(j.need).filter(([, n]) => n >= 0.05);
       j.wait++;
@@ -164,7 +165,7 @@ function progressJobs(sim) {
       if (!left.length || j.wait >= 4 || (onlyNails && j.wait >= 3)) {
         // 釘が手に入らなければ木の栓で組む。ほかの材料が足りなければ古材で間に合わせる
         const other = left.filter(([g]) => g !== 'iron_nail').map(([g]) => MAT_JP[g]);
-        if (left.length) j.makeshift = [left.some(([g]) => g === 'iron_nail') ? '釘が手に入らず、木の栓で組んだ' : '', other.length ? `${other.join('と')}がそろわず、古材で間に合わせた` : ''].filter(Boolean).join('。');
+        if (left.length) j.makeshift = [left.some(([g]) => g === 'iron_nail') ? (j.poor?.iron_nail ? '釘を買うお金が足りず、木の栓で組んだ' : '釘が手に入らず、木の栓で組んだ') : '', other.length ? `${other.join('と')}がそろわず、古材で間に合わせた` : ''].filter(Boolean).join('。');
         j.stage = 'build';
       }
       continue;

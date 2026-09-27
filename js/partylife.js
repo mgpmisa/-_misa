@@ -43,6 +43,7 @@ import { moveMul } from './growth.js';
 import { healthSpeedMul } from './health.js';
 import { flow } from './ledger.js';
 import { carryState, itemWeight, BAGS } from './carry.js';
+import { unsafeFor, crewUnsafe } from './deadly.js';
 
 // ---------- 目安の数 ----------
 const BONUS_MAX = 0.15;     // 絆100でチームの力 +15%
@@ -64,7 +65,7 @@ const alive = (m) => !!m && m.deathYear == null && !!m.needs;
 
 // ---------- 状態 ----------
 const STAT_KEYS = ['loadShared', 'porterShared', 'porterSplit', 'together', 'apart', 'groupSleep', 'groupEat', 'follow', 'waitSteps', 'slowSteps', 'innNights', 'stableNights', 'campNights', 'roughNights', 'homeNights',
-  'familyLeave', 'reunion', 'homesick', 'farRefused', 'feeCover', 'bondFought', 'bondCrisis', 'bondHelp', 'bondQuest', 'bondQuarrel', 'bondShare', 'abandoned', 'friendsAfter', 'loveAfter', 'injuredOut'];
+  'familyLeave', 'heldBack', 'refuseDeadly', 'dangerLeave', 'reunion', 'homesick', 'farRefused', 'feeCover', 'bondFought', 'bondCrisis', 'bondHelp', 'bondQuest', 'bondQuarrel', 'bondShare', 'abandoned', 'friendsAfter', 'loveAfter', 'injuredOut'];
 export function partyLifeState(sim) {
   const S = sim.S;
   if (!S.partyLife) S.partyLife = { v: 1, stats: {}, leaving: [] };
@@ -327,6 +328,8 @@ function followerDecide(sim, p, pt, L, h) {
   }
   // 自分だけのどうしようもない空腹・眠気は、旅先の食事・寝床（needs.js）に任せる
   if (n.hunger < 15 || n.sleep < 8) return false;
+  // リーダーの行き先が竜など手に負えない相手の縄張り：ついて行かない（deadly.js。rescue.js の「竜の近くへは駆けつけない」と同じ見方）
+  if (la && la.tx != null && !URGENT.has(la.type) && unsafeFor(sim, p, la.tx, la.tz)) return refuseDeadly(sim, p, pt, L);
   let c;
   if (la && COPY.has(la.type) && !(la.type === 'eat' && la.food !== 'inn')) {
     let place;
@@ -377,6 +380,51 @@ export function partyCands(sim, p, cands) {
     if (BLOCK.has(c.type) && !(c.type === 'sleep' && (c.food === 'way' || c.food === 'camp')) && !(c.type === 'eat' && c.food === 'inn')) { c.score = -99; continue; }
     if (hd && c.place && Math.abs(c.place.x - hd.x) <= 2 && Math.abs(c.place.z - hd.z) <= 2) c.score = -99;
   }
+  holdBack(sim, p, pt, cands);
+}
+// 竜など手に負えない相手の縄張りへ向かう案は、仲間が引き止める（討伐依頼を受けた十分に強いパーティなら行ける。deadly.js）
+function holdBack(sim, p, pt, cands) {
+  const crew = membersOf(sim, pt).filter((m) => available(sim, m));
+  if (!crew.includes(p)) crew.push(p);
+  let top = null;
+  for (const c of cands) if (c.score > -99 && (!top || c.score > top.score)) top = c;
+  for (const c of cands) {
+    if (c.score <= -99 || URGENT.has(c.type) || !c.place || c.place.x == null) continue;
+    const foe = crewUnsafe(sim, crew, c.place.x, c.place.z);
+    if (!foe) continue;
+    c.score = -99;
+    if (c !== top || crew.length < 2) continue;
+    // いちばんやりたかった行き先を止められた：いちばん慎重な仲間が引き止めた
+    ST(sim).heldBack++;
+    const X = ptl(pt);
+    const who = crew.filter((m) => m !== p).sort((a, b) => ((b.pers?.N || 0) - (b.values?.courage || 0)) - ((a.pers?.N || 0) - (a.values?.courage || 0)))[0];
+    if (!who || X.heldD === sim.today) continue;
+    X.heldD = sim.today;
+    const fname = foe.title || foe.name;
+    sim.remember(p, `${fname}の縄張りへ向かおうとして、${who.given}に「命がいくつあっても足りない」と引き止められた`, { emo: -0.1, imp: 0.5, about: [who.id], k: 'party' });
+    sim.remember(who, `${p.given}が${fname}の縄張りへ行こうとしたので、引き止めた`, { emo: 0.1, imp: 0.5, about: [p.id], k: 'party' });
+    addBond(sim, pt, who, 0.5);
+    sim.pushLog(`パーティ「${pt.name}」の${who.given}が、${fname}の縄張りへ向かおうとする${p.given}を引き止めた。`, 'event', [who.id, p.id], p.pos);
+  }
+}
+// 仲間がリーダーの危なすぎる行き先について行かない。重ねて向かうなら、パーティを抜ける
+function refuseDeadly(sim, p, pt, L) {
+  const me = PL(p);
+  ST(sim).refuseDeadly++;
+  if (me.refD !== sim.today) { me.refD = sim.today; me.refN = 0; }
+  me.refN++;
+  const la = L.action;
+  const here = unsafeFor(sim, p, p.pos.x, p.pos.z);
+  if (me.refN === 1) sim.remember(p, `${L.given}が竜の縄張りのような所へ向かおうとした。命が惜しいので、ついて行かなかった`, { emo: -0.4, imp: 0.55, about: [L.id], k: 'party' });
+  if (me.refN >= 3 && la && unsafeFor(sim, p, la.tx, la.tz)) {
+    ST(sim).dangerLeave++;
+    leaveParty(sim, p, pt, 'danger', L);
+  }
+  // その場（危なければ町）で待つ
+  const place = here ? sim.placeFor(p, 'plaza') : campNear(sim, p.pos.x, p.pos.z, 2);
+  sim.startAction(p, { type: here ? 'flee' : 'rest', place, dur: 30 });
+  if (p.action) p.action.pseq = ptl(pt).seq;
+  return true;
 }
 
 // ---------- 家族 ----------
@@ -427,7 +475,7 @@ function trackFamily(sim, m, pt) {
   }
   if (me.miss >= 100 && pt && m.party === pt.id && !me.leaving) leaveParty(sim, m, pt, 'family');
 }
-function leaveParty(sim, m, pt, why) {
+function leaveParty(sim, m, pt, why, L = null) {
   const S = sim.S, me = PL(m);
   pt.members = pt.members.filter((id) => id !== m.id);
   m.party = null;
@@ -450,6 +498,16 @@ function leaveParty(sim, m, pt, why) {
       if (o.pers.A < 0.4) addBond(sim, pt, o, -2);
     }
     sim.pushLog(`${m.given}は家族に会いたくなり、パーティ「${pt.name}」を抜けて家へ帰った。`, 'event', [m.id], m.pos);
+  } else if (why === 'danger') {
+    // リーダーが竜の縄張りのような所へ向かうのを止められず、命を惜しんで抜けた
+    sim.remember(m, `${L ? L.given : '頭'}が危なすぎる所へ向かうので、パーティ「${pt.name}」を抜けた`, { emo: -0.5, imp: 0.7, about: L ? [L.id] : [], k: 'party' });
+    for (const id of pt.members) {
+      const o = S.people[id];
+      if (!alive(o)) continue;
+      sim.remember(o, `${m.given}が「命あっての物種だ」と言って、パーティ「${pt.name}」を抜けた`, { emo: -0.3, imp: 0.5, about: [m.id], k: 'party' });
+      addBond(sim, pt, o, -1);
+    }
+    sim.pushLog(`${m.given}は、危なすぎる所へ向かう${L ? L.given : '頭'}について行けず、パーティ「${pt.name}」を抜けた。`, 'event', [m.id], m.pos);
   }
 }
 

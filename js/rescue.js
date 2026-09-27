@@ -17,12 +17,13 @@ import { gearGuardMul, gearWillDefend } from './gear.js';
 import { isBedridden } from './health.js';
 import { isRare, popTarget } from './fauna.js';
 import { dangerAt } from './danger.js';
+import { TOO_STRONG, NEED } from './deadly.js';
 
 const VOICE = 12;                 // 叫び声の届く距離（マス）
 const TICK = 1;                   // 何分ごとに見回すか
-const TOO_STRONG = 420;           // これより強い相手（竜・魔王軍の将など）は警鐘と討伐依頼に任せる
+// TOO_STRONG：これより強い相手（竜・魔王軍の将など）は警鐘と討伐依頼に任せる。NEED：相手の強さのこの倍の力が集まれば立ち向かう
+// （素人は深手で退くので余裕を見る）。どちらも deadly.js（竜の縄張りには近づかない決まり）と同じ数を使う
 const MAX_RESCUERS = 6;
-const NEED = 1.6;                 // 相手の強さのこの倍の力が集まれば立ち向かう（素人は深手で退くので余裕を見る）
 const BEASTS = new Set(['wolf', 'bear', 'tiger', 'polarbear', 'croc']);
 const FIGHTERS = new Set(['guard', 'watchman', 'gatekeeper', 'militia', 'soldier', 'knight', 'royalguard', 'general', 'paladin',
   'hunter', 'adventurer', 'warrior', 'archer', 'swordmaster', 'sage', 'cleric', 'wizard', 'guildmaster', 'pioneer']);

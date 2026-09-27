@@ -339,7 +339,7 @@ export function faunaThink(sim, c, def, all, humans) {
         const rw = s.ranch.x1 - s.ranch.x0 + 1, rh = s.ranch.z1 - s.ranch.z0 + 1, k = (parseInt(String(c.id).replace(/\D/g, ''), 10) || 0) % (rw * rh);
         const barn = { x: s.ranch.x0 + (k % rw), z: s.ranch.z0 + Math.floor(k / rw) };
         c.sleeping = true;
-        c.goal = Math.hypot(c.pos.x - barn.x, c.pos.z - barn.z) > 1.2 ? { x: barn.x + R.range(-0.5, 0.5), z: barn.z + R.range(-0.5, 0.5) } : null;
+        c.goal = Math.hypot(c.pos.x - barn.x, c.pos.z - barn.z) > 0.5 ? { x: barn.x + R.range(-0.3, 0.3), z: barn.z + R.range(-0.3, 0.3) } : null;
         return true;
       }
       if (c.sp === 'dog' || c.sp === 'horse' || c.sp === 'donkey') { c.sleeping = true; c.goal = d2h(c) > 1.5 ? { x: c.home.x, z: c.home.z } : null; return true; }

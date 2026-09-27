@@ -115,13 +115,13 @@ function tilesOfBiome(world, biomes, n, rng, pred) {
   return out;
 }
 
-// 牧場の広さ：柵の中1マスに大きな家畜1.5頭ぶんまで（鶏・アヒルは半頭と数える。牧羊犬は数えない）
+// 牧場の広さ：柵の中1マスに大きな家畜1.25頭ぶんまで（鶏・アヒルは半頭と数える。牧羊犬は数えない）
 const SMALL_STOCK = new Set(['chicken', 'duck', 'goose']);
 export const stockUnit = (sp) => (sp === 'dog' ? 0 : SMALL_STOCK.has(sp) ? 0.5 : 1);
 export function ranchRoom(s) {
   const r = s?.ranch;
   if (!r) return 0;
-  return Math.max(2, Math.floor((r.x1 - r.x0 + 1) * (r.z1 - r.z0 + 1) * 1.5));
+  return Math.max(2, Math.floor((r.x1 - r.x0 + 1) * (r.z1 - r.z0 + 1) * 1.25));
 }
 export function herdUnits(list) { let u = 0; for (const c of list) u += stockUnit(c.sp); return u; }
 
@@ -325,8 +325,12 @@ function think(sim, c, def, all, humans) {
   // 家畜
   if (def.kind === 'livestock') {
     const s = sim.town(c.owner);
-    if (s && s.ranch && c.range === 0) c.goal = { x: R.range(s.ranch.x0, s.ranch.x1), z: R.range(s.ranch.z0, s.ranch.z1) };
-    else c.goal = { x: c.home.x + R.range(-c.range, c.range), z: c.home.z + R.range(-c.range, c.range) };
+    if (s && s.ranch && c.range === 0) {
+      // 柵の中の行き先は、着くまで（たいてい）変えない。すぐ変えると、みな真ん中に寄って重なって見える
+      const r = s.ranch, g = c.goal;
+      if (g && !g.run && g.x >= r.x0 - 0.45 && g.x <= r.x1 + 0.45 && g.z >= r.z0 - 0.45 && g.z <= r.z1 + 0.45 && Math.hypot(g.x - c.pos.x, g.z - c.pos.z) > 0.3 && R.chance(0.85)) return;
+      c.goal = { x: R.range(r.x0 - 0.4, r.x1 + 0.4), z: R.range(r.z0 - 0.4, r.z1 + 0.4) };
+    } else c.goal = { x: c.home.x + R.range(-c.range, c.range), z: c.home.z + R.range(-c.range, c.range) };
     return;
   }
   // 草食：捕食者から逃げる

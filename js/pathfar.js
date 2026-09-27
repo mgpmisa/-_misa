@@ -174,7 +174,7 @@ export function prepPathFar(world) {
 export function pathFarStats(world) { const g = GRAPHS.get(world); return g ? { ...g.stats, borders: g.borders.size, clusters: g.intra.size } : null; }
 
 // ---------- 遠くまでの道探し ----------
-// opts: { avoid（危険地図。短い A* に渡す）, near（これより近ければふつうの A*）, maxIter（近いときの上限）, maxNodes }
+// opts: { avoid（危険地図。短い A* に渡す）, near（これより近ければふつうの A*）, maxIter（近いときの上限）, maxNodes, blockCl（避ける区画の集まり、または (CL, CW) => 集まり）}
 export function findPathFar(world, sx, sz, tx, tz, opts = {}) {
   const tiles = world.tiles;
   if (sx === tx && sz === tz) return [];
@@ -206,6 +206,10 @@ export function findPathFar(world, sx, sz, tx, tz, opts = {}) {
   for (const [n, v] of startLinks) if (v < Infinity) { gs.set(n, v); came.set(n, -1); heap.push(v + h(n), n); }
   let best = Infinity, bestLast = -1, iter = 0;
   const maxNodes = opts.maxNodes || 60000;
+  // 竜の縄張りのように避けたい区画（deadly.js）。出発と目的の区画は除く。入るたびに重く数える
+  let block = typeof opts.blockCl === 'function' ? opts.blockCl(CL, CW) : opts.blockCl || null;
+  if (block && (block.has(cs) || block.has(ct))) { block = new Set(block); block.delete(cs); block.delete(ct); }
+  if (block && !block.size) block = null;
   const nb = [];
   while (heap.size && iter++ < maxNodes) {
     const i = heap.pop();
@@ -220,7 +224,7 @@ export function findPathFar(world, sx, sz, tx, tz, opts = {}) {
     if (m) for (let k = 0; k < m.length; k++) nb.push(m[k]);
     interEdges(world, g, i, nb);
     for (let k = 0; k < nb.length; k += 2) {
-      const j = nb[k], ng = gi + nb[k + 1];
+      const j = nb[k], ng = gi + nb[k + 1] + (block && block.has(clOf(j % W, (j / W) | 0)) ? 300 : 0);
       if (closed.has(j)) continue;
       const old = gs.get(j);
       if (old == null || ng < old) { gs.set(j, ng); came.set(j, i); heap.push(ng + h(j), j); }

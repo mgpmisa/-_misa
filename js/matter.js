@@ -294,13 +294,14 @@ function chooseRepertoire(sim, sid, pool, skill, R) {
   return scored.sort((a, b) => b[1] - a[1]).slice(0, 6).map((x) => x[0]);
 }
 // 暮らしによく要る品（その職の人は、町に足りなければ先に作る）
-const STAPLES = { smith: ['iron_nail', 'hinge', 'rivet', 'iron_sheet'] };
+// （町の在庫が目安の8割を切ったとき、2回に1回だけ。武器や鎧など、いつもの品も作り続ける）
+const STAPLES = { smith: ['iron_nail', 'hinge', 'iron_sheet', 'rivet', 'iron_rod'] };
 // 注文：建て増しなどで町に足りない品を知らせる（housing.js などから）。5日で忘れる
 export function matterWant(sim, sid, id, q) {
   if (!MAT.get(id)?.make || !(q > 0)) return;
   const W = MS(sim).want || (MS(sim).want = {});
   const w = W[sid] || (W[sid] = {});
-  w[id] = { q: Math.max(q, w[id]?.q || 0), day: sim.today };
+  w[id] = { q: Math.max(q, w[id]?.q || 0), day: sim.today, since: w[id]?.since ?? sim.today };
 }
 // 職人のいない町（1日ごとに数え直す）
 function townsWith(sim, job) {
@@ -308,7 +309,7 @@ function townsWith(sim, job) {
   if (!c.by[job]) { const set = new Set(); for (const p of sim.living()) if (p.job === job && p.jail == null) set.add(p.s); c.by[job] = set; }
   return c.by[job];
 }
-// 注文の一覧：自分の町の注文が先。職人のいない町の注文も、よその町の職人が受けて荷を送る
+// 注文の一覧：自分の町の注文が先。職人のいない町や、1日たっても片づかない注文は、よその町の職人が受けて荷を送る
 function wantedFor(sim, sid, job) {
   const W = MS(sim).want;
   if (!W) return [];
@@ -320,7 +321,8 @@ function wantedFor(sim, sid, job) {
       if (x.q <= 0.05 || sim.today - x.day > 5) { delete w[id]; continue; }
       if (!mine.includes(id)) continue;
       if (+ws === sid) local.push({ id, sid });
-      else if (!(has || (has = townsWith(sim, job))).has(+ws)) remote.push({ id, sid: +ws });
+      // よその町の注文：その町に職人がいないか、1日たっても片づかないとき（職人が寝込んでいる・牢にいるなど）
+      else if (sim.today - (x.since ?? x.day) >= 1 || !(has || (has = townsWith(sim, job))).has(+ws)) remote.push({ id, sid: +ws });
     }
     if (!Object.keys(w).length) delete W[ws];
   }
@@ -329,13 +331,19 @@ function wantedFor(sim, sid, job) {
 function craftHour(sim, p, hh, speed) {
   const R = sim.rng, sid = p.s;
   if (!p.mrep || (p.mrepDay ?? -99) < sim.today - 7) { p.mrep = chooseRepertoire(sim, sid, recipes().get(p.job), p.skill?.[p.job] || 0.3, R); p.mrepDay = sim.today; }
+  const room = (x) => (hh.stock?.[x] || 0) < 6 && inputsAvail(sim, sid, hh, MAT.get(x));
+  // 注文が入ったら、手の長い仕事（武器など）はいったん脇に置いて、先に注文の品を作る
+  if (p.mk && p.mk.to == null && !p.mkHold && MS(sim).want) {
+    const order = wantedFor(sim, sid, p.job).find((o) => room(o.id));
+    if (order) { p.mkHold = p.mk; p.mk = { id: order.id, prog: 0, to: order.sid }; }
+  }
+  if (!p.mk && p.mkHold) { p.mk = p.mkHold; p.mkHold = null; }
   if (!p.mk) {
     const m = sim.S.towns[sid];
-    const room = (x) => (hh.stock?.[x] || 0) < 6 && inputsAvail(sim, sid, hh, MAT.get(x));
     // 1. 注文のある品 → 2. 町に足りない、よく要る品 → 3. いつもの品
     const order = wantedFor(sim, sid, p.job).find((o) => room(o.id));
     if (order) { p.mk = { id: order.id, prog: 0, to: order.sid }; }
-    const id = order ? order.id : (STAPLES[p.job] || []).find((x) => MAT.has(x) && (m?.stock?.[x] || 0) < matterGood(x).target && room(x))
+    const id = order ? order.id : (R.chance(0.5) && (STAPLES[p.job] || []).find((x) => MAT.has(x) && (m?.stock?.[x] || 0) < matterGood(x).target * 0.8 && room(x)))
       || p.mrep.find((x) => { const g = matterGood(x); return (m?.stock?.[x] || 0) < g.target * 1.5 && room(x); });
     if (!id) return;
     if (!order) p.mk = { id, prog: 0 };

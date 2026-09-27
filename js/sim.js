@@ -57,6 +57,7 @@ import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
 import { housingDaily } from './housing.js';   // 手狭な家の建て増し・引っ越し・独り立ち
 import { discoveryHourly } from './discovery.js';   // 新しく見つかった物のお知らせ
+import { deadlyAt, deadlyCands, zoneAvoid, zoneClusters } from './deadly.js';   // 竜など手に負えない相手の縄張りには近づかない
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
 const mortY = (a) => { for (const [x, p] of MORT_Y) if (a <= x) return p; return 0.3; };
@@ -704,6 +705,7 @@ export class Sim {
     divineDecide(this, p, cands, add);
     needsCands(this, p, cands);
     partyCands(this, p, cands);   // パーティの人は家に帰らない（partylife.js）
+    deadlyCands(this, p, cands);  // 竜など手に負えない相手の縄張りへは行かない（deadly.js）
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -754,6 +756,7 @@ export class Sim {
       if (!c.hostile || c.hp <= 0 || this.S.creatures[c.id] !== c) continue;
       const d = Math.hypot(c.pos.x - s.x, c.pos.z - s.z);
       if (d > 40) continue;
+      if (deadlyAt(this, c.pos.x, c.pos.z)) continue;   // 竜の縄張りの中の獲物は狙わない（討伐は依頼を受けた強いパーティだけ）
       const risk = c.lv * 3 + c.atk + c.maxhp / 10 - p.lv * 4 - p.atk - p.maxhp / 10;
       if (risk > 10 + p.values.courage * 10) continue;
       opts.push({ w: 50 / (d + 5) + (c.bounty || 0) / 20 - Math.max(0, risk) * 0.2 * (1 - p.values.courage), x: Math.round(c.pos.x), z: Math.round(c.pos.z), target: c.id, label: c.name });
@@ -763,6 +766,7 @@ export class Sim {
       if (!['cave', 'pyramid', 'ruins', 'hideout'].includes(b.type)) continue;
       const d = Math.hypot(b.x - s.x, b.z - s.z);
       if (d > 60) continue;
+      if (deadlyAt(this, b.door.x, b.door.z)) continue;   // 竜の巣穴など、手に負えない相手の住処は探りに行かない
       opts.push({ w: 30 / (d + 10) + (b.bounty || 0) / 15 + p.pers.O, x: b.door.x, z: b.door.z, target: 'b' + b.id, label: b.name });
     }
     if (!opts.length) return null;
@@ -821,9 +825,10 @@ export class Sim {
     this._noPath = this._noPath || new Map();
     const key = a.tx * 1000 + a.tz;
     const bad = this._noPath.get(key);
-    const avoid = brave ? this.dangerHigh() : this.S.dangerMap;
+    // 竜など手に負えない相手の縄張りは、討伐依頼を受けた強いパーティ・軍勢でなければ、勇敢な人も避けて通る（deadly.js）
+    const avoid = zoneAvoid(this, brave ? this.dangerHigh() : this.S.dangerMap, p);
     // 広い世界の遠い目的地は二段構えの道探し（pathfar.js）。近い所と今の 160 の世界は今までどおり
-    const path = bad && bad > this.S.t ? null : W > 200 ? findPathFar(this.S.world, sx, sz, a.tx, a.tz, { maxIter: 26000, avoid }) : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, avoid);
+    const path = bad && bad > this.S.t ? null : W > 200 ? findPathFar(this.S.world, sx, sz, a.tx, a.tz, { maxIter: 26000, avoid, blockCl: (CL, CWn) => zoneClusters(this, p, CL, CWn) }) : findPath(this.S.world, sx, sz, a.tx, a.tz, 26000, avoid);
     if (!path && !(bad > this.S.t)) { this._noPath.set(key, this.S.t + 120); if (this._noPath.size > 500) this._noPath.clear(); }
     if (!path) {
       // たどり着けない：近くの歩ける場所へ
