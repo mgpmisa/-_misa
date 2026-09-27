@@ -17,16 +17,16 @@
 //
 // ■ お金の流れ（どこからも湧かせない）
 //   宿代・馬小屋代   客の財布／家計 → 宿の主の家計（いなければ町の蓄え）
-//   入浴料          客 → 湯屋の主（湯屋は薪を市場から買う：湯屋の主 → 市場の金庫）
+//   入浴料          客 → 湯屋の主（入ったときに払う）
 //   芝居の木戸銭     客 → その晩に舞台に立つ役者たちで山分け
 //   服の代金        客 → 仕立て屋（仕立て屋は布を市場から買う：仕立て屋 → 市場の金庫）
 //   薬の代金        客 → 薬師・錬金術師（薬は市場から仕入れる：薬師 → 市場の金庫）
-//   よろず屋        市場の手数料（買い物客が払った分）→ よろず屋の主
-//   図書館          使うのは無料。司書の給金は町の蓄え（足りなければ国庫）
-//   穀物倉          町の蓄え → 市場の金庫（秋に小麦を買い入れる）。飢饉には 市場の金庫 → 町の蓄え（安く売り出す）
-//   孤児院          教会の施し箱 → 孤児院の家計（足りなければ町の蓄え）。孤児院 → 市場（パン）、孤児院 → 院母（給金）
-//                   巣立つ子には孤児院の家計から支度金
-//   墓地            墓守の給金は町の蓄え
+//   図書館          使うのは無料。司書の給金は給料日（7日ごと）に町の蓄え（足りなければ国庫）から、働いた日数ぶん
+//   穀物倉          町の蓄え → 市場の金庫（秋に小麦を買い入れる）。飢饉には 市場の金庫 → 町の蓄え（安く売り出す）。倉番の給金は給料日に町の蓄えから
+//   孤児院          給料日と子を引き取った日に、教会の施し箱 → 孤児院の家計（足りなければ町の蓄え）。
+//                   孤児院 → 市場（パンを買う）、孤児院 → 院母（給料日に給金）。巣立つ子には孤児院の家計から支度金
+//   よろず屋・湯屋    日の終わりに精算：市場組合が預かった買い物の手数料 → よろず屋の主。湯屋の主 → 市場（その日に焚いた薪の代金）
+//   働いている最中にお金が入る処理はない（社長の指示：お金は取り引きでしか動かない）
 //   新しい町の普請   町の蓄え → 市場の金庫（材木・石材）と、町の大工・石工・人夫（手間賃）
 import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { T, W, H, tryPlace, walkable } from './world.js';
@@ -34,12 +34,20 @@ import { spendable, pay, earn } from './property.js';
 import { restDayFor } from './labor.js';
 import { markTilesChanged } from './pathfar.js';
 
+// 試験用のお金の見張り：sim._bAudit に総額を数える関数を入れると、この仕組みの中で増えた・減ったお金を sim._bLeak に記録する
+const audited = (name, fn) => function (sim, ...a) {
+  if (!sim._bAudit) return fn(sim, ...a);
+  const m0 = sim._bAudit(); const r = fn(sim, ...a); const d = sim._bAudit() - m0;
+  if (Math.abs(d) > 1e-6) { const L = sim._bLeak = sim._bLeak || {}; L[name] = (L[name] || 0) + d; }
+  return r;
+};
+
 // ---------- 新しい仕事（data.js の JOBS に足す） ----------
 export const BLD_JOBS = {
   hostkeeper: { name: '宿の主', place: 'inn', rank: 'citizen' },
   bathkeeper: { name: '湯屋の主', place: 'bathhouse', rank: 'commoner' },
   librarian: { name: '司書', place: 'library', rank: 'citizen', research: 0.3 },
-  actor: { name: '役者', place: 'theater', rank: 'commoner', svc: 'entertain' },
+  actor: { name: '役者', place: 'theater', rank: 'commoner' },
   shopkeeper: { name: 'よろず屋の主', place: 'genstore', rank: 'commoner' },
   granarian: { name: '倉番', place: 'granary', rank: 'commoner' },
   matron: { name: '孤児院の院母', place: 'orphanage', rank: 'commoner' },
@@ -206,12 +214,16 @@ function placeInTown(sim, s, type, runtime) {
   };
   let b = null;
   const RR = s.type === 'capital' ? s.r + 1 : s.r + (s.extraR || 0);
-  if (s.type === 'capital') {
-    b = tryPlace(w, { x: s.x, z: s.z, r: s.r, id: s.id, kingdom: s.kingdom }, streetsIn(0, s.r), type, name, bw, bd, { extra }, R);
-    for (let k = 1; !b && k <= 4; k++) b = tryPlace(w, { x: s.x, z: s.z, r: RR + k * 4, id: s.id, kingdom: s.kingdom }, streetsIn(RR + 1, RR + k * 4), type, name, bw, bd, { extra, land: LAND_WIDE }, R, RR);
-  } else {
-    b = tryPlace(w, { x: s.x, z: s.z, r: RR, id: s.id, kingdom: s.kingdom }, streetsIn(0, RR), type, name, bw, bd, { extra }, R);
-    for (let k = 1; !b && k <= 3; k++) b = tryPlace(w, { x: s.x, z: s.z, r: RR + k * 3, id: s.id, kingdom: s.kingdom }, streetsIn(0, RR + k * 3), type, name, bw, bd, { extra, land: LAND_WIDE }, R);
+  // 決めた大きさで置けなければ、ひと回り小さくして探す
+  for (const [ww, dd] of [[bw, bd], [bw, Math.max(2, bd - 1)], [Math.max(2, bw - 1), Math.max(2, bd - 1)]]) {
+    if (b) break;
+    if (s.type === 'capital') {
+      b = tryPlace(w, { x: s.x, z: s.z, r: s.r, id: s.id, kingdom: s.kingdom }, streetsIn(0, s.r), type, name, ww, dd, { extra }, R);
+      for (let k = 1; !b && k <= 6; k++) b = tryPlace(w, { x: s.x, z: s.z, r: RR + k * 4, id: s.id, kingdom: s.kingdom }, streetsIn(RR + 1, RR + k * 4), type, name, ww, dd, { extra, land: LAND_WIDE }, R, RR);
+    } else {
+      b = tryPlace(w, { x: s.x, z: s.z, r: RR, id: s.id, kingdom: s.kingdom }, streetsIn(0, RR), type, name, ww, dd, { extra }, R);
+      for (let k = 1; !b && k <= 5; k++) b = tryPlace(w, { x: s.x, z: s.z, r: RR + k * 3, id: s.id, kingdom: s.kingdom }, streetsIn(0, RR + k * 3), type, name, ww, dd, { extra, land: LAND_WIDE }, R);
+    }
   }
   if (!b) return null;
   if (s.kingdom == null) b.kingdom = null;
@@ -397,7 +409,7 @@ function lodge(sim, p, b) {
     bed = (pref.length ? pref : free)[0] ?? -1;
   }
   const fee = FEE.inn[grade(s)];
-  const keeper = workerOf(sim, p.s, 'hostkeeper', b.id);
+  const keeper = workerOf(sim, p.s, 'hostkeeper', b.id) || lodgingKeeper(sim, p.s);
   if (bed >= 0 && (kind === 'resident' || (kind !== 'poor' && spendable(sim, p) >= fee))) {
     rec.g[p.id] = bed;
     if (kind !== 'resident') payTo(sim, p, fee, keeper, p.s);
@@ -454,7 +466,7 @@ export function buildingsOptions(sim, p, add) {
   if (at.library != null && age >= 8 && h >= 9 && h < 19 && (p.bldRead ?? -9) < today) {
     const O = p.pers?.O ?? 0.5;
     const study = age < 14 ? (h >= 12 ? 1.4 : 0) : (O - 0.45) * 3 + (['scribe', 'teacher', 'scholar', 'magister', 'sage', 'priest', 'wizard'].includes(p.job) ? 1.2 : 0);
-    if (study > 0) add(0.8 + study + (rest ? 0.8 : 0) + (100 - n.pleasure) / 90, 'read', doorOf(sim.building(at.library)), R.int(40, 90));
+    if (study > 0) add(1.6 + study + (rest ? 0.8 : 0) + (100 - n.pleasure) / 90, 'read', doorOf(sim.building(at.library)), R.int(40, 90));
   }
   // 劇場：役者が舞台に立っている晩だけ
   if (at.theater != null && h >= 17.5 && h < 21.5 && age >= 10 && (p.bldPlay ?? -9) <= today - 2 && p.job !== 'actor') {
@@ -496,7 +508,8 @@ const clothesPrice = (sim, sid) => Math.round((sim.S.towns[sid]?.price?.cloth ||
 const medPrice = (sim, sid) => Math.round((sim.S.towns[sid]?.price?.medicine || 10) * 1.2 + 2);
 
 // ================================================================ 着いたとき
-export function buildingsArrive(sim, p, a) {
+export const buildingsArrive = audited('buildingsArrive', arriveImpl);
+function arriveImpl(sim, p, a) {
   const B = sim.S.bld;
   if (!B || !a) return;
   const S = sim.S, s = sim.townOf(p), R = sim.rng;
@@ -514,6 +527,7 @@ export function buildingsArrive(sim, p, a) {
       payTo(sim, p, fee, workerOf(sim, p.s, 'bathkeeper', b.id), p.s);
       p.bldBath = sim.today; p.grime = 0;
       B.stats.bathe++;
+      (B.day[p.s] = B.day[p.s] || {}).bath = (B.day[p.s].bath || 0) + 1;
       if (p.memories && R.chance(0.06)) sim.remember(p, R.pick([`${b.name}の湯に浸かって、疲れが抜けた`, `${b.name}で近所の人と長話をした`, `${b.name}の蒸し風呂で汗を流した`]), { emo: 0.4, imp: 0.25, k: 'bath' });
       break;
     }
@@ -628,63 +642,78 @@ export function buildingsDo(sim, p, dt) {
 }
 
 // ================================================================ 仕事の中身（doWork の default）
-export function buildingsWork(sim, p, dt, eff) {
-  const S = sim.S, hr = dt / 60, hh = sim.hh(p);
-  if (!hh) return;
-  const m = S.towns[p.s];
+// 働いている最中にはお金を動かさない（社長の指示：お金は取り引きでしか動かない）。
+// ここでは「今日働いた」という記録と、腕前・世話の効き目だけを残す。給金は給料日（7日ごと）に buildingsDaily で払う。
+const WAGE = { librarian: 6, granarian: 4, matron: 4 };   // 1日働いた分の給金（銅貨）
+export const buildingsWork = workImpl;   // 働いている最中はお金を動かさないので見張らない
+function workImpl(sim, p, dt, eff) {
+  const S = sim.S, hr = dt / 60;
+  if (!BLD_JOBS[p.job]) return;
+  if (p.bldWorked !== sim.today) { p.bldWorked = sim.today; if (WAGE[p.job]) p.bldDays = (p.bldDays || 0) + 1; }
   switch (p.job) {
-    case 'hostkeeper': {
-      // 部屋の掃除と洗い物。宿の食堂の仕入れはしない（収入は宿代）
-      p.needs.esteem = Math.min(100, p.needs.esteem + 1 * hr);
-      break;
-    }
-    case 'bathkeeper': {
-      // 湯を沸かす薪を市場から買う（薪がなければ湯はぬるい）
-      const q = 0.25 * hr;
-      if ((m.stock.wood || 0) >= q) { const c = Math.min(q * (m.price.wood || 2), Math.max(0, hh.money - 5)); if (c > 0) { hh.money -= c; m.cash = (m.cash || 0) + c; m.stock.wood -= q; } }
-      break;
-    }
-    case 'librarian': case 'granarian': case 'gravedigger': {
-      if (p.job === 'gravedigger' && sim.S.bld?.at?.[p.s]?.cemetery == null) break;
-      // 公の仕事：町の蓄えから給金（足りなければ国庫から）
-      const rate = { librarian: 1.0, granarian: 0.6, gravedigger: 0.5 }[p.job] * hr;
-      const f = Math.min(rate, Math.max(0, (m.fund || 0) - 30));
-      m.fund -= f; hh.money += f;
-      if (f < rate) { const k = sim.kingdomOf(p); if (k && k.treasury > 200) { const x = Math.min(rate - f, k.treasury - 200); k.treasury -= x; hh.money += x; } }
-      if (p.job === 'granarian') { const G = S.bld?.gran?.[p.s]; if (G) G.kept = sim.today; }
-      break;
-    }
+    case 'hostkeeper': p.needs.esteem = Math.min(100, p.needs.esteem + 1 * hr); break;   // 部屋の掃除と洗い物（収入は泊まり客の宿代）
+    case 'granarian': { const G = S.bld?.gran?.[p.s]; if (G) G.kept = sim.today; break; }  // 倉の見回り：ねずみと湿気を防ぐ
     case 'matron': {
       const B = S.bld, oh = B?.orph?.[p.s] != null ? S.households[B.orph[p.s]] : null;
-      if (oh) {
-        const w = Math.min(0.5 * hr, Math.max(0, oh.money - 10));
-        oh.money -= w; hh.money += w;
-        for (const id of oh.members) { const k = S.people[id]; if (alive(k) && k.inside === p.inside) k.needs.pleasure = Math.min(100, k.needs.pleasure + 6 * hr); }
-      }
+      if (oh) for (const id of oh.members) { const k = S.people[id]; if (alive(k) && k.inside === p.inside) k.needs.pleasure = Math.min(100, k.needs.pleasure + 6 * hr); }
       break;
     }
-    case 'shopkeeper': {
-      // よろず屋：町の人の買い物の手数料（市場組合から）を受け取る
-      if ((m.commission || 0) > 0) { const x = m.commission; m.commission = 0; hh.money += x; }
-      break;
-    }
-    case 'actor': {
-      // 昼は稽古
-      p.skill.actor = Math.min(1, (p.skill.actor || 0.3) + 0.0005 * hr);
-      break;
-    }
+    case 'actor': p.skill.actor = Math.min(1, (p.skill.actor || 0.3) + 0.0005 * hr); break;   // 昼は稽古
   }
 }
 
+// 給料日（7日ごと）：公の仕事は町の蓄え（足りなければ国庫）から、院母は孤児院の家計から、働いた日数ぶん
+function payday(sim) {
+  const S = sim.S;
+  for (const p of sim.living()) {
+    const days = p.bldDays || 0;
+    if (!days || !WAGE[p.job] || !sim.hh(p)) continue;
+    const want = WAGE[p.job] * days;
+    let paid = 0;
+    if (p.job === 'matron') {
+      const oh = S.bld?.orph?.[p.s] != null ? S.households[S.bld.orph[p.s]] : null;
+      if (oh) { paid = Math.min(want, Math.max(0, oh.money)); oh.money -= paid; }
+    } else {
+      const m = S.towns[p.s];
+      paid = Math.min(want, Math.max(0, (m.fund || 0) - 30)); m.fund -= paid;
+      if (paid < want) { const k = sim.kingdomOf(p); if (k && k.treasury > 200) { const x = Math.min(want - paid, k.treasury - 200); k.treasury -= x; paid += x; } }
+    }
+    earn(sim, p, paid, 0.3);
+    p.bldDays = 0;
+    if (paid < want * 0.5 && p.memories) sim.remember(p, '給料日なのに、給金が満足に払われなかった', { emo: -0.5, imp: 0.4, k: 'work' });
+  }
+}
+// よろず屋：その日の買い物客が払った手数料（市場組合が預かった分）を、日の終わりに受け取る
+// 湯屋：その日に沸かした湯の分の薪を、日の終わりに市場から買う
+function shopSettle(sim) {
+  const S = sim.S, B = B_(sim);
+  for (const s of S.world.settlements) {
+    const at = B.at[s.id]; if (!at) continue;
+    const m = S.towns[s.id];
+    if (at.genstore != null && (m.commission || 0) > 0) {
+      const sk = workerOf(sim, s.id, 'shopkeeper');
+      if (sk && sim.hh(sk) && !s.buildings.some((id) => sim.building(id)?.type === 'market')) { sim.hh(sk).money += m.commission; m.commission = 0; }
+    }
+    const baths = B.day[s.id]?.bath || 0;
+    if (at.bathhouse != null && baths) {
+      const bk = workerOf(sim, s.id, 'bathkeeper');
+      const q = Math.min(m.stock.wood || 0, baths * 0.15);
+      if (bk && sim.hh(bk) && q > 0) { const c = Math.min(q * (m.price.wood || 2), Math.max(0, sim.hh(bk).money - 5)); sim.hh(bk).money -= c; m.cash = (m.cash || 0) + c; m.stock.wood -= q; }
+    }
+  }
+  B.day = {};
+}
+
 // ================================================================ 1日に1回
-export function buildingsDaily(sim) {
+export const buildingsDaily = audited('buildingsDaily', dailyImpl);
+function dailyImpl(sim) {
   const S = sim.S, B = B_(sim), R = sim.rng, today = sim.today;
   // 服のすり切れと体の汚れ
   const heavy = new Set(['farmer', 'miner', 'smith', 'woodcutter', 'hunter', 'fisher', 'sailor', 'mason', 'roadworker', 'pioneer', 'soldier', 'charcoal', 'gatherer', 'rancher', 'shepherd']);
   for (const p of sim.living()) {
     if (!p.needs) continue;
     const age = sim.ageOf(p);
-    if (age >= 14) p.clothWear = Math.min(100, (p.clothWear || R.int(0, 50)) + (heavy.has(p.job) ? 1.6 : 0.9));
+    if (age >= 14) p.clothWear = Math.min(100, (p.clothWear ?? R.int(0, 75)) + (heavy.has(p.job) ? 1.6 : 0.9));
     p.grime = Math.min(100, (p.grime || 0) + (heavy.has(p.job) ? 14 : 7));
     if ((p.clothWear || 0) > 90) p.needs.esteem = Math.max(0, p.needs.esteem - 3);
     if (p.pilgrim && today > p.pilgrim.until + 6) p.pilgrim = null;   // 帰りそびれたら、旅は終わったことにする
@@ -700,6 +729,8 @@ export function buildingsDaily(sim) {
     buildMissing(sim, s, pop[s.id] || 0);
   }
   orphanageDaily(sim);
+  shopSettle(sim);
+  if (today % 7 === 0) payday(sim);
   moveLodgers(sim);
   // 古い夜の記録を消す
   const nk = nightKey(sim);
@@ -819,6 +850,7 @@ function takeIn(sim, p, oh, cap, log = true) {
   p.s = cap.id; p.action = null; p.path = []; p.inside = null;
   const b = sim.building(oh.house); if (b) p.pos = { x: b.door.x, z: b.door.z };
   sim.S.bld.stats.orphan++;
+  oh.newKid = sim.today;
   if (p.memories) sim.remember(p, `親を亡くし、${oh.name}に引き取られた`, { emo: -0.4, imp: 0.9, k: 'orphan' });
   if (log) sim.pushLog(`親を亡くした${p.given}が${oh.name}に引き取られた。`, 'event', [p.id], p.pos);
 }
@@ -862,10 +894,10 @@ function orphanageDaily(sim) {
     }
     const n = oh.members.length;
     if (!n) continue;
-    // 養う費用：教会の施し箱から、足りなければ町の蓄えから
+    // 養う費用：給料日（7日ごと）と、新しい子を引き取った日に、教会の施し箱から（足りなければ町の蓄えから）1週間分を渡す
     const m = S.towns[cap.id];
-    const want = n * 8 + 20;
-    if (oh.money < want) {
+    const want = n * 28 + 30;
+    if ((sim.today % 7 === 0 || oh.newKid === sim.today) && oh.money < want) {
       let need = want - oh.money;
       const a = Math.min(need, Math.max(0, m.alms || 0)); m.alms -= a; oh.money += a; need -= a;
       const f = Math.min(need, Math.max(0, (m.fund || 0) - 50)); m.fund -= f; oh.money += f;
