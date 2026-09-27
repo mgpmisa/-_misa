@@ -2167,7 +2167,7 @@ export function personAnimState(sim, p, moving = false) {
   const age = sim?.ageOf ? sim.ageOf(p) : 30;
   const kid = age < 13;
   const a = p.action;
-  if (p.fight) return moving ? 'walk' : 'attack';
+  if (p.fight) return moving ? 'walk' : (p.guardT != null && sim?.S && sim.S.t - p.guardT < 2 ? 'work:guard' : 'attack');   // 盾を構える（tactics.js の挑発・かばう）
   if (moving) {
     if (a?.type === 'flee' || (p.needs && p.needs.survival < 8)) return 'flee';
     if (kid && a && ['play', 'festival'].includes(a.type)) return 'play';

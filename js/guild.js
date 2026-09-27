@@ -6,6 +6,7 @@ import { startFight, arrest } from './society.js';
 import { advRole } from './advclass.js';
 import { questFamilyOk, questNearMul } from './partylife.js';
 import { deadlyAt, strongEnough, crewUnsafe } from './deadly.js';
+import { tacticsFormParty, tacticsAfterForm, tacticsPickMates, tacticsCrewRank, tacticsRoleName } from './tactics.js';
 
 // 依頼の行き先が竜など手に負えない相手の縄張りなら、その相手（deadly.js）
 function questDeadly(sim, q) {
@@ -151,15 +152,15 @@ export function takeQuest(sim, p) {
   const S = sim.S, R = sim.rng;
   if (p.quest) return;
   const pt = partyOf(sim, p);
-  const crew = pt ? pt.members.map((id) => S.people[id]).filter((o) => o && o.deathYear == null && !o.quest && o.jail == null && o.s === p.s && o.hp > o.maxhp * 0.5) : [p];
+  const crew = pt ? pt.members.map((id) => S.people[id]).filter((o) => o && o.deathYear == null && !o.quest && o.jail == null && o.s === p.s && o.hp > o.maxhp * 0.5 && !o.tHire) : [p];
   if (pt && !crew.includes(p)) crew.unshift(p);
-  const rank = pt ? Math.round(crew.reduce((s2, o) => s2 + advRank(o), 0) / crew.length + (crew.length >= 3 ? 1 : 0)) : advRank(p);
+  const rank = pt ? tacticsCrewRank(sim, crew) : advRank(p);   // ランクの低い人がいると下がる：いちばん低い人＋1まで（tactics.js）
   const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1 && questFamilyOk(sim, crew, q) && crewCanTake(sim, crew, q));   // 竜の縄張りへは強いパーティだけ（deadly.js）   // 家族持ちは長い遠征を受けない（partylife.js）
   if (!cands.length) return;
   const q = R.weighted(cands, (x) => (x.reward / 20 + (x.rank === rank ? 2 : 1) + p.values.ambition) * questNearMul(sim, crew, x));   // 家族持ちは近場を選ぶ
   const members = pt ? crew : [p];
   if (!pt && q.rank >= 2) {
-    const mates = sim.living().filter((o) => o !== p && isAdventurer(o) && !o.quest && o.s === p.s && o.jail == null && sim.rel(p, o).a > -10 && o.hp > o.maxhp * 0.6).sort((a, b) => sim.rel(p, b).a - sim.rel(p, a).a).slice(0, Math.min(3, q.rank));
+    const mates = tacticsPickMates(sim, p, sim.living().filter((o) => o !== p && isAdventurer(o) && !o.quest && !o.tHire && o.s === p.s && o.jail == null && sim.rel(p, o).a > -10 && o.hp > o.maxhp * 0.6).sort((a, b) => sim.rel(p, b).a - sim.rel(p, a).a), Math.min(3, q.rank));   // ランクの合う者、盾役を先に（tactics.js）
     members.push(...mates);
   }
   q.state = 'taken'; q.takenBy = members.map((m) => m.id); q.taken = sim.today;
@@ -380,10 +381,7 @@ export function partiesDaily(sim) {
     const free = sim.living().filter((p) => p.s === cap.id && isAdventurer(p) && !partyOf(sim, p) && p.jail == null && sim.ageOf(p) >= 16 && p.job !== 'guildmaster');
     if (free.length < 2 || !R.chance(0.6)) continue;
     const leader = free.slice().sort((a, b) => (b.lv + b.pers.E * 3 + b.values.ambition * 3) - (a.lv + a.pers.E * 3 + a.values.ambition * 3))[0];
-    const roles = new Set([partyRole(leader)]);
-    const picks = [leader];
-    const others = free.filter((o) => o !== leader && sim.rel(leader, o).a > -5).sort((a, b) => (sim.rel(leader, b).a + (roles.has(partyRole(b)) ? -20 : 10) + Math.abs(b.lv - leader.lv) * -1) - (sim.rel(leader, a).a + (roles.has(partyRole(a)) ? -20 : 10) + Math.abs(a.lv - leader.lv) * -1));
-    for (const o of others) { if (picks.length >= 4) break; if (R.chance(0.5 + o.pers.A * 0.4)) { picks.push(o); roles.add(partyRole(o)); } }
+    const picks = tacticsFormParty(sim, leader, free, R);   // リーダーの上下1ランク、盾役を先に、回復・攻撃・遠距離の順（tactics.js）
     if (picks.length < 2) continue;
     let name;
     for (let i = 0; i < 6; i++) { name = R.pick(PARTY_A) + R.pick(PARTY_B); if (!Object.values(S.advParties).some((x) => x.name === name && !x.gone)) break; }
@@ -394,7 +392,8 @@ export function partiesDaily(sim) {
       sim.remember(m, m === leader ? `仲間を集めてパーティー「${name}」を結成した` : `${leader.given}に誘われ、パーティー「${name}」に加わった`, { emo: 0.8, imp: 0.8, about: picks.filter((x) => x !== m).map((x) => x.id), k: 'party' });
       for (const o of picks) if (o !== m) sim.relMut(m, o).a += 12;
     }
-    sim.pushLog(`${cap.name}の冒険者ギルドで、${leader.given}を頭にパーティー「${name}」（${picks.map((m) => `${m.given}・${partyRole(m)}`).join('／')}）が結成された。`, 'event', picks.map((m) => m.id), leader.pos);
+    sim.pushLog(`${cap.name}の冒険者ギルドで、${leader.given}を頭にパーティー「${name}」（${picks.map((m) => `${m.given}・${tacticsRoleName(sim, m)}`).join('／')}）が結成された。`, 'event', picks.map((m) => m.id), leader.pos);
+    tacticsAfterForm(sim, S.advParties[id]);   // 指導：リーダーより2つ下の新人に師匠を付ける（tactics.js）
   }
 }
 

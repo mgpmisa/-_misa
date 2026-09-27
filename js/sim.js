@@ -53,6 +53,7 @@ import { ensureLedger, ledgerDaily, moneyIn, flow, meal, newcomerMoney } from '.
 import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCandidates, marketArrive, marketDaily, marketHourly } from './market.js';
 import { accrueWage, paydayDaily } from './payday.js';
 import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
+import { tacticsDaily, tacticsHourly } from './tactics.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
 import { housingDaily } from './housing.js';   // 手狭な家の建て増し・引っ越し・独り立ち
@@ -1843,6 +1844,7 @@ export class Sim {
     discoveryHourly(this);   // 新しく見つかった物のお知らせ（discovery.js）
     divineHourly(this);
     partyLifeHourly(this);   // 絆・家族恋しさ・宿の数（partylife.js）
+    tacticsHourly(this);   // 盾役のいないパーティの助っ人（騎士・兵士）の雇い入れと雇いの終わり（tactics.js）
     carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
   }
 
@@ -1945,6 +1947,7 @@ export class Sim {
     guildDaily(this);
     partiesDaily(this);
     partyLifeDaily(this);   // 絆の増減・解散後の友情（partylife.js）
+    tacticsDaily(this);   // ランクが離れすぎた仲間は抜ける（tactics.js）
     advClassDaily(this);
     propertyDaily(this);
     choreDaily(this);

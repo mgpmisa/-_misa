@@ -1046,7 +1046,7 @@ export function monsterTactics(sim, e, t) {
     }
   }
   // 弱い相手（後ろの術者・戦えない者）を先に狙う
-  if (I >= 0.6 && R.chance(0.25)) {
+  if (I >= 0.6 && R.chance(e.taunt ? 0.1 : 0.25)) {   // 盾役の挑発が効いているあいだは10％（tactics.js）
     const weak = humansAround(sim, e.pos.x, e.pos.z, 4).filter((h) => h !== t && h.deathYear == null && (BACKLINE.has(h.job) || h.hp < t.hp * 0.6)).sort((a, b) => a.hp - b.hp)[0];
     if (weak) { f.target = weak.id; monsterSay(sim, e, 'focus'); return false; }
   }

@@ -42,6 +42,7 @@ import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 import { advClassRows, advClassName } from './advclass.js';
 import { partyBondRows } from './partylife.js';
+import { tacticsRows, tacticsRoleName, tacticsLineup } from './tactics.js';
 import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
 import { carryHtml, carryMarks, CARRY_LABEL, CARRY_GO, CARRY_PREF } from './carry.js';
 
@@ -499,7 +500,7 @@ export class UI {
     const advs = this.sim.living().filter((p) => isAdventurer(p)).sort((a, b) => (b.qp || 0) - (a.qp || 0) || b.lv - a.lv).slice(0, 20);
     h += `<h4 class="sub-h">冒険者ランキング</h4><ul class="plist">${advs.map((p) => `<li data-pid="${p.id}"><span class="kind">${RANKS_ADV[advRank(p)]}</span><span>${esc(this.sim.fullName(p))}<br><span class="sub">${esc(advClassName(p) || JOBS[p.job].name)}・Lv${p.lv}・達成${p.qp || 0}点${p.party ? `・パーティ「${esc(S.advParties?.[p.party]?.name || '')}」` : ''}</span></span><span class="sub">${esc(this.actionText(p, true))}</span></li>`).join('')}</ul>`;
     const parties = Object.values(S.advParties || {}).filter((pt) => pt.members.some((id) => S.people[id]?.deathYear == null));
-    if (parties.length) h += `<h4 class="sub-h">冒険者パーティ</h4><ul class="plist">${parties.map((pt) => `<li><span class="kind">隊</span><span>「${esc(pt.name)}」<br><span class="sub">${pt.members.map((id) => S.people[id]).filter((x) => x && x.deathYear == null).map((x) => `<span class="link" data-pid="${x.id}">${esc(x.given)}${x.id === pt.leader ? '（リーダー）' : ''}</span>`).join('、')}・達成${pt.done || 0}件</span></span></li>`).join('')}</ul>`;
+    if (parties.length) h += `<h4 class="sub-h">冒険者パーティ</h4><ul class="plist">${parties.map((pt) => `<li><span class="kind">隊</span><span>「${esc(pt.name)}」<br><span class="sub">${pt.members.map((id) => S.people[id]).filter((x) => x && x.deathYear == null).map((x) => `<span class="link" data-pid="${x.id}">${esc(x.given)}${x.id === pt.leader ? '（リーダー）' : ''}・${esc(tacticsRoleName(this.sim, x))}${x.tHire ? '・助っ人' : ''}</span>`).join('、')}<br>${esc(tacticsLineup(this.sim, pt))}・達成${pt.done || 0}件</span></span></li>`).join('')}</ul>`;
     $('guildBoard').innerHTML = h;
   }
 
@@ -685,8 +686,8 @@ export class UI {
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;
-        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${advClassRows(sim, p, (x) => this.pLink(x))}${partyBondRows(sim, p)}</dl></div>`;
-      }
+        h += `<div class="section"><h4>冒険者</h4><dl class="kv"><dt>ランク</dt><dd>${RANKS_ADV[advRank(p)]}（達成${p.qp || 0}点）</dd><dt>依頼</dt><dd>${q ? esc(q.title) : 'なし'}</dd>${advClassRows(sim, p, (x) => this.pLink(x))}${tacticsRows(sim, p, (x) => this.pLink(x))}${partyBondRows(sim, p)}</dl></div>`;
+      } else if (p.tHire) h += `<div class="section"><h4>助っ人</h4><dl class="kv">${tacticsRows(sim, p, (x) => this.pLink(x))}</dl></div>`;   // パーティに雇われた騎士・兵士（tactics.js）
       // 学んだこと
       const likes = Object.entries(p.q || {}).sort((a, b) => b[1] - a[1]);
       const skills = Object.entries(p.skill || {}).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]);
