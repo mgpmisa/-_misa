@@ -57,6 +57,7 @@ function frame(now) {
       case 'discover': showDiscovery(ui, e.entry); break;
       case 'died': if (ui.follow === e.id) ui.follow = null; break;
       case 'hit': if (ui.ivOpen != null) ui.iv.hit(e.id); renderer.hit(e.id); if (ui.bubblesOn) ui.floatHit(e.id, e.dmg); break;
+      case 'cbtag': if (ui.bubblesOn) { const n0 = ui.floaters.length; ui.floatHit(e.id, 0); const f = ui.floaters.length > n0 ? ui.floaters[ui.floaters.length - 1] : null; if (f) { f.el.textContent = e.text; f.el.style.color = e.col || '#ffd24a'; f.el.style.fontWeight = 'bold'; f.el.style.top = `${parseFloat(f.el.style.top) - 15 * (ui._cbTagN = ((ui._cbTagN || 0) + 1) % 3)}px`; f.until += 900; } } break;   // 状態異常・瀕死・部位の破壊など（combat.js）
       case 'building': renderer.addBuilding(e.id); break;
       case 'tiles': renderer.refreshTiles?.(e.list); markTilesChanged(sim.S.world, e.list); ui.redrawMinimapBase(); break;
       case 'borders': ui.redrawMinimapBase(); break;

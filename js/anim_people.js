@@ -2164,6 +2164,13 @@ export function forgetPersonAnim(id) { for (const k of [...sheetCache.keys()]) i
 // moving：いま歩いているか（描画側で位置の変化から判定）。'walk' は歩行シート（sprites.js）を使うという意味。
 export function personAnimState(sim, p, moving = false) {
   if (p.deathYear != null) return 'dead';
+  if (p.cb) {   // 戦いの状態（combat.js）：瀕死・眠り・麻痺と気絶・潰走
+    const c = p.cb, t = sim?.S?.t ?? 0;
+    if (c.down) return 'dying';
+    if ((c.ss?.sleep || 0) > t) return 'sleep';
+    if ((c.ss?.para || 0) > t || (c.ss?.stun || 0) > t) return 'hurt';
+    if ((c.rout || 0) > t) return 'flee';
+  }
   const age = sim?.ageOf ? sim.ageOf(p) : 30;
   const kid = age < 13;
   const a = p.action;

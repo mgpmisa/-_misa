@@ -11,6 +11,7 @@ import { gearOnHit, gearMoraleMul } from './gear.js';
 import { advReach, advOnAttack } from './advclass.js';
 import { merchantsOf } from './market.js';
 import { tacticsMonsterTurn, tacticsHumanTurn, tacticsIncoming, tacticsAfterHit, tacticsIntercept, tacticsReach } from './tactics.js';
+import { combatHeld, combatReach, combatSpeed, combatTurn, combatArmorMul, combatNoDodge, combatDamage, combatAfterHit, combatFall } from './combat.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 
@@ -64,7 +65,8 @@ export function stepCombat(sim, dt) {
     if (!t || t.hp <= 0 || (isHuman(t) && (t.deathYear != null || t.jail != null))) { e.fight = null; continue; }
     const dx = t.pos.x - e.pos.x, dz = t.pos.z - e.pos.z, d = Math.hypot(dx, dz);
     if (d > 12) { e.fight = null; continue; }
-    if (d > (isHuman(e) ? tacticsReach(sim, e) : 1.3)) { // 魔法使い・魔導士・弓使い・回復役は離れて（tactics.js）
+    if (combatHeld(sim, e)) continue;   // 瀕死・眠り・麻痺・気絶・転倒・息をつく間は動かず打たない（combat.js）
+    if (d > (isHuman(e) ? combatReach(sim, e, tacticsReach(sim, e)) : 1.3)) { // 魔法使い・魔導士・弓使い・回復役は離れて（tactics.js）
       if (!isHuman(e) && tacticsIntercept(sim, e, t)) continue;   // 後衛へ向かう途中、前衛のそばで足止めされる（tactics.js）
       const sp = (isHuman(e) ? 1.1 : (SPECIES[e.sp]?.speed || 1)) * dt;
       const m = Math.min(sp, d - 1);
@@ -73,25 +75,28 @@ export function stepCombat(sim, dt) {
     }
     e.fight.cd -= dt;
     if (e.fight.cd > 0) continue;
-    e.fight.cd = 1;
+    e.fight.cd = combatSpeed(sim, e, t);   // 武器の重さで振りの速さが変わる・槍と弓の先手（combat.js）
     const R = sim.rng;
+    { const ct = combatTurn(sim, e, t); if (ct === false) continue; if (ct) t = ct; }   // 判断の順番：潰走・息切れ・手当て・撤退・回り込み・囲み・魔法（combat.js）
     if (!isHuman(e)) { const nt = tacticsMonsterTurn(sim, e, t); if (nt === false) continue; if (nt) t = nt; }   // 怒り・挑発で狙う相手を決める（tactics.js）
     if (!isHuman(e) && monsterTactics(sim, e, t)) continue;
     // 危なくなったら回復薬を飲む
     if (isHuman(e) && e.hp < e.maxhp * 0.35 && countItem(e, 'potion') > 0) { takeItem(e, 'potion', 1); e.hp = Math.min(e.maxhp, e.hp + 45); sim.events.push({ type: 'heal', id: e.id }); continue; }
     if (isHuman(e) && tacticsHumanTurn(sim, e, t)) continue;   // 盾役の挑発、攻撃役・後衛の位置取り（tactics.js）
-    let dmg = Math.max(1, Math.round(e.atk * teamMul(sim, e) * R.range(0.7, 1.3) - (t.def || 0) * teamMul(sim, t) * 0.5));   // 絆によるチームの力（partylife.js）
+    let dmg = Math.max(1, Math.round(e.atk * teamMul(sim, e) * R.range(0.7, 1.3) - (t.def || 0) * teamMul(sim, t) * 0.5 * combatArmorMul(sim, e, t)));   // 武器と鎧の相性（combat.js）   // 絆によるチームの力（partylife.js）
     // 魔王の耐性
     if (t.sp === 'demonlord' && isHuman(e)) dmg = Math.round(dmg * (e.eq?.weapon?.id === 'holysword' ? (sim.S.demon?.resist?.includes('holy') ? 1.1 : 1.6) : 0.6));
     if (isHuman(t) && sim.hasTech(t, 'barrier') && !isHuman(e) && sim.townOf(t) && Math.hypot(t.pos.x - sim.townOf(t).x, t.pos.z - sim.townOf(t).z) < sim.townOf(t).r) dmg = Math.max(1, Math.round(dmg * 0.7));
-    { const d0 = dmg; dmg = growthAttack(sim, e, t, dmg); if (dmg <= 0) dmg = teamAim(sim, e, d0); }   // 仲間との連携で当てる（partylife.js）
+    { const d0 = dmg; dmg = growthAttack(sim, e, t, dmg); if (dmg <= 0) dmg = teamAim(sim, e, d0); if (dmg <= 0) dmg = combatNoDodge(sim, e, t, d0); }   // 背後・逃げる背中・息切れ・囲みはかわせない（combat.js）   // 仲間との連携で当てる（partylife.js）
     if (dmg <= 0) continue; // かわされた
     if (isHuman(e) && e.advClass) dmg = advOnAttack(sim, e, t, dmg); // 冒険者の職業ごとの差（僧侶は仲間を癒す など）
+    dmg = combatDamage(sim, e, t, dmg); if (dmg <= 0) continue;   // 属性・状態・息・背後・部位・結界（combat.js）
     if (isHuman(e) && isHuman(t) && !e.fight.lethal && t.hp - dmg <= 0) dmg = Math.max(0, t.hp - 1);
     if (!isHuman(e) && isHuman(t)) { const cv = tacticsIncoming(sim, e, t, dmg); if (cv) { t = cv.t; dmg = cv.dmg; } }   // 盾で受ける・盾役が弱い仲間をかばう（tactics.js）
     t.hp -= dmg;
     gearOnHit(sim, e, t, dmg);
     tacticsAfterHit(sim, e, t, dmg);   // 怒りをためる・かばった装備の傷み（tactics.js）
+    combatAfterHit(sim, e, t, dmg);   // 状態異常・大けが・詠唱の中断・部位の破壊（combat.js）
     if (isHuman(t)) { t.needs.survival = Math.max(0, t.needs.survival - 12 * teamNerve(sim, t)); sim.learnDanger(t, t.pos.x, t.pos.z, 1); }
     sim.events.push({ type: 'hit', id: t.id, dmg });
     // 殴り合い：相手が弱ったら終わる
@@ -107,7 +112,7 @@ export function stepCombat(sim, dt) {
       }
       continue;
     }
-    if (t.hp <= 0) { resolveKill(sim, e, t); e.fight = null; continue; }
+    if (t.hp <= 0) { if (!combatFall(sim, e, t)) resolveKill(sim, e, t); e.fight = null; continue; }   // 人は瀕死になる・群れの士気（combat.js）
     // 降参・逮捕・逃走
     if (isHuman(t) && isHuman(e) && LAWFUL.has(e.job) && sim.S.wanted[t.id] && t.hp < t.maxhp * 0.4) { arrest(sim, e, t); e.fight = null; continue; }
     // 戦う職業でない人は、魔物に襲われたら逃げようとする
@@ -129,7 +134,7 @@ export function stepCombat(sim, dt) {
   }
 }
 
-function resolveKill(sim, killer, victim) {
+export function resolveKill(sim, killer, victim) {   // combat.js（瀕死のまま息絶えたとき）からも呼ぶ
   if (isHuman(victim)) {
     let cause;
     if (!isHuman(killer)) cause = SPECIES[killer.sp]?.kind === 'demon' ? 'demon' : SPECIES[killer.sp]?.monster ? 'monster' : 'beast';

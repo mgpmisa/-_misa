@@ -54,6 +54,7 @@ import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCan
 import { accrueWage, paydayDaily } from './payday.js';
 import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
 import { tacticsDaily, tacticsHourly } from './tactics.js';
+import { combatStep, combatDaily } from './combat.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
 import { housingDaily } from './housing.js';   // 手狭な家の建て増し・引っ越し・独り立ち
@@ -1390,6 +1391,7 @@ export class Sim {
     stepCreatures(this, dt);
     this._defend = (this._defend || 0) - dt;
     if (this._defend <= 0) { this._defend = 5; defendTowns(this); }
+    combatStep(this, dt);   // 瀕死の人の手当てと息絶え・毒と出血の経過（combat.js）
     stepCombat(this, dt);
     rescueStep(this, dt);
     { const edt = encounterDt(this, dt); if (edt) this.checkEncounters(people, edt); }   // 広い世界では3歩に1回、3歩分まとめて（perf.js）
@@ -1948,6 +1950,7 @@ export class Sim {
     partiesDaily(this);
     partyLifeDaily(this);   // 絆の増減・解散後の友情（partylife.js）
     tacticsDaily(this);   // ランクが離れすぎた仲間は抜ける（tactics.js）
+    combatDaily(this);   // 大けがの治療と後遺症・呪いを解く・解毒薬の備え（combat.js）
     advClassDaily(this);
     propertyDaily(this);
     choreDaily(this);

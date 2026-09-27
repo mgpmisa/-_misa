@@ -43,6 +43,7 @@ import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
 import { advClassRows, advClassName } from './advclass.js';
 import { partyBondRows } from './partylife.js';
 import { tacticsRows, tacticsRoleName, tacticsLineup } from './tactics.js';
+import { combatRows, combatCreatureRows } from './combat.js';
 import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
 import { carryHtml, carryMarks, CARRY_LABEL, CARRY_GO, CARRY_PREF } from './carry.js';
 
@@ -544,6 +545,7 @@ export class UI {
   actionText(p, short) {
     if (p.deathYear != null) return '故人';
     if (p.jail != null) return short ? '服役中' : `牢獄につながれている（あと${p.prisonDays}日）`;
+    if (p.cb?.down) return short ? '瀕死' : `倒れて瀕死になっている（あと${Math.max(0, Math.ceil(p.cb.down.until - this.sim.S.t))}分のうちに手当てがなければ死ぬ）`;   // combat.js
     if (p.fight) { const o = this.sim.entity(p.fight.target); return short ? '戦闘中' : `${o ? (o.given || o.name) : '何か'}と戦っている`; }
     if (p.talk) { const o = this.sim.S.people[p.talk.a === p.id ? p.talk.b : p.talk.a]; return short ? '会話中' : `${o ? o.given : '誰か'}と話している`; }
     const a = p.action;
@@ -683,6 +685,7 @@ export class UI {
 
         <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${wageText(sim, p) ? `<dt>給金</dt><dd>${esc(wageText(sim, p))}</dd>` : ''}${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
       h += carryHtml(sim, p, esc);   // 持ち物：品・数・重さ、重さと枠、身に付けた袋、家の蔵、倉庫（carry.js）
+      { const cr = combatRows(sim, p); if (cr) h += `<div class="section"><h4>戦い</h4><dl class="kv">${cr}</dl></div>`; }   // 戦い方・息・魔力・状態異常・大けが・苦手な相手（combat.js）
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;
@@ -740,6 +743,7 @@ export class UI {
     h += `<div class="psub">いま：${esc(state)}</div>`;
     h += `<div class="row-btns"><button id="followBtn" class="${this.follow === c.id ? 'on' : ''}">${this.follow === c.id ? '追いかけ中' : '追いかける'}</button><button id="lookBtn">見る</button></div>`;
     h += divineCreatureHTML(this.sim, c);
+    { const cr = combatCreatureRows(this.sim, c); if (cr) h += `<div class="section"><h4>戦い</h4><dl class="kv">${cr}</dl></div>`; }   // 弱点と耐性・状態・壊れた部位（combat.js）
     const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(Math.max(0, Math.min(100, v)))}%"></i></div>`;
     h += `<div class="section"><h4>ようす</h4><div class="bars">${bar('体力', c.hp / c.maxhp * 100)}${bar('満腹', c.hunger)}</div>
       <dl class="kv" style="margin-top:8px"><dt>強さ</dt><dd>攻${c.atk} 守${c.def}</dd><dt>倒した数</dt><dd>${c.kills || 0}</dd><dt>経験</dt><dd>${Math.round(c.xp || 0)}${d.evolve ? `（いずれ${esc(SPECIES[d.evolve].name)}に進化する）` : ''}</dd>

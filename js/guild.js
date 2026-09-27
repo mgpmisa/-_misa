@@ -7,6 +7,7 @@ import { advRole } from './advclass.js';
 import { questFamilyOk, questNearMul } from './partylife.js';
 import { deadlyAt, strongEnough, crewUnsafe } from './deadly.js';
 import { tacticsFormParty, tacticsAfterForm, tacticsPickMates, tacticsCrewRank, tacticsRoleName } from './tactics.js';
+import { combatQuestOk } from './combat.js';
 
 // 依頼の行き先が竜など手に負えない相手の縄張りなら、その相手（deadly.js）
 function questDeadly(sim, q) {
@@ -155,7 +156,7 @@ export function takeQuest(sim, p) {
   const crew = pt ? pt.members.map((id) => S.people[id]).filter((o) => o && o.deathYear == null && !o.quest && o.jail == null && o.s === p.s && o.hp > o.maxhp * 0.5 && !o.tHire) : [p];
   if (pt && !crew.includes(p)) crew.unshift(p);
   const rank = pt ? tacticsCrewRank(sim, crew) : advRank(p);   // ランクの低い人がいると下がる：いちばん低い人＋1まで（tactics.js）
-  const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1 && questFamilyOk(sim, crew, q) && crewCanTake(sim, crew, q));   // 竜の縄張りへは強いパーティだけ（deadly.js）   // 家族持ちは長い遠征を受けない（partylife.js）
+  const cands = (S.quests || []).filter((q) => q.state === 'open' && q.s === p.s && q.rank <= rank + 1 && questFamilyOk(sim, crew, q) && crewCanTake(sim, crew, q) && combatQuestOk(sim, crew, q));   // 一度負けた相手には、力が2倍そろうまで挑まない（combat.js）   // 竜の縄張りへは強いパーティだけ（deadly.js）   // 家族持ちは長い遠征を受けない（partylife.js）
   if (!cands.length) return;
   const q = R.weighted(cands, (x) => (x.reward / 20 + (x.rank === rank ? 2 : 1) + p.values.ambition) * questNearMul(sim, crew, x));   // 家族持ちは近場を選ぶ
   const members = pt ? crew : [p];

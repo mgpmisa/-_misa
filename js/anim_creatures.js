@@ -3177,6 +3177,12 @@ export function creatureAnimState(sim, c, ctx = {}) {
   const def = SPECIES_OF(c);
   if (ctx.dead || c.hp <= 0) return 'dead';
   if (ctx.hurt) return 'hurt';
+  if (c.cb?.ss) {   // 戦いの状態（combat.js）：眠り・転倒・気絶と麻痺
+    const ss = c.cb.ss, t = sim?.S?.t ?? 0;
+    if ((ss.sleep || 0) > t) return 'sleep';
+    if ((ss.fall || 0) > t) return 'dying';
+    if ((ss.stun || 0) > t || (ss.para || 0) > t) return 'hurt';
+  }
   const S = sim.S;
   if (c.fight) {
     const t = sim.entity ? sim.entity(c.fight.target) : null;
