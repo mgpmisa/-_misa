@@ -253,7 +253,7 @@ function onBuy(sim, sid, g, parts, payer, payerName) {
   // 買い手の職場（仕入れ）
   let bb = null;
   if (payer && typeof payer === 'object' && payer.__b) bb = payer.__b;
-  else { const hid = payerHhId(payer); if (hid != null) { if (CTX.b && CTX.hh?.id === hid) bb = CTX.b; else { const b = shopOfHh(sim, hid); if (b && (WP[b.type]?.merchant || ioOf(b.type).inp.has(g))) bb = b; } } }
+  else { const hid = payerHhId(payer); if (hid != null) { if (CTX.b && CTX.hh?.id === hid) bb = CTX.b; else { const b = shopOfHh(sim, hid); if (b && (WP[b.type]?.merchant || ((b.type === 'tavern' || b.type === 'inn') && ioOf(b.type).inp.has(g)))) bb = b; } } }
   for (const [o, n, c, cls] of parts) {
     const sellerCat = catOfOwner(sim, o, g);
     tally(sim, sid, g, sellerCat, buyerCat, n);
@@ -423,7 +423,7 @@ function flourFor(sim, b, hh, sid, need, batch) {
     st.wheat -= q; if (st.wheat < 1e-4) delete st.wheat;
     const f = millToll(sim, sid, q, hh);   // 麦の16分の1は粉ひき代として粉屋へ
     st.flour_wheat = (st.flour_wheat || 0) + f;
-    logKey(sim, b, 'home', '__milled', f);
+    logKey(sim, b, 'home', f < q - 1e-9 ? '__milled' : '__ground', f);
     if ((st.flour_wheat || 0) >= need) return;
   }
   // 2. 粉ひき小屋の小麦粉が市場にあり、麦からひくより高くなければ粉を買う
@@ -438,7 +438,7 @@ function flourFor(sim, b, hh, sid, need, batch) {
     st.wheat -= got; if (st.wheat < 1e-4) delete st.wheat;
     const f = millToll(sim, sid, got, hh);
     st.flour_wheat = (st.flour_wheat || 0) + f;
-    logKey(sim, b, 'home', '__milled', f);
+    logKey(sim, b, 'home', f < got - 1e-9 ? '__milled' : '__ground', f);
   }
 }
 function produce(sim, p, b, hh, eff, dt) {
@@ -632,7 +632,7 @@ function logHTML(L, esc, title) {
   const buys = Object.values(L.buy).sort((a, b) => b.c - a.c).slice(0, 8);
   const sold = Object.values(L.sold).sort((a, b) => b.n - a.n).slice(0, 8);
   const made = Object.entries(L.made).filter(([g]) => g[0] !== '_');
-  const milled = L.home?.__milled || 0, iron = L.home?.__iron || 0;
+  const milled = L.home?.__milled || 0, ground = L.home?.__ground || 0, iron = L.home?.__iron || 0;
   const home = Object.entries(L.home || {}).filter(([g]) => g[0] !== '_');
   const shelf = Object.entries(L.shelf || {});
   const soldN = sold.reduce((t, x) => t + x.n, 0), soldC = Object.values(L.sold).reduce((t, x) => t + x.c, 0);
@@ -640,6 +640,7 @@ function logHTML(L, esc, title) {
   let h = `<div class="wsday"><b>${title}</b>`;
   h += `<div class="wsrow"><span class="k">仕入れ</span><span>${buys.length ? buys.map((x) => `${esc(goodName(x.g))} ${fmt(x.n)}個 ← ${esc(x.from)}${x.c >= 0.5 ? `（${Math.round(x.c)}銅貨）` : ''}`).join('<br>') : 'なし'}${buyC >= 0.5 ? `<br><span class="sub">払った合計 ${Math.round(buyC)}銅貨</span>` : ''}</span></div>`;
   if (milled > 0.05) h += `<div class="wsrow"><span class="k">粉ひき</span><span>麦を粉ひき小屋でひいてもらい、小麦粉 ${fmt(milled)}（麦の16分の1を粉屋へ）</span></div>`;
+  if (ground > 0.05) h += `<div class="wsrow"><span class="k">粉ひき</span><span>町に粉ひき小屋がないので、工房の石うすで麦をひいた：小麦粉 ${fmt(ground)}</span></div>`;
   if (iron > 0.05) h += `<div class="wsrow"><span class="k">製錬</span><span>鉱石から鉄の延べ棒 ${fmt(iron)}</span></div>`;
   h += `<div class="wsrow"><span class="k">作った</span><span>${made.length ? made.map(([g, n]) => `${esc(goodName(g))} ${fmt(n)}`).join('・') : 'なし'}</span></div>`;
   if (shelf.length) h += `<div class="wsrow"><span class="k">店先へ</span><span>${shelf.map(([g, n]) => `${esc(goodName(g))} ${fmt(n)}`).join('・')}</span></div>`;
@@ -754,7 +755,7 @@ export function wsTownFlowHTML(sim, sid, esc = (s) => String(s), inner = false) 
       const fw = hstock(farm, 'wheat');
       const wheatOut = sumFrom(w, (k) => k === '農夫');
       h += node(`麦畑（農家${farm.length}軒）`, `納屋の麦 ${fmt(fw)}　市場の麦 ${fmt(m.stock.wheat || 0)}`, farm.length ? null : ['warn', '農家がいない（よその村から運ぶ）']);
-      h += arrow(`麦 ${fmt(wheatOut)} を売った（商人へ ${fmt(sumTo(w, (k) => k === '市場の商人' || k === '村の蔵'))}・パン工房へ ${fmt(sumTo(w, (k) => k === 'パン工房'))}・家々へ ${fmt(sumTo(w, (k) => k === '家々'))}）`);
+      h += arrow(`麦 ${fmt(sumTo(w, () => true))} が売れた（農家から ${fmt(wheatOut)}・商人から ${fmt(sumFrom(w, (k) => k === '商人' || k === '市場の商人'))}）→ パン工房へ ${fmt(sumTo(w, (k) => k === 'パン工房'))}・商人と村の蔵へ ${fmt(sumTo(w, (k) => k === '市場の商人' || k === '村の蔵'))}・家々へ ${fmt(sumTo(w, (k) => k === '家々'))}`);
       if (mills.length) {
         const mw = storeSum(sim, mills, 'wheat', 'back'), mf = storeSum(sim, mills, 'flour_wheat');
         const madeF = madeSum(sim, mills, 'flour_wheat', day);

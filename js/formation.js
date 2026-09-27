@@ -57,11 +57,12 @@ export const FTUNE = {
   FOE_R: 9,          // この距離に敵が見えたら戦いの前の並び
   FOE_EVERY: 4,      // 敵を探し直す間隔（分）
   BACK: 2.4,         // 戦いの前：後衛は前衛の何マス後ろ
-  CAMP_R: 1.15,      // 野営の輪の半径
+  CAMP_R: 1.4,       // 野営の輪の半径（寝転ぶので広め）
+  MAX_DEV: 4.5,      // 本当の位置からこれより離れる並びには入れない（遅れた人・先へ行きすぎた人）
   UP_WAIT: 3,        // 列の数を増やすのは、広い所が3回続いてから（ばたつかない）
   GROW: 0.25,        // 伸びやすさ：上乗せ1につき、務め1時間で余分に鍛える量（growth.js の gainStat の率）
-  STRAIN_STEP: 0.08, // 筋力が10より1高いごとに、鎧の重さの余分な疲れを8%軽くする
-  STRAIN_MIN: -0.3, STRAIN_MAX: 0.6,
+  STRAIN_STEP: 0.06, // 筋力が10より1高いごとに、鎧の重さによる疲れ（布の服より余分な分）を6%軽くする
+  STRAIN_MIN: -0.3, STRAIN_MAX: 0.5,
 };
 
 // ---------- 職業による能力の補正 ----------
@@ -213,7 +214,7 @@ export function formationBonusHtml(sim, p) {
   const parts = Object.entries(jb.add).map(([k, v]) => `${STAT_NAME[k]}＋${v}`).join('・');
   const grow = Object.keys(jb.add).map((k) => STAT_NAME[k]).join('・');
   const str = p.stats?.str ?? 10;
-  const strain = str > 10.5 ? `　重い鎧の疲れ −${Math.round(clamp((str - 10) * FTUNE.STRAIN_STEP, 0, FTUNE.STRAIN_MAX) * 100)}%` : '';
+  const strain = str > 10.5 ? `<br>鎧の重さによる疲れ −${Math.round(clamp((str - 10) * FTUNE.STRAIN_STEP, 0, FTUNE.STRAIN_MAX) * 100)}%` : '';
   return `<div class="section"><dl class="kv"><dt>職業の補正</dt><dd>${esc(parts)}（${esc(jb.why || '')}）<br><span class="sub">務めのたびに${esc(grow)}が伸びやすい${strain}</span></dd></dl></div>`;
 }
 export function formationBonusText(sim, p) { return formationBonusHtml(sim, p).replace(/<br>/g, ' ').replace(/<[^>]+>/g, '').trim(); }
@@ -226,7 +227,7 @@ const ROAD_LIKE = new Set([T.ROAD, T.BRIDGE, T.PLAZA, T.DOCK]);
 
 function fst(sim) {
   let s = sim._fmt;
-  if (!s || s.S !== sim.S) s = sim._fmt = { S: sim.S, pt: new Map(), stats: { layouts: 0, walk: 0, file: 0, door: 0, foe: 0, camp: 0, wait: 0, pulled: 0, cols: [0, 0, 0, 0] } };
+  if (!s || s.S !== sim.S) s = sim._fmt = { S: sim.S, pt: new Map(), stats: { layouts: 0, walk: 0, file: 0, door: 0, foe: 0, camp: 0, wait: 0, pulled: 0, far: 0, cols: [0, 0, 0, 0] } };
   return s;
 }
 function tileOf(sim, x, z) {
@@ -437,6 +438,7 @@ function walkLayout(sim, pt, st, out) {
     if (sh && lo + sh >= -rm - 0.05 && hi + sh <= rp + 0.05) lats = lats.map((v) => v + sh);
     rows[i].forEach((m, j) => {
       const q = slotAt(sim, S2, cc, n, lats[j], m.pos);
+      if (Math.hypot(q.x - m.pos.x, q.z - m.pos.z) > FTUNE.MAX_DEV) { S2.far++; return; }   // 遅れて離れた仲間は、追いつくまで本当の位置に描く
       out.set(m.id, { x: q.x, z: q.z, row: i, rows: R, kind: queue ? 'door' : C === 1 ? 'file' : 'walk', face: t });
     });
   }
@@ -493,7 +495,7 @@ function stillLayout(sim, pt, st, out) {
     const weak = grp.filter((m) => !guards.includes(m));
     const ring = [];
     while (guards.length || weak.length) { if (guards.length) ring.push(guards.shift()); if (weak.length) ring.push(weak.shift()); }
-    const k = ring.length, rad = Math.max(FTUNE.CAMP_R, (k * 1.1) / (2 * Math.PI));
+    const k = ring.length, rad = Math.max(FTUNE.CAMP_R, (k * 1.3) / (2 * Math.PI));
     const rot = ((pt.id * 2654435761) >>> 0) % 360 * Math.PI / 180;
     ring.forEach((m, j) => {
       const a = rot + (j / k) * Math.PI * 2;
@@ -568,7 +570,7 @@ export function formationRows(sim, p) {
   if (!pt) return '';
   const ms = pt.members.map((id) => sim.S.people[id]).filter(alive);
   const { groups, names } = roleGroups(sim, ms);
-  const i = groups.findIndex((g) => g.includes(p));
+  const i = groups.findIndex((g) => g.some((m) => m.id === p.id));
   const place = i >= 0 ? names[i] : '';
   const q = p.inside == null && !p.fight ? formationPos(sim, p, true) : null;
   return `<dt>隊列</dt><dd>${esc(place || '—')}（${esc(ROLE_NAME[tacticsRole(sim, p)] || '')}）${q ? `<br><span class="sub">${esc(KIND_NAME[q.kind] || '')}</span>` : ''}</dd>`;

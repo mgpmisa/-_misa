@@ -64,8 +64,13 @@ export function ensureJustice(sim) {
   const S = sim.S;
   if (S.justice && S.justice.v) return S.justice;
   S.justice = { v: 1, stats: {}, cases: [], execs: [], lashes: [], towns: {}, kings: {}, framed: [], seq: 1 };
-  // すでに牢にいる人（歴史の囚人・古いセーブで裁き済みの人）は、裁き直さない
-  for (const p of sim.living()) if (p.jail != null) p.jsTried = true;
+  // すでに牢にいる人（歴史の囚人・古いセーブで裁き済みの人）は、裁き直さない。
+  // ただし、捕まったばかりでまだ誰にも裁かれていない人（捕まった記憶があり、underworld.js の裁きも済んでいない人）は裁く
+  for (const p of sim.living()) {
+    if (p.jail == null) continue;
+    const fresh = !p.uwTried && (p.memories || []).some((m) => m.k === 'crime' && /に捕まり、.*牢獄に入れられた/.test(m.txt));
+    if (!fresh) p.jsTried = true;
+  }
   return S.justice;
 }
 function J(sim) { return sim.S.justice && sim.S.justice.v ? sim.S.justice : ensureJustice(sim); }
@@ -254,7 +259,8 @@ function trial(sim, p, L) {
     }
   } else {
     // 軽い罪：罰金・禁固・むち打ち・追放
-    const heavy = sev + prior * 0.18 + (witn >= 2 ? 0.08 : 0) - (applied.length ? 0.1 : 0);
+    for (const m of mercy) if (m.w >= 0.18 && R.chance(clamp(0.25 + (1 - sev) * 0.5, 0, 0.9))) applied.push(m);
+    const heavy = sev + prior * 0.18 + (witn >= 2 ? 0.08 : 0) - applied.length * 0.08;
     const fineAmt = Math.round((c.fine || 5) * (0.8 + sev * 0.7) * (1 + prior * 0.3));
     let fine = 0;
     if (hh && fineAmt > 0) {
@@ -288,7 +294,7 @@ function trial(sim, p, L) {
     if (verdict === 'lash' || verdict === 'exile') townJ(sim, p.s).fear = clamp(townJ(sim, p.s).fear + 0.04, 0, 1);
     if (c.dismiss && p.job) { p.formerJob = p.job; p.job = null; sentence += '・職を解かれる'; }
   }
-  const why = applied.length ? `（${applied.map((m) => m.why).join('と、')}が酌まれた）` : '';
+  const why = applied.length ? `（${applied.map((m) => m.why).join('と、')}${death ? 'も酌まれたが、罪は重すぎた' : 'が酌まれた'}）` : '';
   const line = `${judgeName}の裁き：${sim.fullName(p)}に${crime}の罪で${sentence}${why}`;
   j.cases.push({ d: sim.today, id: p.id, name: sim.fullName(p), crime, verdict, sentence, judge: judgeName, witn, mercy: applied.map((m) => m.why), sev: Math.round(sev * 100) / 100, s: p.s });
   if (j.cases.length > 200) j.cases.splice(0, j.cases.length - 200);
@@ -454,6 +460,34 @@ function lastWords(sim, p, e) {
   if (!opts.length || R.chance(0.15)) return null;
   return R.pick(opts);
 }
+// 見た人の記憶の文を組み立てる（最初の文は「〜た」で終える。会話の話題に使われる）
+const LEADS = [[(q) => q.pers.E, '連れと一緒に'], [(q) => q.pers.O, '最前列で'], [(q) => q.pers.C, '仕事の手を止めて'], [(q) => 1 - q.pers.E, '人垣の後ろから'], [(q) => 0.5, '人に押されながら'], [(q) => 0.4, '背伸びをして'], [(q) => 1 - q.pers.O, '通りがかりに']];
+function lead(R, q) { return R.chance(0.35) ? '' : R.weighted(LEADS, ([f]) => 0.1 + f(q))[1] + '、'; }
+function feelOf(R, q, e, kind) {
+  const f = [];
+  if (kind === 'lash') {
+    f.push('ああはなりたくないと思った', 'むちの音が耳に残った', '見ていて背中が痛くなった', '人だかりの熱気に気分が悪くなった');
+    if (q.pers.A < 0.35) f.push('いい見せしめだと思った', '自業自得だと思った');
+    if (q.pers.A > 0.6) f.push('見ていて気の毒になった', 'あそこまでしなくてもと思った');
+    if (q.jsRecord > 0 || q.job === 'thief' || q.uwRole) f.push('明日は我が身だと思った', '当分は大人しくしていようと思った');
+    return R.pick(f);
+  }
+  f.push('罪を犯せばああなるのだと思った', '人の命のあっけなさに言葉を失った', '裁きの厳しさが身にしみた', '鐘の音がいつまでも耳に残った', '家に帰ってから、しばらく口がきけなかった', 'あれが報いというものなのだろう', `${e.judgeT}の裁きは厳しいと思った`);
+  if (q.pers.A < 0.35) f.push('いい見せしめだと思った', '自業自得だと思った');
+  if (q.values.faith > 0.6) f.push('あの者の魂のために祈った', '神の裁きは別にあると思った');
+  if (q.pers.O > 0.65) f.push('群衆の顔つきのほうが、よほど恐ろしく見えた', 'なぜ人はこれを見に集まるのだろうと考えた');
+  if (q.values.family > 0.65) f.push('家族のことが頭に浮かんだ', '子どもには見せられないと思った');
+  if (LAWFUL.has(q.job)) f.push('人垣を押さえるのが精いっぱいだった', '役目とはいえ、気の重い一日だった');
+  return R.pick(f);
+}
+function watchLine(sim, q, e, kind, cap) {
+  const R = sim.rng, ld = lead(R, q);
+  const cores = kind === 'lash'
+    ? [`${ld}広場で${e.given}がむち打たれるのを見た`, `${ld}${e.crime}の罪で${e.given}がむち打たれるのを見た`, `${ld}広場の人だかりをのぞくと、${e.given}がむち打たれていた`]
+    : [`${ld}${cap.name}の広場で${e.given}の処刑を見た`, `${ld}${e.crime}の罪で${e.given}が処刑されるのを見届けた`, `${ld}${e.given}が処刑台に引き出されるのを見た`, `${ld}広場で${e.given}の最期を見た`];
+  return `${R.pick(cores)}。${feelOf(R, q, e, kind)}`;
+}
+
 function cancelExec(sim, e, why) {
   e.stage = 'cancel';
   e.crowd = []; e.spots = {}; e.roles = {};
@@ -509,10 +543,10 @@ function execute(sim, e) {
     let line, emo = -0.5;
     if (ownFam.has(q.id)) { line = R.pick([`身内の${e.given}の最期を、群衆の後ろから見届けた`, `${e.given}が処刑台に立つのを見た。声をかけることもできなかった`]); emo = -1; }
     else if (vicFam.has(q.id)) { line = R.pick([`${vic?.given || '家族'}の仇、${e.given}の最期を見届けた`, `${e.given}の処刑を見た。これで${vic?.given || 'あの人'}も浮かばれると思った`]); emo = 0.2; }
-    else if (sens) { line = R.pick([`${e.given}の処刑を見に行ったが、途中で目を背けた`, `広場で${e.given}が処刑されるのを見てしまった。夜になっても震えが止まらなかった`, `処刑台の鐘の音が、耳から離れなかった`]); emo = -0.9; shocked++; }
-    else if (frown) { line = R.pick([`${e.given}の処刑を見た。あれを見世物にするのは、どうかと思った`, `処刑の広場で、はしゃぐ見物人に眉をひそめた`]); emo = -0.5; frowned++; }
-    else if (plotting) { line = R.pick([`${e.given}の最期を見た。罪を重ねれば、次は自分があそこに立つのだと思い知った`, `処刑台の${e.given}を見て、背筋が冷えた。悪い稼業から手を引こうかと思った`]); emo = -0.7; }
-    else line = R.pick([`${cap.name}の広場で${e.given}の処刑を見た。罪を犯せばああなるのだと思った`, `${e.crime}の罪で${e.given}が処刑されるのを見届けた`, `広場で${e.given}の最期を見た。人の命のあっけなさに言葉を失った`, `${e.given}の処刑を見物した。${e.judgeT}の裁きは厳しいと思った`]);
+    else if (sens) { line = R.pick([`${lead(R, q)}${e.given}の処刑を見に行ったが、途中で目を背けた`, `広場で${e.given}が処刑されるのを見てしまった`, `処刑台の鐘の音を聞いて、たまらず広場を離れた`]) + '。' + R.pick(['夜になっても震えが止まらなかった', '胸が苦しくて、食事がのどを通らなかった', 'あんなものを見に行くのではなかった', '目を閉じても、あの台が浮かんできた']); emo = -0.9; shocked++; }
+    else if (frown) { line = R.pick([`${lead(R, q)}${e.given}の処刑を見た`, `処刑の広場で、はしゃぐ見物人に眉をひそめた`, `${e.given}の処刑に集まった人の多さに驚いた`]) + '。' + R.pick(['あれを見世物にするのは、どうかと思った', '人の死を楽しむようになったら、この町もおしまいだ', 'ほかに償わせる道はなかったのだろうか']); emo = -0.5; frowned++; }
+    else if (plotting) { line = R.pick([`${lead(R, q)}${e.given}の最期を見た`, `処刑台の${e.given}を見て、背筋が冷えた`, `${lead(R, q)}${e.crime}の罪で${e.given}が処刑されるのを見た`]) + '。' + R.pick(['罪を重ねれば、次は自分があそこに立つのだと思い知った', '悪い稼業から手を引こうかと思った', '当分は大人しくしていようと思った', 'あれは明日の自分かもしれない']); emo = -0.7; }
+    else line = watchLine(sim, q, e, 'exec', cap);
     if (words && R.chance(0.35)) line += `。${e.given}は最後に「${words}」と言った`;
     sim.remember(q, line, { emo, imp: 0.85, about: [p.id], k: 'execution' });
     // 恐れ：性格で強さが変わり、日がたつと薄れる（lawDaily）
@@ -579,7 +613,7 @@ function doLash(sim, l) {
   sim.pushLog(`${cap.name}の広場で、${sim.fullName(p)}が${l.crime}の罪でむち打ちの刑を受けた。`, 'event', [p.id], spot);
   const near = sim.living().filter((q) => q !== p && q.jail == null && !q.inside && dist2(q, spot.x, spot.z) < 9);
   for (const q of near.slice(0, 20)) {
-    sim.remember(q, R.pick([`広場で${p.given}がむち打たれるのを見た`, `${l.crime}の罪で${p.given}がむち打たれていた。ああはなりたくないと思った`]), { emo: -0.4, imp: 0.5, about: [p.id], k: 'execution' });
+    sim.remember(q, watchLine(sim, q, { given: p.given, crime: l.crime, judgeT: '' }, 'lash', cap), { emo: -0.4, imp: 0.5, about: [p.id], k: 'execution' });
     q.jsFear = Math.max(q.jsFear || 0, 0.15 + q.pers.N * 0.2); q.jsFearDay = sim.today;
   }
   const tj = townJ(sim, l.sid); tj.fear = clamp(tj.fear + 0.08, 0, 1);
