@@ -14,6 +14,7 @@ import { markWanted, arrest, startFight } from './society.js';
 import { pay, earn, spendable } from './property.js';
 import { stash, ownStock } from './market.js';
 import { moneyIn, moneyOut } from './ledger.js';
+import { lawCrimeMul } from './justice.js';   // 処刑や厳しい罰のあった町ほど罪が起きにくい
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 const HEALERS = { nun: '修道女', priest: '司祭', herbalist: '薬師', doctor: '医者', cleric: '僧侶' };
@@ -347,7 +348,7 @@ function investigateDaily(sim) {
 
 // ================= 薬物 =================
 function drugsDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   // 栽培：森の畑から禁制の草が採れる（栽培人が森へ出かけた日は多め）
   for (const p of sim.living()) {
     if (p.uwRole !== 'grower' || !free(p)) continue;
@@ -435,7 +436,7 @@ function drugsDaily(sim) {
 
 // 酒場で売人が薬をさばく
 function dealHourly(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   for (const d of sim.living()) {
     if (d.uwRole !== 'dealer' || !free(d) || d.action?.type !== 'uw_deal' || d.action.phase !== 'do') continue;
     const k = sim.townOf(d).kingdom;
@@ -495,7 +496,7 @@ function withdrawalHourly(sim) {
 
 // ================= 性犯罪（抽象表現のみ。当事者は必ず18歳以上） =================
 function sexCrimeDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   // 遅れて届く訴え
   for (const pe of uw.pending.slice()) {
     if (pe.day > sim.today) continue;
@@ -540,7 +541,7 @@ function reportAssault(sim, off, vic) {
 // つきまとい：想いを寄せた相手に拒まれ、執着して付け回す。段階的に悪化し、訴えられて捕まる
 const STALK_STEPS = ['', 'のあとを付け回すようになった', 'の家の前で待ち伏せするようになった', 'に何通も執拗な手紙を送りつけた', 'を脅すような言葉を口にした'];
 function stalkingDaily(sim) {
-  const S = sim.S, R = sim.rng, rate = S.uw.rate || 1;
+  const S = sim.S, R = sim.rng, rate = (S.uw.rate || 1) * lawCrimeMul(sim);
   for (const p of sim.living()) {
     if (p.uwStalk) {
       const v = S.people[p.uwStalk.who];
@@ -709,7 +710,7 @@ function killerHourly(sim) {
 
 // ================= 放火 =================
 function arsonDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   if (sim.today - uw.lastArson < 6 || !R.chance(0.03 * rate)) return;
   const cands = [];
   for (const p of sim.living()) {
@@ -740,7 +741,7 @@ function arsonDaily(sim) {
 
 // ================= 誘拐と身代金（大人のみ） =================
 function kidnapHourly(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   const h = sim.hour();
   if (h < 9 || h >= 18 || !R.chance(0.04 * rate)) return;
   for (const hide of S.world.buildings.filter((b) => b.type === 'hideout')) {
@@ -796,7 +797,7 @@ function kidnapDaily(sim) {
 
 // ================= 恐喝・ゆすり =================
 function blackmailDaily(sim) {
-  const S = sim.S, R = sim.rng, rate = S.uw.rate || 1;
+  const S = sim.S, R = sim.rng, rate = (S.uw.rate || 1) * lawCrimeMul(sim);
   // 続いているゆすり
   for (const b of sim.living()) {
     const bm = b.uwBlackmail;
@@ -862,7 +863,7 @@ function bribeHourly(sim) {
   }
 }
 function corruptionDaily(sim) {
-  const S = sim.S, R = sim.rng, rate = S.uw.rate || 1;
+  const S = sim.S, R = sim.rng, rate = (S.uw.rate || 1) * lawCrimeMul(sim);
   for (const g of sim.living()) {
     if (!g.uwCorrupt || !g.uwBribes || !free(g)) continue;
     if (!R.chance(Math.min(0.25, 0.015 * g.uwBribes * rate))) continue;
@@ -895,7 +896,7 @@ function corruptionDaily(sim) {
 
 // ================= 偽金づくり =================
 function counterfeitDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   for (const p of sim.living()) {
     if (p.uwRole !== 'counterfeiter' || !free(p) || S.wanted[p.id]) continue;
     if (!R.chance(0.5)) continue;
@@ -920,7 +921,7 @@ function counterfeitDaily(sim) {
 
 // ================= 闇市（故買屋） =================
 function fenceDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   for (const f of sim.living()) {
     if (f.uwRole !== 'fence' || !free(f) || S.wanted[f.id]) continue;
     const sellers = sim.living().filter((q) => q !== f && q.s === f.s && free(q) && q.memories?.some((m) => (m.k === 'crime' || m.k === 'uwcrime') && m.t >= sim.today - 1 && /盗ん|巻き上げ|墓/.test(m.txt)));
@@ -942,7 +943,7 @@ function fenceDaily(sim) {
 
 // ================= 密輸（既存の密輸人と連携） =================
 function smuggleDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   for (const p of sim.living()) {
     if (p.job !== 'smuggler' || !free(p) || S.wanted[p.id] || sim.ageOf(p) < 16 || !R.chance(0.35)) continue;
     const k = sim.townOf(p).kingdom;
@@ -961,7 +962,7 @@ function smuggleDaily(sim) {
 
 // ================= 暗殺者 =================
 function assassinDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   const a = sim.living().find((p) => p.uwRole === 'assassin');
   if (uw.contract) {
     const c = uw.contract, t = S.people[c.target];
@@ -1074,7 +1075,7 @@ function poach(sim, p) {
 
 // ================= 盗賊ギルド =================
 function guildDaily(sim) {
-  const S = sim.S, R = sim.rng, uw = S.uw, rate = uw.rate || 1;
+  const S = sim.S, R = sim.rng, uw = S.uw, rate = (uw.rate || 1) * lawCrimeMul(sim);
   if (sim.today % 5 === 0) refreshGuilds(sim);
   for (const [sid, g] of Object.entries(uw.guilds)) {
     const boss = S.people[g.boss];

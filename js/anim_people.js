@@ -1671,6 +1671,10 @@ function talkStyle(p, c) {
 const MO = { m: 'o' };
 
 // ---- 生活・状態のアニメ
+// ほかのファイル（anim_justice.js など）から足す動きと、行動→動きの判定
+const EXTRA_LIFE = {};
+export function registerPersonAnims(make) { Object.assign(EXTRA_LIFE, make({ A, AT, TL, TO, MO })); }
+export const ANIM_STATE_HOOKS = [];
 const LIFE = {
   idle: {
     durs: [520, 380, 520, 140],
@@ -2045,7 +2049,7 @@ function resolveDef(anim, c) {
     }
     return { ...d, loop: true, motion: m };
   }
-  return LIFE[name] || LIFE.idle;
+  return LIFE[name] || EXTRA_LIFE[name] || LIFE.idle;
 }
 function tint(P, spec) {
   if (spec.white) P.mapColors((col) => mix(col, '#ffffff', spec.white));
@@ -2179,6 +2183,7 @@ export function forgetPersonAnim(id) { for (const k of [...sheetCache.keys()]) i
 // moving：いま歩いているか（描画側で位置の変化から判定）。'walk' は歩行シート（sprites.js）を使うという意味。
 export function personAnimState(sim, p, moving = false) {
   if (p.deathYear != null) return 'dead';
+  for (const hook of ANIM_STATE_HOOKS) { const r = hook(sim, p, moving); if (r) return r; }
   if (p.cb) {   // 戦いの状態（combat.js）：瀕死・眠り・麻痺と気絶・潰走
     const c = p.cb, t = sim?.S?.t ?? 0;
     if (c.down) return 'dying';

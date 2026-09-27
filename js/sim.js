@@ -27,6 +27,7 @@ import { financeDaily, financeHourly, financeCandidates, financeArrive } from '.
 import { careerDaily, careerOptions, careerDo, careerWorkPlace } from './career.js';
 import { faunaDaily, faunaHourly, canHunt } from './fauna.js';
 import { initUnderworld, underworldDaily, underworldHourly, underworldDecide, underworldArrive, underworldWorkMul } from './underworld.js';
+import { lawDaily, lawHourly, lawDecide } from './justice.js';   // 裁きと公開処刑・犯罪の抑え
 import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workMul, healMul, tradeMul } from './growth.js';
 import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, healthSpeedMul, healthWorkMul, onDeath } from './health.js';
 import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, civicFirstJob } from './civic.js';
@@ -715,6 +716,7 @@ export class Sim {
     laborCandidates(this, p, add);
     leisureDecide(this, p, add);   // 酒場の踊り・逢い引き・（大人向け）館（leisure.js）
     underworldDecide(this, p, cands, add);
+    lawDecide(this, p, cands, add);   // 刑場へ向かう・処刑を見た恐れで悪事を控える（justice.js）
     healthDecide(this, p, cands, add);
     divineDecide(this, p, cands, add);
     needsCands(this, p, cands);
@@ -1842,6 +1844,7 @@ export class Sim {
     computeDanger(this);
     spawnerDanger(this);   // 湧き口の脅威を危険区域に足す（spawner.js）
     crimeHourly(this);
+    lawHourly(this);   // 処刑の触れ・処刑台・刑場・むち打ち（justice.js）
     underworldHourly(this);
     // 牢の食事：朝と夕に囚人全員へ配る
     { const hh = Math.floor(this.hour()); if (hh === 7 || hh === 17) for (const q of this.living()) if (q.jail != null && q.needs.hunger < 70) q.needs.hunger = Math.min(100, q.needs.hunger + 50); }
@@ -1999,6 +2002,7 @@ export class Sim {
     spawnerDaily(this);   // モンスター脅威度・討伐依頼・冒険者を志す人（spawner.js）
     monstersDaily(this);
     justiceDaily(this);
+    lawDaily(this);   // 裁き（罪の重さ・裁く人・証人・情け）と王の方針・濡れ衣（justice.js）
     underworldDaily(this);
     politicsDaily(this);
     taxesDaily(this);

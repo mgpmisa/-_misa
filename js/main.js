@@ -3,6 +3,8 @@ import { showDiscovery } from './discovery.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { markTilesChanged } from './pathfar.js';
+import { justiceFxFrame } from './justicefx.js';   // 広場の処刑台（3D）
+import './anim_justice.js';   // 連行・裁き・群衆・刑場の人の動き（ドット絵）
 
 const MIN_PER_SEC = 2; // 1倍速のとき、現実の1秒 = 世界の2分
 const STEP_MIN = 0.5;  // 世界は0.5分きざみの「歩」で進める（ヘッドレス試験と同じきざみ）
@@ -65,6 +67,7 @@ function frame(now) {
   }
   sim.events.length = 0;
   renderer.update(realDt, ui.selected, ui.follow);
+  justiceFxFrame(renderer, sim);
   ui.updateInterior(realDt);
   ui.update();
   requestAnimationFrame(frame);

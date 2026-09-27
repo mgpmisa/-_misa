@@ -50,6 +50,7 @@ import { tacticsRows, tacticsRoleName, tacticsLineup } from './tactics.js';
 import { formationBonusHtml, formationRows } from './formation.js';   // 職業の補正・隊列での位置
 import { combatRows, combatCreatureRows } from './combat.js';
 import { mountDivine, divinePersonHTML, divineCreatureHTML } from './divineui.js';
+import { LAW_LABEL, LAW_GO, LAW_PREF } from './justice.js';
 import { carryHtml, carryMarks, CARRY_LABEL, CARRY_GO, CARRY_PREF } from './carry.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -94,6 +95,7 @@ Object.assign(ACTION_LABEL, MINT_LABEL); Object.assign(ACTION_GO, MINT_GO); Obje
 Object.assign(ACTION_LABEL, MATTER_LABEL); Object.assign(ACTION_GO, MATTER_GO); Object.assign(PREF_LABEL, MATTER_PREF);
 Object.assign(ACTION_LABEL, NEEDS_LABEL); Object.assign(ACTION_GO, NEEDS_GO); Object.assign(PREF_LABEL, NEEDS_PREF);
 Object.assign(ACTION_LABEL, CARRY_LABEL); Object.assign(ACTION_GO, CARRY_GO); Object.assign(PREF_LABEL, CARRY_PREF);
+Object.assign(ACTION_LABEL, LAW_LABEL); Object.assign(ACTION_GO, LAW_GO); Object.assign(PREF_LABEL, LAW_PREF);
 for (const t of Object.keys(BLD_TYPE_LABEL)) INTERIOR_TYPES.add(t);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const JA_ORDER = new Intl.Collator('ja');   // 名前の並べ替え（localeCompare を毎回作らない。並びは同じ）
