@@ -718,7 +718,7 @@ function matchmakers(sim) {
         if (sc > bs) { bs = sc; best = b; }
       }
       if (!best) continue;
-      const m = R.pick(mm.filter((q) => q !== a && q !== best)) || null;
+      const m = R.pick(mm.filter((q) => q !== a && q !== best && q.given !== a.given && q.given !== best.given && q.hh !== a.hh && q.hh !== best.hh)) || null;
       if (!m) continue;
       // 仲人への礼金：両家の家計 → 仲人
       for (const x of [a, best]) { const fee = Math.min(5, Math.max(0, spendable(sim, x))); if (fee > 0 && sim.hh(m)) { pay(sim, x, fee); earn(sim, m, fee, 0.5); } }
@@ -989,6 +989,9 @@ export function purgeAdult(sim) {
   scrubArr(S.chronicle, (e) => ADULT_RX.test(e.text || ''));
   for (const t of Object.values(S.towns || {})) if (Array.isArray(t.sayings)) scrubArr(t.sayings, (x) => ADULT_RX.test(typeof x === 'string' ? x : (x?.text || '')));
   scrubArr(S.gatherings || [], (g) => g.type === 'lvisit');
+  // 会話の覚え（p.recent・p.tm など）や、ほかの仕組みの記録に写った文も、印のある所だけ取り除く
+  const seen = new Set();
+  for (const [k, v] of Object.entries(S)) if (k !== 'world' && k !== 'leisure') deepScrub(v, seen, 0);
   // 5) 大人向けの記録そのもの
   delete L.adult;
   L.gv++;
@@ -998,6 +1001,25 @@ function settleOwedAll(sim, h) {
   settleOwed(sim, h, keeper);
   // 主の家計が足りずに残った分は、ただの「貸し」なので消してよい（お金は動いていない）
   h.owed = {};
+}
+const isBad = (v) => typeof v === 'string' && (v === 'lhx' || ADULT_RX.test(v));
+const directBad = (o) => { for (const v of Object.values(o)) if (isBad(v)) return true; return false; };
+// 配列：印のある文、または印のある文を直に持つ入れ物（記憶・会話・ログの1件）を取り除く。そのほかは中へ進む
+// 入れ物：印のある文の欄だけを消し、中へ進む
+function deepScrub(o, seen, depth) {
+  if (!o || typeof o !== 'object' || seen.has(o) || depth > 9) return;
+  seen.add(o);
+  if (Array.isArray(o)) {
+    if (o.length && typeof o[0] === 'number') return;
+    scrubArr(o, (x) => isBad(x) || (x && typeof x === 'object' && !Array.isArray(x) && directBad(x)));
+    for (const x of o) deepScrub(x, seen, depth + 1);
+    return;
+  }
+  for (const k of Object.keys(o)) {
+    const v = o[k];
+    if (isBad(v)) delete o[k];
+    else if (v && typeof v === 'object') deepScrub(v, seen, depth + 1);
+  }
 }
 function scrubArr(arr, bad) { if (!Array.isArray(arr)) return; let j = 0; for (let i = 0; i < arr.length; i++) if (!bad(arr[i])) arr[j++] = arr[i]; arr.length = j; }
 

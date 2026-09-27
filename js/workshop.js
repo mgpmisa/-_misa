@@ -355,8 +355,9 @@ export function shelfGoods(sim, b, hid = b.shop?.tenant) {
   const sid = townOfB(sim, b), m = sim.S.towns[sid];
   const out = {};
   if (!m?.lots || hid == null) return out;
-  const merchant = WP[b.type]?.merchant;
+  const merchant = WP[b.type]?.merchant, outs = ioOf(b.type).out;
   for (const [g, list] of Object.entries(m.lots)) {
+    if (!merchant && !outs.has(g)) continue;   // 同じ家のほかの職人の品（別の店の品）は数えない
     let s = 0;
     for (const l of list) if (l.o === hid && (l.c === 3 || (merchant && l.c === 0))) s += l.q;
     s = Math.min(s, num(m.stock[g]));
