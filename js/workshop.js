@@ -64,7 +64,7 @@ export const WS_TYPES = new Set(Object.keys(WP));
 // rate：仕事の手際1あたりにできる数　inp：できた品1つに要る材料　noInp：材料がなくても手持ちの端切れで作れる割合
 // stopM：町の市場にこれだけあれば作らない（目安の何倍）　back：職場の蔵にこれだけたまれば作らない
 const PROD = {
-  baker:      { out: 'bread', rate: 1.6875, inp: { flour_wheat: 1 / 1.8 }, fuel: 0.03, stopM: 1.6, back: 12 },
+  baker:      { out: 'bread', rate: 3.375, inp: { flour_wheat: 1 / 1.8 }, fuel: 0.03, stopM: 1.6, back: 12 },
   carpenter:  { out: 'furniture', rate: 0.1, inp: { wood: 10 }, stopM: 2, back: 3 },
   shipwright: { out: 'furniture', rate: 0.08, inp: { wood: 3.75 }, stopM: 2, back: 4 },
   tailor:     { out: 'cloth', rate: 0.25, inp: { wool: 1.2 }, noInp: 0.4, back: 8 },

@@ -1056,7 +1056,7 @@ export class Sim {
       case 'farmer': {
         // 収穫した麦は家の蔵へ（小作は地主に麦で納める）。家の食べ物が足りなければ、そのまま自炊にまわす
         // 農夫ひとりは一家の畑を受け持つ。町の食べ物は湧かなくなったので、畑の実りで町まで養えるだけ採れる
-        const q = fieldShare(this, p, 3.0 * sm * this.S.harvest * eff * ((hh.fertUntil ?? -1) >= this.today ? 1.2 : 1));
+        const q = fieldShare(this, p, 4.05 * sm * this.S.harvest * eff * ((hh.fertUntil ?? -1) >= this.today ? 1.2 : 1));
         if (hh.food < hh.members.length * 3) { const q2 = millToll(this, p.s, q, hh); hh.food += q2; meal(this, 'self', q2); } else stash(this, p, 'wheat', q);
         break;
       }

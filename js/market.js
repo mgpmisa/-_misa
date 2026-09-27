@@ -238,7 +238,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
     if (n >= 0.05) { addLot(sim, m, sid, g, code, n, 1, 0); left -= n; }
   }
   // 2. 組合のない村：村長が村の蔵に買い取る（村の蓄えから、同じ8割の値で）
-  if (left > 1e-6 && !merchants.length && !guildOf(sim, sid) && typeof code === 'number' && (isStaple(g) || G.demand >= 2)) {
+  if (left > 1e-6 && !merchants.length && (!guildOf(sim, sid) || FOOD.includes(g)) && typeof code === 'number' && (isStaple(g) || G.demand >= 2)) {
     const t = sim.S.towns[sid];
     const room = Math.max(0, G.target * (PERISH[g] ? 0.8 : 1.2) - num(m.stock[g]));
     const n = Math.min(left, room, Math.max(0, (t.fund || 0) - 40) / Math.max(0.01, unit));
@@ -247,7 +247,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
       t.fund -= cost; give(sim, code, cost, sid);
       addLot(sim, m, sid, g, 't' + sid, n, 3, unit);
       MARKET_HOOK.deliver?.(sim, sid, g, n, code, 't' + sid, cost);
-      flow(sim, '村の蔵（村長）', label(sim, code), cost, `${G.name}の買い取り`);
+      flow(sim, guildOf(sim, sid) ? '町の蔵（町の蓄え）' : '村の蔵（村長）', label(sim, code), cost, `${G.name}の買い取り`);
       incomeOf(sim, code, cost);
       got += cost; left -= n;
     }
@@ -463,6 +463,14 @@ function forestall(sim) {
 // 王都や港町には畑がほとんどない。商人は近くの村の市場で品の持ち主から買い（代金は村の作り手・村の蔵へ）、
 // 荷車の手間賃を御者・行商人に払い、次の日に自分の店に並べる。これで村の麦が王都の食卓に届く。
 const CARRIERS = ['coachman', 'peddler', 'stablehand'];
+function popOf(sim, sid) { let n = 0; for (const p of sim.living()) if (p.s === sid) n++; return n; }
+function granaryPayer(sim, s) {
+  const t = sim.S.towns[s.id];
+  if (num(t?.fund) > 80) return { code: 't' + s.id, keep: 60, name: '町の蔵（町の蓄え）' };
+  const k = s.type === 'capital' ? sim.S.kingdoms[s.kingdom] : null;
+  if (k && num(k.treasury) > 350) return { code: 'k' + s.kingdom, keep: 300, name: '王の穀物買い付け（国庫）' };
+  return null;
+}
 function merchantImports(sim) {
   const S = sim.S, W = S.world.settlements;
   // 前の日に出た荷が着く
@@ -471,7 +479,8 @@ function merchantImports(sim) {
     const keep = [];
     for (const x of m.inbound) {
       if (x.day > sim.today) { keep.push(x); continue; }
-      addLot(sim, m, +sid, x.g, S.households[x.o] ? x.o : 't' + sid, x.q, 0, x.u);
+      if (typeof x.o === 'string') addLot(sim, m, +sid, x.g, x.o, x.q, 3, x.u);   // 町の蔵・国の買い付け：売れた代金は町の蓄え・国庫へ戻る
+      else addLot(sim, m, +sid, x.g, S.households[x.o] ? x.o : 't' + sid, x.q, 0, x.u);
     }
     m.inbound = keep;
   }
@@ -479,38 +488,51 @@ function merchantImports(sim) {
     const m = S.towns[s.id];
     if (!m || m.occupied) continue;
     const list = merchantsOf(sim, s.id).filter((h) => h.money > 60);
-    if (!list.length) continue;
-    const near = W.filter((q) => q.id !== s.id && S.towns[q.id] && !S.towns[q.id].occupied && !(q.tribal && q.annexed == null) && Math.hypot(q.x - s.x, q.z - s.z) < 90)
-      .map((q) => ({ q, d: Math.hypot(q.x - s.x, q.z - s.z) })).sort((a, b) => a.d - b.d).slice(0, 6);
+    const big = (s.type === 'capital' || s.type === 'port') && !s.tribal;
+    const gran = big ? granaryPayer(sim, s) : null;   // 町の蔵（食べ物だけ）
+    if (!list.length && !gran) continue;
+    const near = W.filter((q) => q.id !== s.id && S.towns[q.id] && !S.towns[q.id].occupied && !(q.tribal && q.annexed == null) && Math.hypot(q.x - s.x, q.z - s.z) < (big ? 170 : 90))
+      .map((q) => ({ q, d: Math.hypot(q.x - s.x, q.z - s.z) })).sort((a, b) => a.d - b.d).slice(0, big ? 8 : 6);
     if (!near.length) continue;
+    const eaters = big ? popOf(sim, s.id) : 0;
     let trips = 0;
     const extra = new Set();
     for (const { q } of near) for (const g of Object.keys(S.towns[q.id].stock || {})) if (!isStaple(g) && (S.towns[q.id].stock[g] || 0) >= 2 && (matterGood(g)?.demand ?? 0) >= 1 && (m.stock[g] || 0) < 1) extra.add(g);
     const goods = [...Object.keys(GOODS).sort((a, b) => (FOOD.includes(a) ? 0 : 1) - (FOOD.includes(b) ? 0 : 1)), ...[...extra].slice(0, 12)];
     for (const g of goods) {
-      if (trips >= 10) break;
+      if (trips >= (big ? 16 : 10)) break;
       const G = gd(g);
       const coming = (m.inbound || []).filter((x) => x.g === g).reduce((t, x) => t + x.q, 0);
-      let want = G.target * (FOOD.includes(g) ? 1.5 : 0.5) - num(m.stock[g]) - coming;
+      const fmul = FOOD.includes(g) ? Math.max(1, eaters / 45) : 1;   // 人の多い王都は、人数に見合うだけ食べ物を仕入れる
+      let want = G.target * (FOOD.includes(g) ? 1.5 : 0.5) * fmul - num(m.stock[g]) - coming;
       if (want < 1) continue;
       for (const { q, d } of near) {
         if (want < 1) break;
         const sm = S.towns[q.id];
-        const spare = num(sm.stock[g]) - G.target * (sm === m ? 9 : 0.4);
+        const spare = num(sm.stock[g]) - G.target * (sm === m ? 9 : FOOD.includes(g) ? 0.6 : 0.4);
         if (spare < 1) continue;
         const freight = Math.max(0.2, 0.004 * d * G.base);          // 荷車の手間賃（1個あたり）
         if (m.price[g] < sm.price[g] + freight) continue;            // 運んでも割に合わない
-        const mh = list.slice().sort((a, b) => b.money - a.money)[0];
-        const n = Math.min(want, spare, 40, (mh.money - 50) / (sm.price[g] + freight));
+        const unit = sm.price[g] + freight;
+        // 買い手：いちばん手元の厚い商人。商人がいない・手元が細いときは、食べ物に限り町の蔵（町の蓄え、足りなければ国庫）
+        let mh = list.length ? list.slice().sort((a, b) => b.money - a.money)[0] : null;
+        let code = mh ? mh.id : null, who = '町の商人（買い付け）', payName = '市場の商人';
+        let room = mh ? (mh.money - 50) / unit : 0;
+        if (room < 1 && gran && FOOD.includes(g)) {
+          const g2 = granaryPayer(sim, s);
+          if (g2) { mh = acct(sim, g2.code); code = g2.code; who = payName = g2.name; room = (mh.money - g2.keep) / unit; }
+        }
+        if (!mh) continue;
+        const n = Math.min(want, spare, 40, room);
         if (n < 1) continue;
-        const got = marketBuy(sim, q.id, g, n, mh, { who: '町の商人（買い付け）' });
+        const got = marketBuy(sim, q.id, g, n, mh, { who });
         if (got <= 0) continue;
         const fcost = got * freight;
         const carrier = sim.living().find((c) => (c.s === s.id || c.s === q.id) && CARRIERS.includes(c.job) && c.jail == null && sim.hh(c) && sim.hh(c) !== mh);
         const ch = carrier ? sim.hh(carrier) : null;
-        mh.money -= fcost; if (ch) { ch.money += fcost; income(sim, carrier.job, fcost); } else m.fund = (m.fund || 0) + fcost;   // 手間賃は御者へ（いなければ町の荷役＝町の蓄え）
-        flow(sim, '市場の商人', ch ? JOBS[carrier.job].name : '町の蓄え', fcost, '荷車の手間賃');
-        (m.inbound = m.inbound || []).push({ g, q: got, o: mh.id, u: sm.price[g] + freight, day: sim.today + 1, from: q.id });
+        if (ch) { mh.money -= fcost; ch.money += fcost; income(sim, carrier.job, fcost); flow(sim, payName, JOBS[carrier.job].name, fcost, '荷車の手間賃'); }   // 手間賃は御者へ
+        else if (code !== 't' + s.id) { mh.money -= fcost; m.fund = (m.fund || 0) + fcost; flow(sim, payName, '町の蓄え', fcost, '荷車の手間賃'); }   // 御者がいなければ町の荷役（町の蓄え）
+        (m.inbound = m.inbound || []).push({ g, q: got, o: code, u: unit, day: sim.today + 1, from: q.id });
         want -= got; trips++;
       }
     }
