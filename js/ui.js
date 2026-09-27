@@ -35,6 +35,7 @@ import { expansionNationHTML, drawTerritory } from './expansion.js';
 import { diplomacyNationHTML } from './diplomacy.js';
 import { tribesNationHTML, tribeLabel } from './tribes.js';
 import { villagesNationHTML, villageLabel, villageOriginHTML } from './villages.js';
+import { spawnerNationHTML, spawnerWorldHTML, spawnerBuildingHTML } from './spawner.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -455,6 +456,7 @@ export class UI {
         ${k.taxes ? taxNationHTML(this.sim, k, esc) : `<dt>税率</dt><dd>${Math.round(k.tax * 100)}%</dd>`}
         ${bankNationHTML(this.sim, k, esc) || ''}
         ${laborNationHTML(this.sim, k, esc) || ''}
+        ${spawnerNationHTML(this.sim, k, esc) || ''}
         <dt>技術</dt><dd>${k.techs.map((t) => esc(TECHS.find((x) => x.id === t)?.name)).join('、') || 'なし'}（研究${Math.round(k.research)}）</dd>
         <dt>関係</dt><dd>${rel}</dd>
         ${k.war ? `<dt>戦争</dt><dd class="up">${esc(k.war.name)}（${this.sim.today - k.war.since}日目）</dd>` : ''}</dl></div>`;
@@ -469,6 +471,7 @@ export class UI {
     if (parties.length) h += `<div class="nation"><div class="nname">魔王討伐隊</div>${parties.map((p) => p.members.map((id) => S.people[id]).filter((x) => x && x.deathYear == null).map((x) => `<span class="link" data-pid="${x.id}">${esc(x.given)}</span>（Lv${x.lv}・${JOBS[x.job]?.name}）`).join('、')).join('<br>')}</div>`;
     h += tribesNationHTML(this.sim, esc) || '';
     h += villagesNationHTML(this.sim, esc) || '';
+    h += spawnerWorldHTML(this.sim, esc) || '';
     const wanted = Object.entries(S.wanted).map(([id, w]) => ({ p: S.people[id], w })).filter((x) => x.p && x.p.deathYear == null);
     if (wanted.length) h += `<div class="nation"><div class="nname">お尋ね者</div>${wanted.map(({ p, w }) => `<span class="link" data-pid="${p.id}">${esc(p.given)}</span>（${esc(w.crime)}・賞金${w.bounty}）`).join('<br>')}</div>`;
     $('nations').innerHTML = h;
@@ -813,6 +816,7 @@ export class UI {
     if (inside.length) h += `<div class="section"><h4>いま中にいる人</h4>${inside.map((q) => this.pLink(q)).join('、')}</div>`;
     const bandits = sim.living().filter((q) => q.hideout === b.id);
     if (bandits.length) h += `<div class="section"><h4>ねぐらにしている者</h4>${bandits.map((q) => this.pLink(q)).join('、')}</div>`;
+    h += spawnerBuildingHTML(sim, b, esc);
     const monsters = Object.values(S.creatures).filter((c) => c.lair === b.id && !c.dormant);
     if (monsters.length) h += `<div class="section"><h4>巣食う魔物</h4>${monsters.map((c) => `<span class="link" data-cid="${c.id}">${esc(c.name)}</span>`).join('、')}</div>`;
     return h;

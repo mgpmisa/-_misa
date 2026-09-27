@@ -35,6 +35,7 @@ import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes 
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
 import { diplomacyDaily, diplomacyHourly, diplomacyStep } from './diplomacy.js';
 import { monstersDaily, monstersHourly } from './monsters.js';
+import { spawnerDaily, spawnerHourly, spawnerDanger, spawnerExplored } from './spawner.js';
 import { elderDaily } from './elder.js';
 import { bankDaily, priceLevel, hhDeposit } from './bank.js';
 import { laborDaily, laborRestDay, restDayFor, laborWork, laborWorkMul, laborCandidates, laborArrive, laborDo } from './labor.js';
@@ -1543,6 +1544,7 @@ export class Sim {
           if (b.bounty) { this.hh(p).money += b.bounty; b.bounty = 0; }
           const qq = questOf(this, p);
           if (qq && qq.target === 'b' + b.id) completeQuest(this, qq);
+          if (b.type !== 'hideout') spawnerExplored(this, p, b, qq);   // 湧き口を封じる・傷つける（spawner.js）
           p.inside = null; p.pos = { ...b.door };
         } else {
           p.hp = Math.max(1, p.hp - R.int(10, 30));
@@ -1811,6 +1813,7 @@ export class Sim {
     }
     this.S.gatherings = this.S.gatherings.filter((g) => g.to > this.S.t);
     computeDanger(this);
+    spawnerDanger(this);   // 湧き口の脅威を危険区域に足す（spawner.js）
     crimeHourly(this);
     underworldHourly(this);
     // 牢の食事：朝と夕に囚人全員へ配る
@@ -1823,6 +1826,7 @@ export class Sim {
     diplomacyHourly(this);
     demonHourly(this);
     monstersHourly(this);
+    spawnerHourly(this);   // 湧き口・うろつき・荒らし・大群・討伐に向かうパーティーのお知らせ（spawner.js）
     weatherHourly(this);
     choreHourly(this);
     gearHourly(this);
@@ -1953,6 +1957,7 @@ export class Sim {
     creatureDaily(this);
     faunaDaily(this);
     rescueDaily(this);
+    spawnerDaily(this);   // モンスター脅威度・討伐依頼・冒険者を志す人（spawner.js）
     monstersDaily(this);
     justiceDaily(this);
     underworldDaily(this);
@@ -2089,7 +2094,7 @@ export class Sim {
       if (!q.rel) continue;
       const term = mayKin(q) ? this.kinTerm(q, p) : null;
       const aff = this.rel(q, p).a;
-      const how = cause === 'murder' && killer && q.gk ? `${causeTxt}に倒れて` : `${causeTxt}で`;
+      const how = cause === 'murder' && killer && q.gk ? `${causeTxt}に倒れて` : ({ monster: '魔物に襲われて', beast: '獣に襲われて', demon: '魔王軍に襲われて', justice: '討伐されて', murder: '何者かの凶刃に倒れて', execution: '処刑されて' })[cause] || `${causeTxt}で`;
       if (term) {
         this.remember(q, `${term}の${p.given}が${how}亡くなった`.replace('でで', 'で'), { emo: -0.9, imp: 0.95, about: [p.id], k: 'death' });
         if ((cause === 'murder' || cause === 'monster' || cause === 'demon' || cause === 'war') && killer && q.values.courage > 0.5 && this.ageOf(q) >= 16) {
