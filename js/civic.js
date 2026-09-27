@@ -307,7 +307,7 @@ export function civicWork(sim, p, dt, eff) {
       const g = Object.keys(GOODS).filter((k) => GOODS[k].meals === 0 || k === 'honey').sort((a, b) => m.stock[b] / GOODS[b].target - m.stock[a] / GOODS[a].target)[0];
       const n = Math.min(6, Math.floor(m.stock[g] / 3), Math.floor((hh?.money || 0) * 0.3 / Math.max(0.5, m.price[g])));
       if (n >= 2 && m.stock[g] > GOODS[g].target * 0.8) {
-        m.stock[g] -= n; hh.money -= n * m.price[g];
+        m.stock[g] -= n; hh.money -= n * m.price[g]; sim.mcash(p.s).cash += n * m.price[g];
         p.pack = { g, n, cost: n * m.price[g] };
       }
       break;
@@ -388,9 +388,10 @@ export function civicArrive(sim, p, a) {
   const R = sim.rng;
   if (a.type === 'peddle' && p.pack && a.dest != null) {
     const m = sim.market(a.dest), g = p.pack.g, n = p.pack.n;
-    const got = n * m.price[g] * 0.92;
-    m.stock[g] += n;
-    const hh = sim.hh(p); if (hh) hh.money += got;
+    const mc = sim.mcash(a.dest);
+    const got = Math.max(0, Math.min(n * m.price[g] * 0.92, mc.cash));   // 買い取りは行き先の市場の金庫から
+    m.stock[g] += n; mc.cash -= got;
+    const hh = sim.hh(p); if (hh) hh.money += got; else mc.cash += got;
     const dest = sim.town(a.dest);
     sim.remember(p, `${dest.name}で${GOODS[g].name}${n}を売り歩き、${Math.round(got - p.pack.cost)}銅貨の${got >= p.pack.cost ? 'もうけ' : '損'}が出た`, { emo: got >= p.pack.cost ? 0.4 : -0.3, imp: 0.3, k: 'trade' });
     p.pack = null;
@@ -399,8 +400,10 @@ export function civicArrive(sim, p, a) {
   if (a.type === 'coach' && a.dest != null) {
     const dest = sim.town(a.dest);
     p.coachDay = sim.today;
-    const fare = R.int(3, 9);
-    const hh = sim.hh(p); if (hh) hh.money += fare;
+    const ft = sim.S.towns[a.dest] || sim.S.towns[p.s];
+    const fare = Math.max(0, Math.min(R.int(3, 9), (ft.fund || 0) * 0.02));   // 運賃は旅客の払い（町の往来の上がり＝町の蓄えから）
+    ft.fund -= fare;
+    const hh = sim.hh(p); if (hh) hh.money += fare; else ft.fund += fare;
     if (R.chance(0.3)) sim.remember(p, `駅馬車で${dest.name}まで客を運び、${fare}銅貨の運賃を受け取った`, { emo: 0.2, imp: 0.25, k: 'work' });
     a.until = sim.S.t + 30;
   }

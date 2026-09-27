@@ -127,7 +127,7 @@ export const KINDS = {
     goods: ['ale', 'cloth', 'furniture'], wants: ['wheat', 'ore'],
     fams: ['ヴィルト', 'ハンデル', 'ガスト', 'ヴェーク', 'ブルンネン', 'ザルツ', 'クレーマー'],
     names: ['渡り鳥の宿場', '泉の宿場', '塩の道の宿場', 'ミッテンの宿場'],
-    origin: () => '国と国のあいだを渡る商人たちが、泉のほとりで荷を下ろしたのが始まり', king: 10, kingOther: 5, res: '泉と宿', succession: 'wealth',
+    origin: () => '国と国のあいだを渡る商人たちが、泉のほとりで荷を下ろしたのが始まりだった', king: 10, kingOther: 5, res: '泉と宿', succession: 'wealth',
   },
   // 廃村のあとに住みついた者たち
   den: { label: '盗賊の巣', title: '頭', hall: ['tavern', 'ねぐら', 3, 2], laws: ['strength'], jobs: { thief: 3 }, goods: [], wants: ['wheat'], fams: [], names: [], origin: () => '廃村に盗賊が住みついた', king: -30, kingOther: -20, res: 'なし', succession: 'strength' },
@@ -158,7 +158,7 @@ function P(sim, key) {
     const s = sim.town(id);
     if (!s) return null;
     if (s.indep) { const V = XV(sim)?.list[s.vid]; return { key, c, sid: id, s, kind: 'indep', V, name: s.name, k: s.annexed ?? null, x: s.x, z: s.z, r: s.r, dead: !V || V.state === 'ruin' }; }
-    if (s.tribal && s.annexed == null) { const TV = S.tribes?.villages?.[s.tribeV]; return { key, c, sid: id, s, kind: 'tribal', TV, name: s.name, k: null, x: s.x, z: s.z, r: s.r, dead: !!TV?.gone || !sim.living().some((p) => p.s === id) }; }
+    if (s.tribal && s.annexed == null) { const TV = S.tribes?.villages?.[s.tribeV]; return { key, c, sid: id, s, kind: 'tribal', TV, name: s.name, k: null, x: s.x, z: s.z, r: s.r, dead: !!TV?.gone || !popSids(sim).has(id) }; }
     return { key, c, sid: id, s, kind: 'town', name: s.name, k: s.kingdom, x: s.x, z: s.z, r: s.r, dead: !!s.abandoned };
   }
   if (c === 'k') {
@@ -185,6 +185,15 @@ function partyKeyOfSid(sim, sid) {
 }
 const partyKeyOf = (sim, p) => (p?.bandit && p.hideout != null ? 'h' + p.hideout : partyKeyOfSid(sim, p?.s));
 const isVillageKey = (sim, key) => { const q = P(sim, key); return q && (q.kind === 'indep' || q.kind === 'tribal'); };
+// 人の住んでいる町（1時間ごとに作り直す）
+function popSids(sim) {
+  const hk = Math.floor(sim.S.t / 60), L = sim.living();
+  if (sim._vPop && sim._vPop.hk === hk && sim._vPop.n === L.length) return sim._vPop.set;
+  const set = new Set();
+  for (const p of L) set.add(p.s);
+  sim._vPop = { hk, n: L.length, set };
+  return set;
+}
 function banditsOf(sim, bid) { return sim.living().filter((p) => p.bandit && p.hideout === bid && p.jail == null); }
 
 // 住人（その勢力の人）
@@ -404,11 +413,11 @@ function buildVillage(sim, fv, kind, changed, popGoal) {
     w.hgt[i] = h0;
     if (CLEAR[tt] != null) { w.tiles[i] = CLEAR[tt]; changed.push(i); }
   }
-  // 広場と、柵の中だけの踏み分け道（外への道は作らない）
+  // 広場と、柵の中だけの踏み分け道（十字と、ひと回りの小道。外への道は作らない）
   for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
     const x = cx + dx, z = cz + dz, i = z * W + x, tt = w.tiles[i];
     const plaza = Math.abs(dx) <= 1 && Math.abs(dz) <= 1;
-    if (!(plaza || dx === 0 || dz === 0)) continue;
+    if (!(plaza || dx === 0 || dz === 0 || Math.max(Math.abs(dx), Math.abs(dz)) === 4)) continue;
     if (tt === T.RIVER) { w.tiles[i] = T.BRIDGE; changed.push(i); continue; }
     if (!walkable(tt) || tt === T.BLD) continue;
     w.tiles[i] = plaza ? T.PLAZA : T.ROAD; changed.push(i);
@@ -610,11 +619,14 @@ function populate(sim, V, s, goal) {
 }
 function pickJob(sim, weights, count, p) {
   const R = sim.rng;
-  // 腕に覚えのありそうな者は守り手・傭兵に
+  // 村に足りない仕事ほど選ばれる。腕に覚えのありそうな者は守り手・傭兵に向く
+  const total = weights.reduce((a, [, w]) => a + w, 0);
+  const have = Object.entries(count).filter(([j]) => weights.some(([x]) => x === j)).reduce((a, [, n]) => a + n, 0) + 1;
   let best = null, bs = -Infinity;
   for (const [j, wt] of weights) {
     const combat = JOBS[j]?.combat || 0;
-    const sc = wt / (1 + (count[j] || 0)) + (combat ? (p.values.courage - 0.5) * 2 + (p.sex === 'm' ? 0.2 : 0) : 0) + R.range(0, 0.8);
+    const deficit = (wt / total) * have - (count[j] || 0);
+    const sc = deficit * 2 + (combat ? (p.values.courage - 0.5) * 0.8 : 0) + R.range(0, 0.5);
     if (sc > bs) { bs = sc; best = j; }
   }
   return best;
@@ -680,7 +692,7 @@ function seedRelations(sim) {
     if (V.kind === 'mine') { const y = Y - R.int(5, 40); events.push({ y, text: `${kname(V.faces)}の役人が${V.name}の鉱石の取り分を求めて来たが、親方は追い返した`, keys: [me, kk], d: -6, f: kk, t: me }); }
     if (V.kind === 'merc') { const y = Y - R.int(3, 30); events.push({ y, text: `${V.name}の傭兵たちが${kname(V.faces)}の戦に雇われ、報酬のことで揉めた`, keys: [me, kk], d: -5, f: me, t: kk }); }
     if (V.kind === 'abbey') { const y = Y - R.int(4, 35); events.push({ y, text: `流行り病の年、${V.name}の修道士たちが${kname(V.faces)}の村々へ薬を届けた`, keys: [me, kk], d: 10, f: kk, t: me }); }
-    if (V.kind === 'inn') { const y = Y - R.int(2, 25); events.push({ y, text: `${kname(V.faces)}の商人たちが${V.name}の宿場で荷を下ろすようになった`, keys: [me, kk], d: 6, f: kk, t: me }); }
+    if (V.kind === 'inn') { const y = Y - R.int(2, 25); events.push({ y, text: `${kname(V.faces)}の商人たちが${V.name}で荷を下ろすようになった`, keys: [me, kk], d: 6, f: kk, t: me }); }
   }
   // 村どうし・村と民族の里：近ければ因縁がある
   const all = [...keys, ...tribal];
@@ -720,9 +732,11 @@ export function villagesHourly(sim) {
   const X = S.villages;
   if (!X.list.length) return;
   const m0 = sim._vAudit ? moneyTotal(sim) : 0;
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   pollGraves(sim);
   stepTrips(sim);
   stepRaids(sim);
+  if (t0) sim._vMs = (sim._vMs || 0) + performance.now() - t0;
   if (sim._vAudit) { const d = moneyTotal(sim) - m0; X.stats.leak = (X.stats.leak || 0) + d; }
 }
 
@@ -855,7 +869,7 @@ function doSteal(sim, t, p) {
   if (seen.length) {
     for (const q of seen) sim.remember(q, `${nameOf(sim, pk)}の${p.given}が、${b.name}に忍び込むのを見た`, { emo: -0.6, imp: 0.7, about: [p.id], k: 'crime' });
     sim.gossip(p, `${s.name}で盗みを働いたらしい`, -0.7, seen, { silent: true });
-    if (P(sim, vk)?.kind === 'kingdom') { S.wanted[p.id] = null; delete S.wanted[p.id]; markWantedQuiet(sim, p, '盗み', 10); }
+    if (P(sim, vk)?.kind === 'kingdom') markWantedQuiet(sim, p, '盗み', 10);
     const lawful = seen.find((q) => ['guard', 'knight', 'soldier', 'watchman', 'gatekeeper', 'militia', 'vguard'].includes(q.job));
     if (lawful && !lawful.fight) startFight(sim, lawful, p, false);
     for (const q of victims) sim.remember(q, `${nameOf(sim, pk)}の${p.given}に家の銅貨を${r0(loot)}枚盗まれた`, { emo: -0.8, imp: 0.8, about: [p.id], k: 'theft' });
@@ -1019,6 +1033,7 @@ export function villagesDaily(sim) {
   const X = ensureVillages(sim);
   if (!X.list.length) return;
   const m0 = sim._vAudit ? moneyTotal(sim) : 0;
+  const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
   for (const V of X.list) {
     if (V.state === 'ruin') { resettle(sim, V); continue; }
     const s = sim.town(V.sid);
@@ -1039,6 +1054,7 @@ export function villagesDaily(sim) {
   stepPacts(sim);
   peaceDaily(sim);
   relDecay(sim);
+  if (t0) sim._vMs = (sim._vMs || 0) + performance.now() - t0;
   if (sim._vAudit) { const d = moneyTotal(sim) - m0; X.stats.leak = (X.stats.leak || 0) + d; }
 }
 
@@ -1129,6 +1145,9 @@ function deedsDaily(sim) {
   for (const V of X.list) if (V.state !== 'ruin') { actorSids.add(V.sid); const near = nearestTownOf(sim, V); if (near) actorSids.add(near.id); }
   for (const TV of S.tribes?.villages || []) if (!TV.gone) actorSids.add(TV.sid);
   const villageSids = [...actorSids].filter((sid) => isVillageKey(sim, partyKeyOfSid(sim, sid)));
+  const rich = new Map();
+  for (const h of Object.values(S.households)) if (h.money > 30 && h.house != null) rich.set(h.s, (rich.get(h.s) || 0) + 1);
+  sim._vRich = rich;
   for (const sid of actorSids) {
     const s = sim.town(sid);
     if (!s || s.abandoned) continue;
@@ -1140,7 +1159,10 @@ function deedsDaily(sim) {
     let best = null;
     for (const p of people) for (const opt of deedOptions(sim, p, pk, sid, hungry, villageSids)) if (!best || opt.sc > best.sc) best = opt;
     if (!best || best.sc <= 0) continue;
-    const t = newTrip(sim, best.p, best.deed, best.to, best.spot, best.data || {});
+    const spot = best.spot || best.spotFn?.();
+    if (!spot) continue;
+    best.spot = spot;
+    const t = newTrip(sim, best.p, best.deed, best.to, spot, best.data || {});
     if (t && best.deed === 'elope') { const lv = S.people[best.data.lover]; if (lv && alive(lv)) { lv.mission = { type: 'stroll', x: best.spot.x, z: best.spot.z, until: S.t + 1440 * 2.5, dur: 40 }; lv.action = null; } }
     if (t) sim.remember(best.p, deedMotive(sim, best), { emo: -0.1, imp: 0.5, k: 'plan' });
   }
@@ -1184,15 +1206,14 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     const tq = P(sim, tk);
     // 盗み
     if (!iAmTown || tq.kind !== 'kingdom') {
-      const wealth = Object.values(S.households).filter((h) => h.s === tsid && h.money > 30).length > 2 ? 0.3 : -1;
+      const wealth = (sim._vRich?.get(tsid) || 0) > 2 ? 0.3 : -1;
       const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 3.2 + R.range(-0.3, 0.3);
-      out.push({ p, deed: 'steal', to: tsid, sc, why: need || starving ? 'need' : 'greed', spot: sim.randomNear(ts.x, ts.z, Math.max(2, ts.r - 2)) || { x: ts.x, z: ts.z } });
+      out.push({ p, deed: 'steal', to: tsid, sc, why: need || starving ? 'need' : 'greed', spotFn: () => sim.randomNear(ts.x, ts.z, Math.max(2, ts.r - 2)) || { x: ts.x, z: ts.z } });
     }
     // 密猟（狩人・薬草摘み・飢えた村）
     if (['hunter', 'gatherer', 'mercenary', 'charcoal'].includes(p.job) || hungry) {
       const sc = (p.job === 'hunter' ? 0.7 : 0.2) + (hungry ? 0.8 : 0) + need * 0.6 + (1 - p.pers.C) * 0.5 - f / 70 - far * 1.2 - 2.3 + R.range(-0.3, 0.3);
-      const spot = sim.randomNear(ts.x, ts.z, ts.r + 12, (t, x, z) => Math.max(Math.abs(x - ts.x), Math.abs(z - ts.z)) > ts.r + 4 && (t === T.FOREST || t === T.GRASS || t === T.SAVANNA || t === T.DENSE || t === T.SNOW));
-      if (spot) out.push({ p, deed: 'poach', to: tsid, sc, spot });
+      out.push({ p, deed: 'poach', to: tsid, sc, spotFn: () => sim.randomNear(ts.x, ts.z, ts.r + 12, (t, x, z) => Math.max(Math.abs(x - ts.x), Math.abs(z - ts.z)) > ts.r + 4 && (t === T.FOREST || t === T.GRASS || t === T.SAVANNA || t === T.DENSE || t === T.SNOW)) });
     }
     // 聖地荒らし（民族の祠・町の教会）
     if (tq.kind === 'tribal' || (tq.kind === 'kingdom' && !iAmTown)) {
@@ -1524,6 +1545,7 @@ function runIncident(sim, inc) {
       return;
     }
     case 'envoy': return;   // 使者が着くのを待つ
+    case 'judge2': sendEnvoy(sim, inc, inc.a, inc.b); return;   // 助けた見返りに年貢を求める（王）
     case 'answer': answer(sim, inc); return;
     case 'escalate': {
       const a = inc.a, b = inc.b, m = mind(sim, a);
@@ -1730,8 +1752,8 @@ function punish(sim, inc, p) {
 function startRaid(sim, from, to, kind, inc = null, callAllies = false) {
   const S = sim.S, R = sim.rng, X = XV(sim);
   const fq = P(sim, from), tq = P(sim, to);
-  if (!fq || !tq || tq.sid == null) return null;
-  if (X.raids.some((r) => r.stage !== 'done' && r.from === from && r.to === tq.sid)) return null;
+  if (!fq || !tq || (tq.sid == null && tq.kind !== 'bandit') || tq.kind === 'kingdom') return null;
+  if (X.raids.some((r) => r.stage !== 'done' && r.from === from && r.toKey === to)) return null;
   const want = kind === 'burn' ? 9 : kind === 'punitive' ? 8 : kind === 'bandit' ? 6 : kind === 'hunger' ? 6 : 5;
   let men = [];
   if (fq.kind === 'kingdom') men = sim.living().filter((p) => p.s === fq.sid && ['soldier', 'knight', 'militia', 'guard', 'gatekeeper'].includes(p.job) && !p.mission && !p.quest && p.jail == null && p.hp > p.maxhp * 0.5).sort((a, b) => pw(b) - pw(a)).slice(0, want);
@@ -1739,7 +1761,7 @@ function startRaid(sim, from, to, kind, inc = null, callAllies = false) {
   else men = fightersOf(sim, from, want);
   if (men.length < 2) { if (inc) { logInc(inc, sim, '兵が集まらなかった'); } return null; }
   const leader = men.slice().sort((a, b) => (b.values.courage + (b.lv || 1) / 10) - (a.values.courage + (a.lv || 1) / 10))[0];
-  const r = { id: X.seq++, kind, from, to: tq.sid, toKey: to, inc: inc?.id ?? null, leader: leader.id, men: men.map((p) => p.id), stage: 'march', t0: S.t, d0: sim.today, x: tq.x, z: tq.z };
+  const r = { id: X.seq++, kind, from, to: tq.sid ?? null, toKey: to, inc: inc?.id ?? null, leader: leader.id, men: men.map((p) => p.id), stage: 'march', t0: S.t, d0: sim.today, x: tq.x, z: tq.z };
   X.raids.push(r);
   for (const p of men) { p.mission = { type: 'march', x: tq.x, z: tq.z, until: S.t + 1440 * 2.5, dur: 60, vraid: r.id }; p.action = null; p.vRaid = r.id; sim.remember(p, `${nameOf(sim, from)}の者として、${nameOf(sim, to)}へ${RAID_LABEL[kind]}に向かった`, { emo: -0.2, imp: 0.8, k: 'feud' }); }
   // 仲間の勢力も加わる
@@ -1763,7 +1785,7 @@ function stepRaids(sim) {
     try {
       if (r.kind === 'aid' || r.kind === 'guard') { stepGuard(sim, r, men); continue; }
       if (r.kind === 'hunt') { stepHunt(sim, r, men); continue; }
-      const tgt = sim.town(r.to);
+      const tgt = tgtOf(sim, r);
       if (!tgt) { endRaid(sim, r, men); continue; }
       if (r.stage === 'march') {
         for (const p of men) if (!p.fight && (!p.mission || p.mission.vraid !== r.id)) { p.mission = { type: 'march', x: r.x, z: r.z, until: S.t + 1440 * 2, dur: 60, vraid: r.id }; p.action = null; }
@@ -1783,12 +1805,17 @@ function stepRaids(sim) {
   }
   X.raids = X.raids.filter((r) => r.stage !== 'done' || sim.today - (r.doneDay ?? sim.today) < 20);
 }
+// 攻める先（村・里・町、または盗賊のアジト）
+function tgtOf(sim, r) {
+  if (r.toKey?.[0] === 'h') { const q = P(sim, r.toKey); return q ? { id: null, bid: q.bid, x: q.x, z: q.z, r: 4, name: q.name } : null; }
+  return sim.town(r.to);
+}
 function alarm(sim, r, tgt) {
   r.alarm = true;
   const S = sim.S;
   const def = fightersOf(sim, r.toKey, 12, true);
   for (const p of def) { if (p.fight || p.vRaid) continue; p.mission = { type: 'defend', x: tgt.x, z: tgt.z, until: S.t + 180, dur: 40 }; p.action = null; }
-  for (const p of sim.living()) if (p.s === tgt.id && sim.ageOf(p) >= 6) sim.remember(p, `${nameOf(sim, r.from)}の者たちが、村へ攻め寄せてきた`, { emo: -0.9, imp: 0.9, k: 'feud' });
+  for (const p of sim.living()) if (tgt.id != null && p.s === tgt.id && sim.ageOf(p) >= 6) sim.remember(p, `${nameOf(sim, r.from)}の者たちが、村へ攻め寄せてきた`, { emo: -0.9, imp: 0.9, k: 'feud' });
   sim.pushLog(`${tgt.name}に${nameOf(sim, r.from)}の者たちが迫っている！`, 'event', [], tgt);
   // 盟約を結んだ勢力が、近ければ駆けつける
   for (const al of alliesOf(sim, r.toKey)) {
@@ -1805,7 +1832,7 @@ function beginFight(sim, r, near, tgt) {
   sim.pushLog(`${tgt.name}で、${nameOf(sim, r.from)}の者たちと村の者たちがぶつかった。`, 'event', near.map((p) => p.id).slice(0, 4), tgt);
 }
 function defendersAt(sim, r, tgt) {
-  return sim.living().filter((p) => (p.s === tgt.id || p.vGuardAt === tgt.id) && !r.men.includes(p.id) && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 62 && p.jail == null && Math.hypot(p.pos.x - tgt.x, p.pos.z - tgt.z) <= tgt.r + 6 && p.hp > 5);
+  return sim.living().filter((p) => ((tgt.id != null && (p.s === tgt.id || p.vGuardAt === tgt.id)) || (tgt.bid != null && p.bandit && p.hideout === tgt.bid)) && !r.men.includes(p.id) && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 62 && p.jail == null && Math.hypot(p.pos.x - tgt.x, p.pos.z - tgt.z) <= tgt.r + 6 && p.hp > 5);
 }
 function resolveRaid(sim, r, men, tgt) {
   const S = sim.S, R = sim.rng;
@@ -1840,7 +1867,7 @@ function resolveRaid(sim, r, men, tgt) {
   const fromN = nameOf(sim, r.from), toN = tgt.name;
   let loot = 0, burned = 0, took = 0;
   if (win) {
-    if (r.kind === 'burn' || r.kind === 'punitive' && R.chance(0.3)) burned = burnHouses(sim, tgt, r.kind === 'burn' ? R.range(0.3, 0.6) : 0.2);
+    if (tgt.id != null && (r.kind === 'burn' || r.kind === 'punitive' && R.chance(0.3))) burned = burnHouses(sim, tgt, r.kind === 'burn' ? R.range(0.3, 0.6) : 0.2);
     if (r.kind !== 'punitive' || !inDemand(sim, r)) {
       const to = r.kind === 'bandit' ? acct(sim, r.from) : acct(sim, r.from);
       loot = xfer(acct(sim, r.toKey), to, (acct(sim, r.toKey)?.get() || 0) * R.range(0.3, 0.5));
@@ -1848,8 +1875,8 @@ function resolveRaid(sim, r, men, tgt) {
       if (r.kind === 'bandit' || r.kind === 'burn' || r.kind === 'hunger') for (const hh of Object.values(S.households)) if (hh.s === tgt.id && R.chance(0.4)) loot += xfer(hhAcct(hh), to, hh.money * 0.3);
     }
     // 食べ物
-    const tm = S.towns[tgt.id], fm = P(sim, r.from)?.c === 's' ? S.towns[P(sim, r.from).sid] : null;
-    for (const g of ['wheat', 'meat', 'fish', 'bread']) { const n = (tm.stock[g] || 0) * (r.kind === 'hunger' ? 0.6 : 0.35); tm.stock[g] -= n; took += n; if (fm) fm.stock[g] = (fm.stock[g] || 0) + n; else { const share = n / Math.max(1, att.length); for (const p of att) { const h = sim.hh(p); if (h) h.food += share; } } }
+    const tm = tgt.id != null ? S.towns[tgt.id] : null, fm = P(sim, r.from)?.c === 's' ? S.towns[P(sim, r.from).sid] : null;
+    if (tm) for (const g of ['wheat', 'meat', 'fish', 'bread']) { const n = (tm.stock[g] || 0) * (r.kind === 'hunger' ? 0.6 : 0.35); tm.stock[g] -= n; took += n; if (fm) fm.stock[g] = (fm.stock[g] || 0) + n; else { const share = n / Math.max(1, att.length); for (const p of att) { const h = sim.hh(p); if (h) h.food += share; } } }
     if (r.kind === 'punitive') submitAfterDefeat(sim, r);
   }
   r.res = win ? 'win' : 'lose';
@@ -1859,7 +1886,7 @@ function resolveRaid(sim, r, men, tgt) {
     : `${toN}の人々が${fromN}の${RAID_LABEL[r.kind]}を退けた（${fromN}の死者${deadA.length}人・${toN}の死者${deadD.length}人）`;
   note(sim, [r.from, r.toKey], txt, 3, tgt, P(sim, r.from)?.kind === 'kingdom' ? P(sim, r.from).k : undefined);
   for (const p of att) if (alive(p)) sim.remember(p, win ? `${toN}を打ち負かした` : `${toN}で手ひどく追い返された`, { emo: win ? 0.3 : -0.7, imp: 0.9, k: 'feud' });
-  for (const p of sim.living()) if (p.s === tgt.id && sim.ageOf(p) >= 8) sim.remember(p, win ? `${fromN}の者たちに村を荒らされた` : `みんなで${fromN}の者たちを追い払った`, { emo: win ? -0.9 : 0.5, imp: 0.95, k: 'feud' });
+  for (const p of sim.living()) if (tgt.id != null && p.s === tgt.id && sim.ageOf(p) >= 8) sim.remember(p, win ? `${fromN}の者たちに村を荒らされた` : `みんなで${fromN}の者たちを追い払った`, { emo: win ? -0.9 : 0.5, imp: 0.95, k: 'feud' });
   // 恨み：襲われた側 → 襲った側
   const harm = deadD.length * 4 + burned * 2 + loot / 15 + 2;
   heatUp(sim, r.from, r.toKey, harm);
@@ -1986,7 +2013,7 @@ function crisis(sim, V, s) {
   const label = { hunger: '飢え', plague: '流行り病', monster: '魔物の被害' }[kind];
   stat(sim, 'crisis:' + kind + ':' + how);
   if (how === 'beg') askHelp(sim, V, bestHelper.k, kind);
-  else if (how === 'raid') { const inc = openIncident(sim, { type: 'raided', a: me, b: weakest.k, harm: 3, known: true }); if (inc) { inc.stage = 'raid'; startRaid(sim, me, weakest.k, 'hunger', inc); } note(sim, [me, weakest.k], `${label}に追いつめられた${V.name}が、${nameOf(sim, weakest.k)}の蓄えを奪いに出ることを決めた`, 2, V); }
+  else if (how === 'raid') { startRaid(sim, me, weakest.k, 'hunger', null); note(sim, [me, weakest.k], `${label}に追いつめられた${V.name}が、${nameOf(sim, weakest.k)}の蓄えを奪いに出ることを決めた`, 2, V); }
   else if (how === 'hire') hireMercs(sim, V, 'monster');
   else if (how === 'king') kingHunt(sim, V);
   else if (how === 'leave') { const hhs = Object.values(S.households).filter((h) => h.s === V.sid && h.members.length && !h.members.includes(V.chief)); for (const hh of R.shuffle(hhs).slice(0, Math.max(1, Math.round(hhs.length * 0.2)))) refugeeHousehold(sim, V, hh, label); note(sim, [me], `${label}に耐えかねて、${V.name}から何家族かが村を出ていった`, 2, V); }

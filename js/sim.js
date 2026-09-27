@@ -827,7 +827,8 @@ export class Sim {
           if (g && spendable(this, p) >= cost) {
             pay(this, p, cost);
             m.stock[g] -= 1;
-            if (keeper && this.hh(keeper)) this.hh(keeper).money += cost - m.price[g]; // 仕入れ値を引いた分が宿のもうけ
+            this.mcash(p.s).cash += m.price[g];   // 仕入れ値は市場の金庫へ
+            if (keeper && this.hh(keeper)) this.hh(keeper).money += cost - m.price[g]; else this.S.towns[p.s].fund += cost - m.price[g]; // 残りが宿のもうけ（宿の主がいなければ町の蓄え）
             p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
           }
         }
@@ -855,7 +856,7 @@ export class Sim {
         if (spendable(this, p) > cost) {
           pay(this, p, cost);
           const keeper = this.living().find((q) => q.job === 'innkeeper' && q.s === p.s);
-          if (keeper) this.hh(keeper).money += cost * 0.9;
+          { const ale = Math.min(cost, Math.min(qty, m.stock.ale) * m.price.ale * 0.6); this.mcash(p.s).cash += ale; const rest = cost - ale; if (keeper && this.hh(keeper)) this.hh(keeper).money += rest; else this.S.towns[p.s].fund += rest; }   // 酒の仕入れは市場へ、残りは酒場の主へ
           m.stock.ale = Math.max(0, m.stock.ale - qty);
           if (qty >= 3 && this.rng.chance(0.2 + p.pers.E * 0.2)) {
             const pred = this.rng.pick(['酒場で飲みすぎて大声で歌い出した', '酒場で酔っぱらってテーブルの上で踊った', '酒場で飲みすぎて椅子から転げ落ちた']);
@@ -1183,7 +1184,7 @@ export class Sim {
   forge(p, dt, eff) {
     const hh = this.hh(p), m = this.market(p.s), R = this.rng, town = this.S.towns[p.s];
     town.mats = town.mats || {}; town.shop = town.shop || [];
-    if (m.stock.ore >= 1 && (town.mats.iron || 0) < 12) { m.stock.ore -= 0.8 * eff; hh.money -= 0.8 * eff * m.price.ore * 0.9; town.mats.iron = (town.mats.iron || 0) + 0.4 * eff; }
+    if (m.stock.ore >= 1 && (town.mats.iron || 0) < 12) { m.stock.ore -= 0.8 * eff; hh.money -= 0.8 * eff * m.price.ore * 0.9; this.mcash(p.s).cash += 0.8 * eff * m.price.ore * 0.9; town.mats.iron = (town.mats.iron || 0) + 0.4 * eff; }
     p.forgeT = (p.forgeT || 0) + dt;
     if (p.forgeT < 90 || town.shop.length >= 14) return;
     p.forgeT = 0;
@@ -1234,7 +1235,7 @@ export class Sim {
     pay(this, p, price);
     town.shop.splice(town.shop.indexOf(it), 1);
     const smith = this.S.people[it.maker];
-    if (smith && smith.deathYear == null && this.hh(smith)) this.hh(smith).money += price;
+    if (smith && smith.deathYear == null && this.hh(smith)) this.hh(smith).money += price; else town.fund += price;   // 作り手が亡くなっていれば町の蓄えへ
     // 古い装備は下取りに出す
     const old = p.eq?.[ITEMS[it.id].type];
     addItem(p, it); autoEquip(p);
@@ -1919,6 +1920,9 @@ export class Sim {
     gearOnDeath(this, p, cause, killer);
     const S = this.S, age = this.ageOf(p);
     p.deathYear = this.year(); p.deathCause = cause; p.deathDay = this.today;
+    // 亡くなった人の財布と、夢のための貯えは家族（家がなければ町の蓄え）へ残る（お金は消えない）
+    { const left = Math.max(0, p.purse || 0) + Math.max(0, p.plan?.saved || 0); p.purse = 0; if (p.plan) p.plan.saved = 0;
+      if (left > 0) { const hh = this.hh(p); if (hh) hh.money += left; else if (S.towns[p.s]) S.towns[p.s].fund += left; } }
     p.lastWords = p.thought;
     p.killedBy = killer ? (typeof killer.id === 'number' ? killer.id : killer.name) : null;
     p.diedWhile = p.action?.type || null;

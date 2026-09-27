@@ -253,7 +253,7 @@ function giveUp(sim, p, plan) {
   const st = state(sim), hh = sim.hh(p);
   const why = plan.stage === 'waiting' ? 'お金は貯まったのに機会に恵まれず' : '思うようにお金が貯まらず';
   plan.stage = 'failed';
-  const back = plan.saved * 0.5; plan.saved = 0; // 半分は暮らしの足しに消えていた
+  const back = plan.saved; plan.saved = 0; // 貯えは暮らしのお金に戻す
   p.purse = (p.purse || 0) + back * 0.4; if (hh) hh.money += back * 0.6; else p.purse += back * 0.6;
   sim.remember(p, `${why}、${plan.txt}という夢を諦めた`, { emo: -0.7, imp: 0.8, k: 'career' });
   p.planRest = sim.today + 10;
