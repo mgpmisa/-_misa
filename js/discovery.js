@@ -2,6 +2,8 @@
 //
 // ■ しくみ
 //   matter.js の markSeen が、初めての物のときに sim.onDiscover(id, ctx) を呼ぶ（ctx：p＝手に入れた人、hh＝世帯、how＝手に入れ方、sp＝獲物の種、place＝宝の場所）。
+//   持ち物に入った物（carry.js・items.js の addItem。買った・拾った・受け取った品）も、items.js の carryHooks.add の口で markSeen を通す。
+//   どちらの道でも、図鑑の「はじめて」は物ごとに1回だけなので、お知らせも1回だけ出る。
 //   その場で「誰が・どこで」を文にして S.discover.q にためる（その人があとで動いても、手に入れた場所を正しく出すため）。
 //   毎時（discoveryHourly）ためた分を出す：
 //     ・1件ずつのお知らせ（画面の上の知らせ・出来事の欄）：1時間に2件まで、1日に6件まで。めずらしい物を先に。
@@ -11,7 +13,8 @@
 //
 // ■ 画面（main.js の events の振り分けで showDiscovery(ui, e.entry)）
 //   画面の上に数秒で消える知らせを出す。人の名前を押すとその人を、物の名前を押すと図鑑のその物を開く。
-import { MAT } from './matter.js';
+import { MAT, markSeen } from './matter.js';
+import { carryHooks } from './items.js';
 import { JOBS, SPECIES, SEASONS, DAYS_PER_SEASON, DAYS_PER_YEAR } from './data.js';
 import { W, H, TILE_NAME, T, tileAt } from './world.js';
 
@@ -117,8 +120,22 @@ function flushDay(sim, D) {
 }
 
 // ---------- 毎時 ----------
+// 持ち物に入った品（addItem）も、初めての物なら知らせる。carryHooks.add（carry.js）の前に1枚はさむ（1度だけ）
+let CUR = null, wrapped = false;
+function wrapCarry() {
+  if (wrapped) return;
+  wrapped = true;
+  const prev = carryHooks.add;
+  carryHooks.add = (p, it, stacked) => {
+    const sim = CUR;
+    if (sim && it && MAT.has(it.id) && sim.S.matter?.seen && sim.S.matter.seen[it.id] == null && p?.pos) markSeen(sim, it.id, { p: p.id, s: p.s, how: 'carry' });
+    return prev ? prev(p, it, stacked) : null;
+  };
+}
 export function discoveryHourly(sim) {
+  CUR = sim;
   if (!sim.onDiscover) sim.onDiscover = (id, ctx) => { try { record(sim, id, ctx); } catch (e) { /* お知らせの失敗で世界を止めない */ } };
+  wrapCarry();
   const D = DS(sim);
   if (D.day !== sim.today) flushDay(sim, D);
   if (!D.q.length) return;

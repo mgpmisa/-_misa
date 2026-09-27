@@ -565,35 +565,47 @@ function post(sim, q) {
 }
 
 // ---------- 討伐に向かうパーティーのお知らせ ----------
+// パーティーは partylife.js のとおり、リーダーが行き先を決め、仲間はそれに合わせて動く。
+// そこで「リーダーがその依頼の行き先へ歩き出したとき」に出発とみなし、行き先もリーダーの行動の目的地（action.tx/tz）から書く。
 function departures(sim) {
-  const S = sim.S;
+  const S = sim.S, P = S.spawner;
   for (const q of S.quests || []) {
     if (q.state !== 'taken' || q.departNote) continue;
     if (!['hunt', 'explore'].includes(q.type)) continue;
-    const members = q.takenBy.map((id) => S.people[id]).filter((m) => m && m.deathYear == null && m.quest === q.id);
-    if (!members.length || !members.some((m) => m.action?.type === 'quest')) continue;
+    const onQuest = q.takenBy.map((id) => S.people[id]).filter((m) => m && m.deathYear == null && m.quest === q.id);
+    if (!onQuest.length) continue;
+    const pt = q.party != null ? S.advParties?.[q.party] : null;
+    // 先頭に立つ人：パーティーならリーダー（リーダーが依頼に加わっていなければ、依頼の仲間でいちばん先に動いた人）
+    let lead = pt ? S.people[pt.leader] : null;
+    if (!lead || lead.quest !== q.id || lead.deathYear != null) lead = onQuest.find((m) => m.action?.type === 'quest') || null;
+    if (!lead || lead.action?.type !== 'quest' || lead.action.quest?.target == null && lead.action.tx == null) continue;
+    // 一緒に出発する仲間：リーダーに合わせて動いている人（partylife の pfollow）か、同じ依頼を受けてそばにいる人
+    const crew = [lead, ...onQuest.filter((m) => m !== lead && (m.action?.pfollow === lead.id || m.action?.type === 'quest' || Math.hypot(m.pos.x - lead.pos.x, m.pos.z - lead.pos.z) < 10))];
     q.departNote = sim.today;
+    const tx = lead.action.tx ?? q.where?.x, tz = lead.action.tz ?? q.where?.z;
+    // 行き先の呼び名：湧き口のダンジョンのそばならその名、そうでなければ土地の名
+    let placeName = tx != null ? sim.placeName(tx, tz) : 'どこか';
+    const near = Object.values(P.sites).map((x) => sim.building(x.bid)).find((b) => b && tx != null && Math.hypot(b.door.x - tx, b.door.z - tz) < NEAR);
+    if (q.spawnSite != null && sim.building(q.spawnSite)) placeName = sim.building(q.spawnSite).name;
+    else if (near) placeName = near.name;
     let what;
     if (q.type === 'hunt') {
       const c = S.creatures[q.target];
-      const b = q.spawnSite != null ? sim.building(q.spawnSite) : null;
-      const place = b ? b.name : q.where ? sim.placeName(q.where.x, q.where.z) : 'どこか';
-      what = `${place}の${c ? c.name : '魔物'}討伐`;
+      what = `${placeName}の${c ? c.name : '魔物'}討伐`;
     } else {
       const b = sim.building(+String(q.target).slice(1));
       if (!b || b.type === 'hideout') continue;
       what = q.seal ? `${b.name}の湧き口を封じる戦い` : `${b.name}の魔物討伐と探索`;
     }
-    const names = members.map((m) => `${advClassName(m) || JOBS[m.job]?.name || ''}${m.given}`).join('・');
-    const pt = q.party != null ? S.advParties?.[q.party] : null;
-    const pos = members[0].pos;
-    if (pt || members.length >= 2) {
+    const names = crew.map((m) => `${advClassName(m) || JOBS[m.job]?.name || ''}${m.given}`).join('・');
+    const pos = lead.pos;
+    if (pt || crew.length >= 2) {
       const text = pt ? `〈${pt.name}〉（${names}）が、${what}に出発した` : `冒険者の一行（${names}）が、${what}に出発した`;
       sim.news(text, q.seal ? 3 : 2, pos);
       if (q.spawnSite != null) note(sim, text);
       stat(sim, 'noticeParty');
     } else {
-      sim.pushLog(`${names}がひとりで${what}に出発した。`, 'event', members.map((m) => m.id), pos);
+      sim.pushLog(`${names}がひとりで${what}に出発した。`, 'event', crew.map((m) => m.id), pos);
       stat(sim, 'noticeSolo');
     }
   }

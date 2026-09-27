@@ -10,6 +10,7 @@
 //   手狭な家は、居心地（hh.comfort）が毎日少しずつ下がり、機嫌が悪くなる（不満）。2日ほど様子を見てから、家族で考える。
 //   持ち家：家計に余裕があれば、大工と石工に頼んで二階建てに増築する。
 //     材料（材木14・石材6・鉄の釘1袋）は、施主が市場で持ち主から買う（marketBuy）。そろわないときは数日待ち、4日目には古材で間に合わせる。
+//     釘だけが市場にないとき（鍛冶屋が釘を作っていない町）は、2日待って、昔ながらの木の栓で組む。
 //     家計だけで足りなければ、家族の大人が財布の小遣いを出し合う（財布 → 家計。同じ家の中のお金の移し替え）。
 //     工事は4日。毎日、施主の家計から大工・石工の家計へ日当を払う（flow で帳簿に残す）。払えない日は工事が止まる。
 //     できあがると b.floors = 2。家の値打ち（property.js の houseValue）は1.7倍になる。
@@ -155,8 +156,11 @@ function progressJobs(sim) {
       }
       const left = Object.entries(j.need).filter(([, n]) => n >= 0.05);
       j.wait++;
-      if (!left.length || j.wait >= 4) {
-        if (left.length) { j.makeshift = left.map(([g]) => MAT_JP[g]).join('と'); }
+      const onlyNails = left.length === 1 && left[0][0] === 'iron_nail';
+      if (!left.length || j.wait >= 4 || (onlyNails && j.wait >= 2)) {
+        // 釘が手に入らなければ木の栓で組む。ほかの材料が足りなければ古材で間に合わせる
+        const other = left.filter(([g]) => g !== 'iron_nail').map(([g]) => MAT_JP[g]);
+        if (left.length) j.makeshift = [left.some(([g]) => g === 'iron_nail') ? '釘が手に入らず、木の栓で組んだ' : '', other.length ? `${other.join('と')}がそろわず、古材で間に合わせた` : ''].filter(Boolean).join('。');
         j.stage = 'build';
       }
       continue;
@@ -202,7 +206,7 @@ function finishExpand(sim, b, hh, payer, j) {
   const town = sim.town(hh.s);
   const n = alive(sim, hh).length;
   const spent = Math.round(j.spent);
-  const mk = j.makeshift ? `（${j.makeshift}がそろわず、古材で間に合わせた）` : '';
+  const mk = j.makeshift ? `（${j.makeshift}）` : '';
   for (const p of alive(sim, hh)) if (sim.ageOf(p) >= 6) sim.remember(p, j.lord ? `大家が家を二階建てにしてくれた。家族${n}人がみな寝台で眠れる。家賃は週${oldRent}から${b.rent}銅貨に上がった` : `家が二階建てになった。${spent}銅貨かかったが、家族${n}人がみな寝台で眠れる`, { emo: 0.8, imp: 0.75, about: carp ? [carp.id] : [], k: 'house' });
   if (lh) sim.remember(lh, `${hh.name}に貸している家を二階建てにした。${spent}銅貨かかったが、家賃は週${b.rent}銅貨になる`, { emo: 0.3, imp: 0.5, k: 'house' });
   if (carp && carp.deathYear == null) sim.remember(carp, `${hh.name}の家の二階の建て増しを仕上げた`, { emo: 0.6, imp: 0.5, k: 'work' });
