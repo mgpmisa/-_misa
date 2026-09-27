@@ -42,6 +42,7 @@ import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily,
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
 import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth, tribeWork } from './tribes.js';
+import { initVillages, ensureVillages, villagesDaily, villagesHourly, villagesPlace } from './villages.js';
 import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
@@ -99,6 +100,7 @@ export class Sim {
     this.slimDead();
     ensureExpansion(this);
     initTribes(this);
+    initVillages(this);
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
     this.seedMarkets();
     computeDanger(this);
@@ -125,6 +127,7 @@ export class Sim {
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     ensureExpansion(this);
     ensureTribes(this);
+    ensureVillages(this);
     ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
     this.seedMarkets();
     computeDanger(this);
@@ -502,6 +505,7 @@ export class Sim {
   placeFor(p, kind) {
     const ex = expansionPlace(this, p, kind); if (ex) return ex;
     const tp = tribesPlace(this, p, kind); if (tp) return tp;
+    const vp = villagesPlace(this, p, kind); if (vp) return vp;
     const R = this.rng, s = this.townOf(p), w = this.S.world;
     const cp = civicPlace(this, p, kind); if (cp) return cp;
     const bp = buildingsPlace(this, p, kind); if (bp) return bp;
@@ -1777,6 +1781,7 @@ export class Sim {
     taxesHourly(this);
     expansionHourly(this);
     tribesHourly(this);
+    villagesHourly(this);
     diplomacyHourly(this);
     demonHourly(this);
     monstersHourly(this);
@@ -1826,13 +1831,13 @@ export class Sim {
     }
     // 豊かな町から、同じ国の貧しい村へ援助
     for (const k of S.kingdoms) {
-      const ts = S.world.settlements.filter((s) => s.kingdom === k.id && !S.towns[s.id].occupied && !(s.tribal && s.annexed == null));
+      const ts = S.world.settlements.filter((s) => s.kingdom === k.id && !S.towns[s.id].occupied && !((s.tribal || s.indep) && s.annexed == null));
       const rich = ts.slice().sort((a, b) => S.towns[b.id].fund - S.towns[a.id].fund)[0], poor = ts.slice().sort((a, b) => S.towns[a.id].fund - S.towns[b.id].fund)[0];
       if (rich && poor && rich !== poor && S.towns[rich.id].fund > 600 && S.towns[poor.id].fund < 80) { const x = 120; S.towns[rich.id].fund -= x; S.towns[poor.id].fund += x; }
     }
     if (this.isFestival()) {
       const from = this.dayIndex * 1440 + 16 * 60;
-      for (const s of S.world.settlements) if (!S.towns[s.id].occupied && !(s.tribal && s.annexed == null)) S.gatherings.push({ type: 'festival', place: 'plaza', from, to: from + 7 * 60, s: s.id, label: '収穫祭' });
+      for (const s of S.world.settlements) if (!S.towns[s.id].occupied && !((s.tribal || s.indep) && s.annexed == null)) S.gatherings.push({ type: 'festival', place: 'plaza', from, to: from + 7 * 60, s: s.id, label: '収穫祭' });
       this.news('今日は収穫祭。夕方から各地の広場でかがり火が焚かれる', 1);
     }
     calendarDaily(this);
@@ -1908,6 +1913,7 @@ export class Sim {
     gearDaily(this);
     expansionDaily(this);
     tribesDaily(this);
+    villagesDaily(this);
     diplomacyDaily(this);
     divineDaily(this);
     // 市場の運上金と町の上納金：市場の金庫と町の蓄えにたまりすぎたお金を、町→国庫へ戻す（兵や役人の給金になって家計へ還る）

@@ -349,7 +349,7 @@ function relief(sim, d, houses) {
   const hhs = householdsInHouses(sim, houses.map((b) => b.id));
   for (const sid of d.sids) {
     const s = S.world.settlements[sid], k = S.kingdoms[s.kingdom];
-    if (!k || S.towns[sid]?.occupied) continue;
+    if (!k || S.towns[sid]?.occupied || ((s.tribal || s.indep) && s.annexed == null)) continue;
     const want = d.cost / d.sids.length;
     const pay = Math.round(Math.min(want, Math.max(0, k.treasury) * 0.25));
     if (pay <= 0) continue;

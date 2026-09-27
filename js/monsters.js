@@ -351,7 +351,7 @@ function council(sim) {
   const fighters = {};
   for (const p of sim.living()) if (FIGHTER_JOBS.has(p.job)) { const k = sim.town(p.s).kingdom; fighters[k] = (fighters[k] || 0) + 1; }
   const occupied = w.settlements.filter((s) => S.towns[s.id].occupied);
-  const scored = w.settlements.filter((s) => !S.towns[s.id].occupied && !(s.tribal && s.annexed == null)).map((s) => {
+  const scored = w.settlements.filter((s) => !S.towns[s.id].occupied && !((s.tribal || s.indep) && s.annexed == null)).map((s) => {
     const mem = DA.memory[s.id] || { defeats: 0, wins: 0 };
     const d = Math.hypot(s.x - w.demon.x, s.z - w.demon.z);
     const near = occupied.some((o) => Math.hypot(o.x - s.x, o.z - s.z) < 35) ? 12 : 0;

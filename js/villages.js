@@ -2652,7 +2652,7 @@ export function villageOriginHTML(sim, p, esc) {
   const V = p.vOrigin != null ? X.list[p.vOrigin] : null;
   if (V && p.s !== V.sid) h += `<br>${esc(V.name)}の出${p.vRefugee === V.id ? '（村を追われた）' : p.vExiled === V.id ? '（掟で追放）' : ''}${V.state === 'ruin' ? '・今は廃村' : ''}`;
   else if (V) h += `<br>${esc(V.name)}生まれ`;
-  if (p.vTitle && p.job === 'vchief') h += `<br>${esc(V?.name || '')}の${esc(p.vTitle)}`;
+  if (p.vTitle && p.job === 'vchief' && V && p.s === V.sid) h += `<br>${esc(V?.name || '')}の${esc(p.vTitle)}`;
   if (p.vHostage) h += `<br>人質として${esc(sim.town(p.vHostage.at)?.name || '')}に預けられている`;
   if (p.vFugitive) h += `<br>${esc(kname(p.vFugitive.k))}から逃げてきたお尋ね者`;
   if (p.vAvenge && p.deathYear == null) h += `<br>${esc(p.vAvenge.why || '仇')}を討つと誓っている`;

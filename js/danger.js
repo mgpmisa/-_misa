@@ -10,7 +10,7 @@ import { threatNear } from './perf.js';
 export const CH = 8;              // 区画の大きさ（マス）
 export const CW = W / CH, CHH = H / CH;
 const LAIRS = new Set(['cave', 'pyramid', 'ruins', 'hideout', 'demoncastle']);
-const DEFENDERS = new Set(['guard', 'watchman', 'gatekeeper', 'militia', 'soldier', 'knight', 'royalguard', 'general', 'paladin']);
+const DEFENDERS = new Set(['guard', 'watchman', 'gatekeeper', 'militia', 'soldier', 'knight', 'royalguard', 'general', 'paladin', 'vguard', 'mercenary']);
 
 export const chunkOf = (x, z) => Math.min(CHH - 1, Math.max(0, Math.floor(z / CH))) * CW + Math.min(CW - 1, Math.max(0, Math.floor(x / CH)));
 

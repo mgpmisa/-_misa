@@ -79,7 +79,7 @@ export function assess(sim, k, hh, owns = null) {
   const out = { poll: 0, land: 0, sales: 0, war: 0, tithe: 0, debt: 0, total: 0, why: null };
   if (hh.royal) { out.why = '王家は免税'; return out; }
   if (hh.bandits) { out.why = '盗賊の一味には届かない'; return out; }
-  { const ts = sim.town(hh.s); if (ts?.tribal && ts.annexed == null) { out.why = '民族の村には王国の税が届かない'; return out; } }
+  { const ts = sim.town(hh.s); if ((ts?.tribal || ts?.indep) && ts.annexed == null) { out.why = ts.indep ? '国に属さない村には王国の税が届かない' : '民族の村には王国の税が届かない'; return out; } }
   if (hh.street || hh.wander) { out.why = '宿なしで取り立てられない'; return out; }
   const relief = inRelief(sim, k, hh.s);
   if (relief === '占領下で徴税できない') { out.why = relief; return out; }
@@ -457,7 +457,7 @@ function royalBounty(sim, k) {
 
 // ---------- 不満：ぼやき → 陳情 → 暴動 → 反乱 ----------
 export function kingdomUnrest(sim, k) {
-  const ts = sim.S.world.settlements.filter((s) => s.kingdom === k.id && !sim.S.towns[s.id].occupied);
+  const ts = sim.S.world.settlements.filter((s) => s.kingdom === k.id && !sim.S.towns[s.id].occupied && !((s.tribal || s.indep) && s.annexed == null));
   return ts.length ? ts.reduce((a, s) => a + sim.S.towns[s.id].unrest, 0) / ts.length : 0;
 }
 
@@ -467,7 +467,7 @@ function unrestDaily(sim, k) {
   const feastNow = k.lastFeast >= sim.today - 1 && k._feastSeen !== k.lastFeast;
   if (feastNow) k._feastSeen = k.lastFeast;
   for (const s of S.world.settlements) {
-    if (s.kingdom !== k.id) continue;
+    if (s.kingdom !== k.id || ((s.tribal || s.indep) && s.annexed == null)) continue;
     const t = S.towns[s.id];
     if (t.occupied) continue;
     // ゆっくり静まる。飢え・高いパンで増える。祝宴で和らぐ
@@ -741,7 +741,7 @@ export function taxesDaily(sim) {
     // 王の直轄の畑・森・牧場の産物を町の市場に卸し、その代金を市場の金庫から受け取る（お金は湧かない）
     let crown = 0;
     for (const s of towns) {
-      if (S.towns[s.id].occupied || (s.tribal && s.annexed == null)) continue;
+      if (S.towns[s.id].occupied || ((s.tribal || s.indep) && s.annexed == null)) continue;
       const want = s.id === k.capital ? 30 : 10, mc = sim.mcash(s.id), m = sim.market(s.id);
       const g = s.type === 'port' ? 'fish' : s.type === 'village' ? 'wheat' : 'wood';
       const price = Math.max(0.5, m.price[g] || 2);
@@ -757,7 +757,7 @@ export function taxesDaily(sim) {
     if (isTaxDay(sim, k) && king && S.tax.rebellion?.k !== k.id) {
       k.fisc.last = { ...k.fisc.cur, day: sim.today };
       k.fisc.cur = blank();
-      for (const s of towns) if (!S.towns[s.id].occupied && !(s.tribal && s.annexed == null)) openRound(sim, k, s);
+      for (const s of towns) if (!S.towns[s.id].occupied && !((s.tribal || s.indep) && s.annexed == null)) openRound(sim, k, s);
       for (const p of sim.living()) if (sim.town(p.s).kingdom === k.id && p.job === 'treasurer') sim.remember(p, '今日は徴税日。役人たちに帳簿を持たせて町へ送り出した', { emo: 0.1, imp: 0.2, k: 'tax' });
     } else if (isTaxDay(sim, k) && S.tax.rebellion?.k === k.id) {
       k.fisc.last = { ...k.fisc.cur, day: sim.today }; k.fisc.cur = blank();

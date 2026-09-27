@@ -550,7 +550,7 @@ function planWork(sim, k) {
     if (job) return job;
   }
   // 2) 町の近くの川に橋を架ける（両岸が歩けて、近くに橋がない所）
-  for (const s of w.settlements.filter((q) => q.kingdom === k && !(q.tribal && q.annexed == null))) {
+  for (const s of w.settlements.filter((q) => q.kingdom === k && !((q.tribal || q.indep) && q.annexed == null))) {
     let best = null;
     for (let z = s.z - s.r - 8; z <= s.z + s.r + 8; z++) for (let x = s.x - s.r - 8; x <= s.x + s.r + 8; x++) {
       if (tileAt(w, x, z) !== T.RIVER) continue;
@@ -579,7 +579,7 @@ function planWork(sim, k) {
     }
   }
   // 3) 町の外れの道の切れ目をつなぐ（道の網から外れた門）
-  for (const s of w.settlements.filter((q) => q.kingdom === k && !(q.tribal && q.annexed == null))) for (const g of s.gates || []) {
+  for (const s of w.settlements.filter((q) => q.kingdom === k && !((q.tribal || q.indep) && q.annexed == null))) for (const g of s.gates || []) {
     const i = (g.z + g.dz) * W + (g.x + g.dx);
     if (net[i] || !walkable(w.tiles[i])) continue;
     const tiles = pathToNet(sim, g.x + g.dx, g.z + g.dz, net, 40);

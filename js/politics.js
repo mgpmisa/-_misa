@@ -422,7 +422,7 @@ function endWar(sim, winner, loser) {
   const name = winner.war.name;
   // 敗戦国は勝者の都にいちばん近い村を割譲する
   const wcap = sim.town(winner.capital);
-  const ceded = S.world.settlements.filter((s) => s.kingdom === loser.id && s.type !== 'capital').sort((a, b) => Math.hypot(a.x - wcap.x, a.z - wcap.z) - Math.hypot(b.x - wcap.x, b.z - wcap.z))[0];
+  const ceded = S.world.settlements.filter((s) => s.kingdom === loser.id && s.type !== 'capital' && !((s.tribal || s.indep) && s.annexed == null)).sort((a, b) => Math.hypot(a.x - wcap.x, a.z - wcap.z) - Math.hypot(b.x - wcap.x, b.z - wcap.z))[0];
   const gold = Math.min(loser.treasury * 0.4, 400);
   loser.treasury -= gold; winner.treasury += gold;
   winner.war = null; loser.war = null;
@@ -521,7 +521,7 @@ function succession(sim, k) {
     heir = sim.living().filter((p) => p.rank === 'noble' && sim.town(p.s).kingdom === k.id && sim.ageOf(p) >= 20).sort((a, b) => b.values.ambition - a.values.ambition)[0];
     newDynasty = true;
   }
-  if (!heir) heir = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && !sim.town(p.s).tribal && sim.ageOf(p) >= 25).sort((a, b) => b.fame - a.fame)[0];
+  if (!heir) heir = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && !sim.town(p.s).tribal && !sim.town(p.s).indep && sim.ageOf(p) >= 25).sort((a, b) => b.fame - a.fame)[0];
   if (!heir) return;
   k.kingId = heir.id; heir.rank = 'king'; heir.job = 'king'; k.monarchs.push(heir.id);
   Object.assign(heir, humanStats(sim, heir));
