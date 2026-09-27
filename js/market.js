@@ -33,6 +33,9 @@
 import { GOODS, JOBS, DAYS_PER_SEASON } from './data.js';
 import { flow, income, meal, whoLabel, econState } from './ledger.js';
 import { hasShop, millToll } from './shops.js';
+import { matterGood, MATTER_USE } from './matter.js';
+const gd = (g) => GOODS?.[g] || matterGood(g);   // 今の20品か、物の一覧の品か
+const isStaple = (g) => !!GOODS?.[g];
 
 const FOOD = ['bread', 'fish', 'wheat', 'meat', 'honey'];
 const PERISH = { fish: 0.15, meat: 0.12, bread: 0.1 };
@@ -124,6 +127,7 @@ function lotsOf(sim, m, g, sid) {
   return list;
 }
 function addLot(sim, m, sid, g, o, q, c, u, opt = {}) {
+  if (m.price[g] == null) m.price[g] = gd(g)?.base ?? matterGood(g)?.base ?? 1;
   const list = lotsOf(sim, m, g, sid);
   const lot = { o, q, c, u: u || 0 };
   if (opt.w) lot.w = opt.w;
@@ -138,17 +142,18 @@ function addLot(sim, m, sid, g, o, q, c, u, opt = {}) {
   }
 }
 // 国や町の品を店先に並べる（売れたときに代金が持ち主へ）
-export function ownStock(sim, sid, g, o, q) { const m = sim.S.towns[sid]; if (m && q > 0 && GOODS[g]) addLot(sim, m, sid, g, o, q, 3, 0); }
+export function ownStock(sim, sid, g, o, q) { const m = sim.S.towns[sid]; if (m && q > 0 && gd(g)) addLot(sim, m, sid, g, o, q, 3, 0); }
 
 // ---------- 買う ----------
 // payer：世帯・口座の札（'k1' など）・{money}。qty は小数でもよい。opt.price で1個の値を決められる。
 // 戻り値は実際に受け取った数（量をごまかす売り手からは、払った数より少ない）
 export function marketBuy(sim, sid, g, qty, payer, opt = {}) {
   const m = sim.S.towns[sid];
-  if (!m || !GOODS[g] || qty <= 0) return 0;
+  if (!m || !gd(g) || qty <= 0) return 0;
   const pa = acct(sim, payer);
   if (!pa) return 0;
   const price = opt.price ?? m.price[g];
+  if (m.price[g] == null) return 0;
   qty = Math.min(qty, num(m.stock[g]));
   if (!opt.force) qty = Math.min(qty, Math.max(0, pa.money) / Math.max(0.01, price));
   if (opt.whole) qty = Math.floor(qty + 1e-9);
@@ -168,13 +173,13 @@ export function marketBuy(sim, sid, g, qty, payer, opt = {}) {
       // 店に預けた品：持ち主へ。店番の商人に1割
       const cut = cost * COMMISSION;
       give(sim, l.o, cost - cut, sid); keeper.money += cut;
-      flow(sim, payerName, label(sim, l.o), cost - cut, GOODS[g].name);
+      flow(sim, payerName, label(sim, l.o), cost - cut, gd(g).name);
       flow(sim, label(sim, l.o), '市場の商人', cut, '店番の手間賃');
       E.day.merchant += cut; incomeOf(sim, l.o, cost - cut); incomeOf(sim, keeper.id, cut);
     } else {
       give(sim, l.o, cost, sid);
       const isM = l.c === 0;
-      flow(sim, payerName, isM ? '市場の商人' : label(sim, l.o), cost, GOODS[g].name + (l.c === 2 ? '（市の露店）' : ''));
+      flow(sim, payerName, isM ? '市場の商人' : label(sim, l.o), cost, gd(g).name + (l.c === 2 ? '（市の露店）' : ''));
       const gain = isM ? cost - take * (l.u || 0) : cost;
       if (isM) E.day.merchant += gain;
       incomeOf(sim, l.o, gain);
@@ -197,16 +202,17 @@ function incomeOf(sim, code, amt) {
 //   opt.shop：組合の職人が自分の店に並べる
 export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
   const m = sim.S.towns[sid];
-  if (!m || !GOODS[g] || qty <= 0) return { got: 0, left: qty };
+  if (!m || !gd(g) || qty <= 0) return { got: 0, left: qty };
   const code = typeof seller === 'object' && seller?.members ? seller.id : seller;
-  const G = GOODS[g], price = m.price[g];
+  if (m.price[g] == null) m.price[g] = gd(g).base;
+  const G = gd(g), price = m.price[g];
   let left = qty, got = 0;
   if (opt.shop) { addLot(sim, m, sid, g, code, left, 3, 0); return { got: 0, left: 0 }; }
   // 1. 組合の商人が買い取る（在庫が多すぎる品は買わない。生ものは控えめ）
   const merchants = merchantsOf(sim, sid).filter((h) => h.id !== code);
   const cap = G.target * (PERISH[g] ? 1.0 : 1.4) * (opt.capMul || 1);
   const unit = price * WHOLESALE * (opt.tradeMul || 1);
-  for (const mh of sim.rng.shuffle(merchants.slice())) {
+  for (const mh of (!isStaple(g) && G.demand === 0) ? [] : sim.rng.shuffle(merchants.slice())) {
     if (left <= 1e-6) break;
     const room = Math.max(0, cap - num(m.stock[g]));
     const afford = Math.max(0, mh.money - 25) / Math.max(0.01, unit);
@@ -227,7 +233,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
     if (n >= 0.05) { addLot(sim, m, sid, g, code, n, 1, 0); left -= n; }
   }
   // 2. 組合のない村：村長が村の蔵に買い取る（村の蓄えから、同じ8割の値で）
-  if (left > 1e-6 && !merchants.length && !guildOf(sim, sid) && typeof code === 'number') {
+  if (left > 1e-6 && !merchants.length && !guildOf(sim, sid) && typeof code === 'number' && (isStaple(g) || G.demand >= 2)) {
     const t = sim.S.towns[sid];
     const room = Math.max(0, G.target * (PERISH[g] ? 0.8 : 1.2) - num(m.stock[g]));
     const n = Math.min(left, room, Math.max(0, (t.fund || 0) - 40) / Math.max(0.01, unit));
@@ -248,7 +254,7 @@ export function marketDeliver(sim, sid, g, qty, seller, opt = {}) {
 // ---------- 家の蔵 ----------
 export function stash(sim, p, g, q) {
   const hh = p?.members ? p : sim.hh(p);
-  if (!hh || !(q > 0) || !GOODS[g]) return 0;
+  if (!hh || !(q > 0) || !gd(g)) return 0;
   const st = hh.stock || (hh.stock = {});
   st[g] = (st[g] || 0) + q;
   return 0;
@@ -256,31 +262,31 @@ export function stash(sim, p, g, q) {
 export function stockValue(sim, hh, sid) {
   const st = hh?.stock; if (!st) return 0;
   const m = sim.S.towns[sid ?? hh.s]; let v = 0;
-  for (const [g, n] of Object.entries(st)) if (n > 0 && GOODS[g]) v += n * (m?.price[g] ?? GOODS[g].base);
+  for (const [g, n] of Object.entries(st)) if (n > 0 && gd(g)) v += n * (m?.price[g] ?? gd(g).base);
   return v;
 }
 // 家族のための取り置き（食べ物）を除いた、売ってよい量。家計の苦しい家ほど多めに取っておく
 function sellable(sim, hh, g) {
   const n = hh.stock?.[g] || 0;
-  if (!GOODS[g].meals) return n;
+  if (!gd(g).meals) return n;
   const days = hh.money < 30 ? 3 : 2;
-  const keep = Math.max(0, hh.members.length * 2 * days - (hh.food || 0)) / GOODS[g].meals;
+  const keep = Math.max(0, hh.members.length * 2 * days - (hh.food || 0)) / gd(g).meals;
   return Math.max(0, n - keep);
 }
 function sellValue(sim, hh, sid) {
   if (!hh?.stock) return 0;
   const m = sim.S.towns[sid]; let v = 0;
-  for (const g of Object.keys(hh.stock)) if (GOODS[g]) v += sellable(sim, hh, g) * (m?.price[g] ?? GOODS[g].base);
+  for (const g of Object.keys(hh.stock)) if (gd(g)) v += sellable(sim, hh, g) * (m?.price[g] ?? gd(g).base);
   return v;
 }
 // 蔵の食べ物で食事を作る（自炊）。足した食数を返す
 export function cookFromStock(sim, hh, want) {
   const st = hh?.stock; if (!st) return 0;
   let added = 0;
-  for (const g of FOOD) {
+  for (const g of [...FOOD, ...Object.keys(st).filter((x) => !isStaple(x) && (matterGood(x)?.meals || 0) > 0)]) {
     if (want - added <= 0.01) break;
     const n = st[g] || 0; if (n <= 0.01) continue;
-    const meals = GOODS[g].meals;
+    const meals = gd(g).meals;
     const use = Math.min(n, (want - added) / meals);
     st[g] = n - use;
     added += (g === 'wheat' ? millToll(sim, hh.s, use, hh) : use) * meals;   // 麦は水車でひく（16分の1を粉屋へ）
@@ -297,16 +303,16 @@ export function sellHousehold(sim, p) {
   let total = 0; const sold = [];
   const craft = GUILD_JOBS.has(p.job) && p.job !== 'merchant' && p.job !== 'shopkeeper' && !!guildOf(sim, sid) && isGuildMember(sim, p);
   for (const g of Object.keys(hh.stock)) {
-    if (!GOODS[g]) continue;
+    if (!gd(g)) continue;
     const n = sellable(sim, hh, g);
     if (n < 0.2) continue;
     // 組合の職人：自分で作った品は自分の店に並べ、売れたときに相場で受け取る
-    const own = craft && hasShop(sim, hh) && (g === JOBS[p.job]?.goods || g === 'bread' || g === 'ale' || !GOODS[g].meals);
+    const own = craft && hasShop(sim, hh) && (g === JOBS[p.job]?.goods || g === 'bread' || g === 'ale' || !gd(g).meals);
     const r = marketDeliver(sim, sid, g, n, hh, own ? { shop: true } : {});
     hh.stock[g] -= n - r.left;
     if (hh.stock[g] < 1e-4) delete hh.stock[g];
     total += r.got;
-    if (n - r.left > 0.2) sold.push(GOODS[g].name);
+    if (n - r.left > 0.2) sold.push(gd(g).name);
   }
   if (sold.length && sim.rng.chance(0.25)) sim.remember(p, `${sold.slice(0, 3).join('と')}を${craft ? '店に並べた' : '市場の商人に売った'}${total >= 1 ? `（${Math.round(total)}銅貨になった）` : ''}`, { emo: total >= 1 ? 0.3 : 0.05, imp: 0.2, k: 'work' });
   return total;
@@ -325,7 +331,7 @@ function openStall(sim, p, a) {
   const cheat = p.pers.C < 0.3 && p.pers.A < 0.4 && sim.rng.chance(0.5);
   const goods = {};
   for (const g of Object.keys(hh.stock)) {
-    if (!GOODS[g]) continue;
+    if (!gd(g)) continue;
     const n = sellable(sim, hh, g);
     if (n < 0.5) continue;
     addLot(sim, m, sid, g, hh.id, n, 2, 0, { front: true, w: cheat ? 0.85 : 0 });
@@ -469,10 +475,12 @@ function merchantImports(sim) {
       .map((q) => ({ q, d: Math.hypot(q.x - s.x, q.z - s.z) })).sort((a, b) => a.d - b.d).slice(0, 6);
     if (!near.length) continue;
     let trips = 0;
-    const goods = Object.keys(GOODS).sort((a, b) => (FOOD.includes(a) ? 0 : 1) - (FOOD.includes(b) ? 0 : 1));
+    const extra = new Set();
+    for (const { q } of near) for (const g of Object.keys(S.towns[q.id].stock || {})) if (!isStaple(g) && (S.towns[q.id].stock[g] || 0) >= 2 && (matterGood(g)?.demand ?? 0) >= 1 && (m.stock[g] || 0) < 1) extra.add(g);
+    const goods = [...Object.keys(GOODS).sort((a, b) => (FOOD.includes(a) ? 0 : 1) - (FOOD.includes(b) ? 0 : 1)), ...[...extra].slice(0, 12)];
     for (const g of goods) {
       if (trips >= 10) break;
-      const G = GOODS[g];
+      const G = gd(g);
       const coming = (m.inbound || []).filter((x) => x.g === g).reduce((t, x) => t + x.q, 0);
       let want = G.target * (FOOD.includes(g) ? 1.5 : 0.5) - num(m.stock[g]) - coming;
       if (want < 1) continue;
@@ -571,7 +579,7 @@ export function ensureMarket(sim) {
       const extra = num(m.stock[k]) - have;
       if (extra <= 1e-6) continue;
       const mh = merchantsOf(sim, s.id)[0];
-      (m.lots[k] = m.lots[k] || []).push(mh ? { o: mh.id, q: extra, c: 0, u: GOODS[k].base * WHOLESALE } : { o: 't' + s.id, q: extra, c: 3, u: 0 });
+      (m.lots[k] = m.lots[k] || []).push(mh ? { o: mh.id, q: extra, c: 0, u: gd(k).base * WHOLESALE } : { o: 't' + s.id, q: extra, c: 3, u: 0 });
     }
   }
 }
@@ -588,7 +596,7 @@ export function marketDaily(sim) {
 // 画面用
 export function stockText(sim, hh) {
   const st = hh?.stock; if (!st) return '';
-  return Object.entries(st).filter(([, n]) => n >= 0.5).map(([g, n]) => `${GOODS[g]?.name || g}${Math.floor(n)}`).join('・');
+  return Object.entries(st).filter(([, n]) => n >= 0.5).map(([g, n]) => `${gd(g)?.name || g}${Math.floor(n)}`).join('・');
 }
 export function marketTownHTML(sim, sid) {
   const m = sim.S.towns[sid], g = guildOf(sim, sid);

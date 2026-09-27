@@ -10,6 +10,7 @@ import { DROPS, addItem, makeItem } from './items.js';
 import { splitCoins, splitLoot } from './guild.js';
 import { faunaThink, faunaDied, popTarget, canHunt } from './fauna.js';
 import { monsterThink, onMonsterKilled } from './monsters.js';
+import { matterHunt } from './matter.js';
 import { moneyIn } from './ledger.js';
 
 // 生息数の目安
@@ -473,6 +474,7 @@ export function killCreature(sim, c, killer) {
     const p = killer;
     p.xp = (p.xp || 0) + Math.round(def.hp / 3 + c.lv * 5); sim.levelCheck(p);
     const hh = sim.hh(p);
+    matterHunt(sim, hh, c.sp, p.s);   // 部位ごとの物（matter.js）
     for (const d of DROPS[c.sp] || []) if (sim.rng.chance(d === 'scale' || d === 'horn' || d === 'demoncore' ? 0.9 : 0.6)) splitLoot(sim, p, addItem(p, d === 'gemx' ? makeItem('magicstone') : makeItem(d)));
     if (!def.monster) {
       const meat = Math.max(1, Math.round(def.size * 3));

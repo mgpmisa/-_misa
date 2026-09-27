@@ -10,6 +10,7 @@ import { T, W, H, CORE, walkable, tileAt, biomeOf, isWater } from './world.js';
 import { makeCreature, killCreature, applyStats, townMask } from './creatures.js';
 import { startFight } from './society.js';
 import { stash } from './market.js';
+import { matterHunt } from './matter.js';
 import { moneyOut, flow } from './ledger.js';
 
 // ---------- 渡り鳥（ガン）：data.js に無いので、ここで種を足す ----------
@@ -1368,6 +1369,7 @@ function livestockCare(sim, animals, si, dos) {
       const hh = S.households[c.keeper];
       if (hh) {
         if (def.diet === 'meat' && (hh.food || 0) > hh.members.length * 1.5) { hh.food -= 0.12; c.fed = true; }
+        else if (hh.feedDay === sim.today) { c.fed = true; }   // 蔵の餌を使った（matter.js）
         else if (hh.money > cost + 8) { hh.money -= cost; c.fed = true; F.stats.feedCost += cost; hayTo(sim, hh.s, cost, hh.id); }
       }
     }
@@ -1414,7 +1416,7 @@ function livestockCare(sim, animals, si, dos) {
     const hh = S.households[c.keeper];
     const m = S.towns[s.id];
     const meat = Math.max(1, Math.round(SPECIES[c.sp].size * 3));
-    if (hh) stash(sim, hh, 'meat', meat); else m.stock.meat = (m.stock.meat || 0) + meat;   // 肉は飼い主の蔵へ（売ったときに収入）
+    if (hh) { stash(sim, hh, 'meat', meat); matterHunt(sim, hh, c.sp, s.id); } else m.stock.meat = (m.stock.meat || 0) + meat;   // 肉は飼い主の蔵へ（売ったときに収入）
     const q = hhMembers(sim, hh).find((x) => sim.ageOf(x) >= 14);
     if (q) sim.remember(q, `${c.given || SPECIES[c.sp].name}を肉屋に売った。${R.pick(['少し寂しい', '世話になった', '仕方のないことだ'])}`, { emo: -0.2, imp: 0.35, k: 'farm' });
     c._faDone = true; // 飼い主の悲しみは上で記録した
