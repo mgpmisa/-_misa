@@ -81,7 +81,7 @@ const STAFF = {
 };
 // ほかの仕事から回してよい人（町にこの人数より多くいるときだけ）
 const SPARE = { gatherer: 3, hunter: 2, fisher: 3, farmer: 4, militia: 2, laundress: 1, roadworker: 2, innkeeper: 1, musician: 1, priest: 1, midwife: 1, peddler: 1, coachman: 1, sailor: 2, diver: 1, beggar: 0, wanderer: 0 };
-const SPARE_FOR = { actor: ['troupe', 'bard', 'dancer', 'musician'], librarian: ['scribe', 'teacher', 'scholar'], matron: ['nun', 'nanny', 'midwife'], granarian: ['miller'] };
+const SPARE_FOR = { actor: ['troupe', 'bard', 'dancer', 'musician'], librarian: ['scribe', 'teacher', 'scholar'], matron: ['nun', 'nanny', 'midwife'], granarian: [] };   // 粉屋は倉番に引き抜かない（粉屋が0人になっていた）
 const OK_RANK = new Set(['commoner', 'citizen', 'homeless', 'wanderer']);
 
 // 料金（銅貨）。町の格で違う

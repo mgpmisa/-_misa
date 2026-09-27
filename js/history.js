@@ -11,6 +11,7 @@ import { kinTerm } from './kin.js';
 export const SENIOR_JOBS = new Set(['general', 'chancellor', 'treasurer', 'royalguard', 'courtmage', 'knight', 'guildmaster', 'paladin', 'elder', 'captain', 'doctor', 'priest', 'scholar', 'sage', 'teacher', 'midwife', 'jailer', 'changer', 'merchant', 'innkeeper', 'banditchief', 'swindler', 'storyteller', 'butler', 'overseer', 'swordmaster', 'magister']);
 export const YOUTH_JOBS = new Set(['farmer', 'fisher', 'sailor', 'shepherd', 'gatherer', 'maid', 'stablehand', 'laundress', 'messenger', 'servant', 'woodcutter', 'charcoal', 'miner', 'gardener', 'cook', 'baker', 'smith', 'carpenter', 'tailor', 'weaver', 'potter', 'cobbler', 'nanny', 'musician', 'dancer', 'hunter', 'rancher', 'beekeeper', 'miller', 'mason', 'diver', 'soldier', 'militia', 'roadworker', 'pioneer', 'coachman', 'peddler', 'troupe', 'ferryman']);
 const NO_QUOTA_FILL = new Set(['king', 'noble', 'thief', 'beggar']);
+const FOOD_CRAFT = new Set(['miller', 'butcher', 'brewer', 'baker']);   // 麦や肉を食べ物に変える職（農夫・漁師が3人以上いれば1人回す）
 
 // 町の職業の枠のうち、足りないもの（足りない割合の大きい順・同じなら欠かせない職から）
 export function lackingJobs(townType, counts, age = 30) {
@@ -458,6 +459,7 @@ export function generateHistory(rng, world) {
       while ((cnt[job] || 0) < n) {
         let pool = adults.filter((p) => p.job !== job && (age(p, Y) >= 21 || !SENIOR_JOBS.has(job)) && (!p.job || p.job === 'farmer' || p.job === 'fisher' || p.job === 'sailor') && (cnt[p.job] || 0) > (quota[p.job] || 0) - (p.job === 'farmer' ? 0 : 0));
         if (job === 'thief' || job === 'beggar') pool = pool.filter((p) => p.pers.A < 0.5 || p.pers.C < 0.4);
+        if (!pool.length && FOOD_CRAFT.has(job)) pool = adults.filter((p) => (p.job === 'farmer' || p.job === 'fisher') && (cnt[p.job] || 0) >= 3);
         if (!pool.length) pool = adults.filter((p) => p.job !== job && !['king', 'royal', 'noble'].includes(p.job) && (!p.job || (cnt[p.job] || 0) > (quota[p.job] || 0)));
         if (!pool.length) break;
         const p = rng.weighted(pool, (q) => ({

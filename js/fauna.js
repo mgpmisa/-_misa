@@ -1386,6 +1386,7 @@ function livestockCare(sim, animals, si, dos) {
   for (const [hid, list] of Object.entries(byHh)) {
     const hh = S.households[hid];
     if (!hh) continue;
+    if (sim._ff) { F.stats.products += sim._ff.animalYield(sim, hh, list, si); continue; }   // 乳は家の蔵へ。家族が飲み、余りは市場で売る（foodflow.js）
     let food = 0;
     for (const c of list) {
       if (c.juv || c.hunger < 35) continue;

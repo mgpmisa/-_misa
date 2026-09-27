@@ -24,6 +24,7 @@ import { econFlowHTML } from './ledger.js';
 import { renderDex } from './matterdex.js';
 import { MATTER_LABEL, MATTER_GO, MATTER_PREF } from './matter.js';
 import { MARKET_LABEL, MARKET_GO, MARKET_PREF, marketTownHTML, stockText } from './market.js';
+import { FOODFLOW_LABEL, FOODFLOW_GO, FOODFLOW_PREF } from './foodflow.js';
 import { wageText } from './payday.js';
 import { shopRows } from './shops.js';
 import { wsBuildingHTML, wsTownFlowHTML, wsPersonHTML } from './workshop.js';   // 職場の蔵と流れ（経済部）
@@ -93,6 +94,7 @@ Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Ob
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 Object.assign(ACTION_LABEL, BLD_LABEL); Object.assign(ACTION_GO, BLD_GO); Object.assign(PREF_LABEL, BLD_PREF);
 Object.assign(ACTION_LABEL, MARKET_LABEL); Object.assign(ACTION_GO, MARKET_GO); Object.assign(PREF_LABEL, MARKET_PREF);
+Object.assign(ACTION_LABEL, FOODFLOW_LABEL); Object.assign(ACTION_GO, FOODFLOW_GO); Object.assign(PREF_LABEL, FOODFLOW_PREF);
 Object.assign(ACTION_LABEL, MINT_LABEL); Object.assign(ACTION_GO, MINT_GO); Object.assign(PREF_LABEL, MINT_PREF);
 Object.assign(ACTION_LABEL, MATTER_LABEL); Object.assign(ACTION_GO, MATTER_GO); Object.assign(PREF_LABEL, MATTER_PREF);
 Object.assign(ACTION_LABEL, NEEDS_LABEL); Object.assign(ACTION_GO, NEEDS_GO); Object.assign(PREF_LABEL, NEEDS_PREF);

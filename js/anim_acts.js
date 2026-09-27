@@ -396,6 +396,8 @@ export function actAnimState(sim, p, a, age, kid) {
     // ---- 売り買い
     case 'sell': case 'trade': return 'work:handover';
     case 'stall': return u < 0.45 ? 'work:hawk' : u < 0.8 ? 'work:handover' : null;
+    case 'kgarden': return out ? (u < 0.4 ? 'work:hoe' : u < 0.7 ? 'work:weed' : 'work:water') : null;   // 家のそばの菜園（foodflow.js）
+    case 'berry': return out ? (u < 0.75 ? 'work:pluck' : null) : null;   // 森の縁のベリー摘み（foodflow.js）
     case 'peddle': return u < 0.6 ? 'work:hawk' : 'work:handover';
     case 'shop': case 'shopping': case 'buygear': case 'buybag': case 'buyclothes': case 'buymed': case 'buymat': case 'repair':
       return kid ? null : 'work:buy';

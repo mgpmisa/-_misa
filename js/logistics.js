@@ -12,6 +12,7 @@ import { around } from './creatures.js';
 import { startFight, markWanted } from './society.js';
 import { isAdventurer, advRank, RANKS_ADV, QUEST_TYPE_NAME } from './guild.js';
 import { marketBuy, marketDeliver } from './market.js';
+import { tradeGoods, priceAt, targetOf, gdAny, goodLabel, sideCargo } from './foodflow.js';   // 今の20品＋日持ちする食べ物（チーズ・燻製・塩漬け・干し肉・麦酒など）
 
 export const MAX_CONVOYS = 14;          // 同時に走る隊商の上限
 const CHECK_EVERY = 10;                 // 道中の判定の間隔（分）
@@ -31,8 +32,8 @@ export function ensureLogistics(sim) {
   S.logi = S.logi || { departed: 0, arrived: 0, robbed: 0, repelled: 0, monster: 0, storm: 0, escorts: 0, ships: 0, lostValue: 0 };
   return S.convoys;
 }
-const goodsValue = (goods) => Object.entries(goods).reduce((s, [g, n]) => s + n * (GOODS[g]?.base || 1), 0);
-const goodsText = (goods) => Object.entries(goods).filter(([, n]) => n > 0).map(([g, n]) => `${GOODS[g].name}${n}`).join('・') || '空荷';
+const goodsValue = (goods) => Object.entries(goods).reduce((s, [g, n]) => s + n * (gdAny(g)?.base || 1), 0);
+const goodsText = (goods) => Object.entries(goods).filter(([, n]) => n > 0).map(([g, n]) => `${goodLabel(g)}${Math.round(n)}`).join('・') || '空荷';
 const who = (p) => (p.job === 'merchant' ? '商人' : p.job ? JOBS[p.job]?.name || '' : '荷運びの') + p.given;
 
 // ---------- 海の経路（水の上の A*、港の組ごとにキャッシュ） ----------
@@ -152,9 +153,9 @@ export function findSeaTrade(sim, p) {
   for (const s of seaPorts(sim)) {
     if (s.id === p.s || !seaRoute(sim, p.s, s.id)) continue;
     const there = sim.market(s.id);
-    for (const g of Object.keys(GOODS)) {
-      if (m.stock[g] < 4) continue;
-      const r = there.price[g] / m.price[g];
+    for (const g of tradeGoods(m)) {
+      if (!(m.stock[g] >= 4) || !(m.price[g] > 0)) continue;
+      const r = priceAt(there, g) / m.price[g];
       if (r > bv) { bv = r; best = { good: g, dest: s.id, place: { x: s.x, z: s.z }, sea: true }; }
     }
   }
@@ -240,8 +241,8 @@ export function startTradeConvoy(sim, p, tr) {
   if (kind === 'ship') {
     // 船頭と水夫を雇う（往復）
     for (const q of sailors) { board(sim, q, c, 'sail'); c.crew.push(q.id); }
-    sim.remember(p, `${dest.name}へ向けて、${GOODS[g].name}${qty}を船に積んで港を出た`, { emo: 0.3, imp: 0.4, k: 'trade' });
-    sim.pushLog(`${who(p)}の船が${GOODS[g].name}${qty}を積んで${here.name}の港を出た（行き先は${dest.name}）。`, 'event', [p.id, ...c.crew], c.pos);
+    sim.remember(p, `${dest.name}へ向けて、${goodLabel(g)}${qty}を船に積んで港を出た`, { emo: 0.3, imp: 0.4, k: 'trade' });
+    sim.pushLog(`${who(p)}の船が${goodLabel(g)}${qty}を積んで${here.name}の港を出た（行き先は${dest.name}）。`, 'event', [p.id, ...c.crew], c.pos);
   } else {
     // 最近この道で荷を奪われた（噂を聞いた）なら、護衛なしでは出ない
     const bad = S.logi.bad?.[routeKey(p.s, tr.dest)];
@@ -256,8 +257,9 @@ export function startTradeConvoy(sim, p, tr) {
       S.logi.cancelled = (S.logi.cancelled || 0) + 1;
       return true;
     }
-    sim.remember(p, `${GOODS[g].name}${qty}を荷車に積み、${c.guards.length ? '護衛を連れて' : ''}${dest.name}へ向けて出発した`, { emo: 0.2, imp: 0.35, k: 'trade' });
-    if (R.chance(0.35) || c.guards.length) sim.pushLog(`${who(p)}の荷車が${GOODS[g].name}${qty}を積んで${here.name}を出た（${dest.name}行き${c.guards.length ? '・護衛' + c.guards.map((id) => S.people[id].given).join('と') : ''}）。`, 'event', [p.id, ...c.guards], c.pos);
+    { const side = sideCargo(sim, p.s, tr.dest, hh); for (const [sg, sq] of Object.entries(side.goods)) c.goods[sg] = (c.goods[sg] || 0) + sq; c.cost += side.cost; }   // 荷台の空きに、行き先で高く売れる日持ちする食べ物を相乗り（foodflow.js）
+    sim.remember(p, `${goodLabel(g)}${qty}を荷車に積み、${c.guards.length ? '護衛を連れて' : ''}${dest.name}へ向けて出発した`, { emo: 0.2, imp: 0.35, k: 'trade' });
+    if (R.chance(0.35) || c.guards.length) sim.pushLog(`${who(p)}の荷車が${goodLabel(g)}${qty}を積んで${here.name}を出た（${dest.name}行き${c.guards.length ? '・護衛' + c.guards.map((id) => S.people[id].given).join('と') : ''}）。`, 'event', [p.id, ...c.guards], c.pos);
   }
   return true;
 }
@@ -301,10 +303,10 @@ function hireEscort(sim, p, c, risk) {
 // ---------- 定期船（港どうし。船長の家の資金で荷を積み、往復する） ----------
 function pickCargo(sim, fromSid, toSid, budget, payer) {
   const a = sim.market(fromSid), b = sim.market(toSid);
-  const opts = Object.keys(GOODS).map((g) => ({ g, r: b.price[g] / a.price[g] })).filter((o) => o.r > 1.08 && a.stock[o.g] > GOODS[o.g].target * 0.45).sort((x, y) => y.r - x.r);
+  const opts = tradeGoods(a).filter((g) => a.price[g] > 0).map((g) => ({ g, r: priceAt(b, g) / a.price[g] })).filter((o) => o.r > 1.08 && a.stock[o.g] > targetOf(o.g) * 0.45).sort((x, y) => y.r - x.r);
   const goods = {}; let n = 0, cost = 0;
   for (const { g } of opts) {
-    const q = Math.min(12, SHIP_CAP - n, Math.floor(a.stock[g] - GOODS[g].target * 0.35), Math.floor((budget - cost) / a.price[g]));
+    const q = Math.min(12, SHIP_CAP - n, Math.floor(a.stock[g] - targetOf(g) * 0.35), Math.floor((budget - cost) / a.price[g]));
     if (q <= 0) continue;
     const price = a.price[g];
     const got = payer ? marketBuy(sim, fromSid, g, q, payer, { whole: true }) : 0;
@@ -664,9 +666,9 @@ function bestLandTrade(sim, s) {
   for (const d of sim.S.world.settlements) {
     if (d.id === s.id || sim.S.towns[d.id].occupied || Math.hypot(d.x - s.x, d.z - s.z) > 60) continue;
     const there = sim.market(d.id);
-    for (const g of Object.keys(GOODS)) {
-      if (here.stock[g] < Math.max(4, GOODS[g].target * 0.4)) continue;
-      const r = there.price[g] / here.price[g];
+    for (const g of tradeGoods(here)) {
+      if (!(here.stock[g] >= Math.max(4, targetOf(g) * 0.4)) || !(here.price[g] > 0)) continue;
+      const r = priceAt(there, g) / here.price[g] * (GOODS[g] ? 1 : 0.92);   // 日持ちする食べ物も運ぶ（麦やパンの荷を押しのけすぎないよう、少し控えめに）
       if (r > bv) { bv = r; best = { good: g, dest: d.id, place: { x: d.x, z: d.z } }; }
     }
   }

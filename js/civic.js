@@ -14,6 +14,7 @@ import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { chooseYouthJob } from './history.js';
 import { gearDutyBonus } from './gear.js';
 import { marketBuy, marketDeliver } from './market.js';
+import { peddleFood, priceAt, targetOf, goodLabel } from './foodflow.js';   // 行商の荷に、チーズ・燻製・干し肉・干し果物・麦酒など日持ちする食べ物も
 import { moneyOut, flow } from './ledger.js';
 import { consHalt } from './construct.js'; // 雨・嵐の日は工事を休む（開発部）
 
@@ -276,7 +277,7 @@ function peddleDest(sim, p) {
   if (!g) return null;
   const cands = sim.S.world.settlements.filter((q) => q.id !== p.s && !sim.S.towns[q.id]?.occupied && Math.hypot(q.x - s.x, q.z - s.z) < 48);
   if (!cands.length) return null;
-  return cands.sort((a, b) => sim.market(b.id).price[g] - sim.market(a.id).price[g])[0];
+  return cands.sort((a, b) => priceAt(sim.market(b.id), g) - priceAt(sim.market(a.id), g))[0];
 }
 
 // ---------- 仕事の中身 ----------
@@ -309,9 +310,10 @@ export function civicWork(sim, p, dt, eff) {
       // 店で荷を仕入れる（安くて余っている品）
       if (p.pack || !sim.isAdult(p)) return;
       const m = sim.market(p.s), hh = sim.hh(p);
-      const g = Object.keys(GOODS).filter((k) => GOODS[k].meals === 0 || k === 'honey').sort((a, b) => m.stock[b] / GOODS[b].target - m.stock[a] / GOODS[a].target)[0];
-      const n = Math.min(6, Math.floor(m.stock[g] / 3), Math.floor((hh?.money || 0) * 0.3 / Math.max(0.5, m.price[g])));
-      if (n >= 2 && m.stock[g] > GOODS[g].target * 0.8) {
+      const fg = peddleFood(sim, p.s);   // 日持ちする食べ物で、近くの町で1.3倍以上に売れる物があればそれを（foodflow.js）
+      const g = fg || Object.keys(GOODS).filter((k) => GOODS[k].meals === 0 || k === 'honey').sort((a, b) => m.stock[b] / GOODS[b].target - m.stock[a] / GOODS[a].target)[0];
+      const n = Math.min(6, Math.floor((m.stock[g] || 0) / (fg ? 2 : 3)), Math.floor((hh?.money || 0) * 0.3 / Math.max(0.5, m.price[g])));
+      if (n >= 2 && (fg || m.stock[g] > targetOf(g) * 0.8)) {
         const price = m.price[g];
         const got = marketBuy(sim, p.s, g, n, hh, { whole: true });
         if (got >= 1) p.pack = { g, n: got, cost: got * price };
@@ -399,7 +401,7 @@ export function civicArrive(sim, p, a) {
     const got = marketDeliver(sim, a.dest, g, n, hh || ('t' + a.dest), { consign: true }).got;   // 行き先の商人が買い取る（買わなければ店先に預ける）
     void m;
     const dest = sim.town(a.dest);
-    sim.remember(p, `${dest.name}で${GOODS[g].name}${n}を売り歩き、${Math.round(got - p.pack.cost)}銅貨の${got >= p.pack.cost ? 'もうけ' : '損'}が出た`, { emo: got >= p.pack.cost ? 0.4 : -0.3, imp: 0.3, k: 'trade' });
+    sim.remember(p, `${dest.name}で${goodLabel(g)}${n}を売り歩き、${Math.round(got - p.pack.cost)}銅貨の${got >= p.pack.cost ? 'もうけ' : '損'}が出た`, { emo: got >= p.pack.cost ? 0.4 : -0.3, imp: 0.3, k: 'trade' });
     p.pack = null;
     a.until = sim.S.t + 40;
   }

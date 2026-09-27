@@ -60,6 +60,7 @@ import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf,
 import { ensureCarry, carryHourly, carryDaily, carryDecide, carryArrive, carryWork, carryWorkMul, carryWalk, carryLoot, carryTreasure, carryDungeon } from './carry.js';
 import { ensureLedger, ledgerDaily, moneyIn, flow, meal, newcomerMoney } from './ledger.js';
 import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCandidates, marketArrive, marketDaily, marketHourly } from './market.js';
+import { initFoodflow, foodflowCandidates, foodflowArrive, foodflowHourly, foodflowDaily, sideDish } from './foodflow.js';   // 乳・菜園・ベリーを売る・農家の家畜・5日に1度の市（経済部）
 import { accrueWage, paydayDaily } from './payday.js';
 import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
 import { tacticsDaily, tacticsHourly } from './tactics.js';
@@ -134,6 +135,7 @@ export class Sim {
     ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
     ensureFormation(this); // 隊列と職業の補正（formation.js）
     this.seedMarkets();
+    initFoodflow(this); // 村と首都の外の農家に、乳牛か山羊と鶏を持たせる（foodflow.js）。古いセーブには足さない
     ensureCoinage(this); // 国ごとの硬貨の名前と意匠（coinage.js）
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
@@ -724,6 +726,7 @@ export class Sim {
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
     marketCandidates(this, p, add);
+    foodflowCandidates(this, p, add);   // 菜園・ベリー摘み・近くの町の市へ売りに行く（foodflow.js）
     matterCandidates(this, p, add);   // 世界の物を、欲求に合わせて選んで買う（matter.js）
     gearCandidates(this, p, add);
     carryDecide(this, p, add);   // 袋やかごを買う・荷を置きに戻る・倉庫に預ける・力を鍛える（carry.js）
@@ -992,6 +995,7 @@ export class Sim {
     laborArrive(this, p);
     needsArrive(this, p, a);
     marketArrive(this, p, a);   // 市場で品を売る・市の露店（market.js）
+    foodflowArrive(this, p, a);   // 菜園の野菜・摘んだベリーを蔵へ・よその町の市に露店を出す（foodflow.js）
     matterArrive(this, p, a);
     leisureArrive(this, p, a);
   }
@@ -1010,6 +1014,7 @@ export class Sim {
       hh.food += mealsOf(g); meal(this, 'bought', mealsOf(g));
       if (g === 'meat') p.needs.pleasure = Math.min(100, p.needs.pleasure + 8);
     }
+    sideDish(this, p, hh, m);   // ついでに乳・卵・野菜・チーズなどのおかずを少し買う（代金は作った家・商人へ。foodflow.js）
     if (hh.house == null && p.needs.hunger < 60) {
       const g = ['bread', 'fish', 'wheat'].find((x) => m.stock[x] >= 1 && hh.money >= m.price[x]);
       if (g && this.buy(p, g, 1)) { p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals); meal(this, 'bought', GOODS[g].meals); }
@@ -1883,6 +1888,7 @@ export class Sim {
     rescueHourly(this);
     financeHourly(this);
     marketHourly(this);   // 終わった市の露店を片づける
+    foodflowHourly(this);   // 5日に1度の市の露店を片づけ、売れ残りを村へ持ち帰る（foodflow.js）
     workshopHourly(this);   // 職場の蔵から店先の棚へ品を並べる
     discoveryHourly(this);   // 新しく見つかった物のお知らせ（discovery.js）
     divineHourly(this);
@@ -2012,6 +2018,7 @@ export class Sim {
     coinageDaily(this);   // 新しい王の肖像の硬貨・悪鋳の噂（coinage.js）
     mintDaily(this);   // 造幣所の1日の締め・給料日の手間賃・預かり証（mintflow.js）
     marketDaily(this);
+    foodflowDaily(this);
     matterDaily(this);   // 世界の物（matter.js）
     housingDaily(this);   // 手狭な家の建て増し・引っ越し・独り立ち（housing.js）
     shopsDaily(this);   // 店の借り賃・差し押さえ・酒を売る許し・町の負担

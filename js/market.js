@@ -277,7 +277,9 @@ function sellable(sim, hh, g) {
   const n = hh.stock?.[g] || 0;
   if (!gd(g).meals) return n;
   const days = hh.money < 30 ? 3 : 2;
-  const keep = Math.max(0, hh.members.length * 2 * days - (hh.food || 0)) / gd(g).meals;
+  let keep = Math.max(0, hh.members.length * 2 * days - (hh.food || 0)) / gd(g).meals;
+  const cap = MARKET_HOOK.keepCap?.(sim, hh, g, days);   // 乳・卵・野菜・ベリーは、家族の食べる分だけ残す（foodflow.js）
+  if (cap != null) keep = Math.min(keep, cap);
   return Math.max(0, n - keep);
 }
 function sellValue(sim, hh, sid) {
@@ -414,7 +416,7 @@ export function marketCandidates(sim, p, add) {
   if (stallDay) add(1.8 + Math.min(4, v / 10) + p.pers.E * 1.5 + p.pers.C - (100 - p.needs.sloth) / 60 + (v >= 25 ? 1 : 0), 'stall', sim.placeFor(p, 'market'), 240);
 }
 export function marketArrive(sim, p, a) {
-  if (a.type === 'stall') { openStall(sim, p, a); return; }
+  if (a.type === 'stall') { if (a.dest == null || a.dest === p.s) openStall(sim, p, a); return; }   // よその町の市に出す露店は foodflow.js
   if (a.type === 'sell' || a.type === 'shop') sellHousehold(sim, p);
 }
 export function marketHourly(sim) {
@@ -640,3 +642,4 @@ export const MARKET_LABEL = { sell: '市場で品物を売っている', stall: 
 export const MARKET_GO = { sell: '品物を市場へ売りに行くところ', stall: '市の日の露店を出しに行くところ' };
 export const MARKET_PREF = { sell: '品物を商人に売ること', stall: '市の露店' };
 export { FOOD as FOOD_GOODS };
+export const STALL_API = { addLot, lotsOf, sellable };   // 5日に1度の市（foodflow.js）が露店の札を扱う

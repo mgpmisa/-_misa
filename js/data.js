@@ -311,11 +311,11 @@ export const JOB_QUOTA = {
 };
 // 枠を埋める順番：町に欠かせない職から先に。どの職も1人目が決まってから2人目を決める（上から順に偏らない）
 export const JOB_PRIORITY = [
-  'farmer', 'fisher', 'priest', 'elder', 'innkeeper', 'baker', 'smith', 'merchant', 'doctor', 'teacher', 'guildmaster', 'midwife', 'miller', 'captain',
+  'farmer', 'fisher', 'priest', 'elder', 'innkeeper', 'baker', 'smith', 'merchant', 'doctor', 'teacher', 'guildmaster', 'midwife', 'miller', 'butcher', 'brewer', 'captain',
   'general', 'chancellor', 'treasurer', 'knight', 'soldier', 'gatekeeper', 'militia', 'guard', 'jailer', 'courtmage',
   'adventurer', 'warrior', 'archer', 'cleric', 'wizard', 'scholar', 'sailor', 'rancher', 'hunter', 'woodcutter', 'miner', 'shepherd',
   'overseer', 'roadworker', 'pioneer', 'swordmaster', 'magister', 'royalguard', 'carpenter', 'herbalist', 'keeper',
-  'coachman', 'peddler', 'ferryman', 'watchman', 'butcher', 'brewer', 'tailor', 'weaver', 'gatherer', 'charcoal', 'mason', 'beekeeper', 'storyteller', 'shipwright',
+  'coachman', 'peddler', 'ferryman', 'watchman', 'tailor', 'weaver', 'gatherer', 'charcoal', 'mason', 'beekeeper', 'storyteller', 'shipwright',
 ];
 
 // 性格の特徴ラベル
