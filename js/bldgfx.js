@@ -358,6 +358,17 @@ export function styledParts(R, b, ctx) {
   switch (b.type) {
     case 'house': {
       const wl = wealthOf(R, b);
+      if ((b.floors || 1) >= 2) {
+        // 二階建てに建て増した家（housing.js）：高い壁、一階と二階の境の帯、二段の窓、太い煙突
+        const rich = wl === 'rich', poor = wl === 'poor' || wl === 'empty';
+        const wh = rich ? 2.3 : poor ? 1.9 : 2.1;
+        if (rich) add(R.box(W_ + 0.08, 0.28, D_ + 0.08), south ? M.sandstone : M.stone, 0, 0.14, 0);
+        body(wh, poor ? M.planks : M.timber, rich || b.roof === 'tile' ? M.tileRoof : M.thatch, { gableSouth: rich, windows: false, chimney: { s: 0.3, h: 0.8, mat: poor ? M.wood : M.stone, smoke: wl === 'empty' ? null : 'home' } });
+        add(R.box(W_ + 0.06, 0.08, D_ + 0.06), M.wood, 0, wh * 0.5, 0);
+        windows(W_, D_, wh * 0.36); windows(W_, D_, wh * 0.74);
+        if (rich) flowerBoxes(wh * 0.74 / 0.6);
+        return true;
+      }
       if (wl === 'poor' || wl === 'empty') {
         // 貧しい家：低い壁、藁屋根、細い煙突、薪と桶。空き家は戸口に板を打ち付ける
         body(0.95, M.planks, M.thatch, { southWall: M.adobe, chimney: { s: 0.2, h: 0.5, mat: M.wood, smoke: wl === 'empty' ? null : 'home' } });
@@ -681,5 +692,6 @@ export function bldTypeLabel(b, base) {
   if (b.type === 'shrine') return '祠';
   if (b.hall) return b.type === 'church' ? '修道院（村の中心）' : '寄り合い所（村の集会所）';
   if (b.type === 'tavern') return /宿/.test(b.name || '') ? '宿屋・酒場' : '酒場';
+  if (b.type === 'house' && (b.floors || 1) >= 2) return `${base}（二階建て）`;
   return base;
 }

@@ -660,12 +660,13 @@ const BUILD = {
     if (!poor || R.chance(0.5)) F.shelf(K, 1, 0, 2, 'N', M.bottles, { h: 1.6 });
     F.barrel(K, sx - 0.6, 0.45); if (!poor) F.barrel(K, sx - 0.6, 1.2, { h: 0.6 });
     // 寝台（世帯人数ぶん、西と東の壁ぞい）
-    const nb = clamp(members || 1, 1, 6);
+    const up2 = (ctx.b?.floors || 1) >= 2;   // 二階建て（housing.js）：二階の寝床のぶん、寝台はすべて2人分
+    const nb = up2 ? clamp(Math.ceil((members || 1) / 2), 1, 6) : clamp(members || 1, 1, 6);
     const beds = [];
     for (let z = 2; z + 2 <= D - 1 && beds.length < nb; z += 2) beds.push([0.1, z]);
     for (let z = 2; z + 2 <= D - 1 && beds.length < nb; z += 2) beds.push([W - 1.1, z]);
     const blankets = [M.red, M.blue, M.green, M.purple, M.orange, M.pink];
-    beds.forEach(([x, z], i) => F.bed(K, x, z, { double: i === 0 && members >= 2 && x < 1, poor, blanket: poor ? M.sack : blankets[(i + K.R.int(0, 5)) % 6], canopy: rich && i === 0 ? M.red : null, frame: rich ? M.darkWood : M.wood }));
+    beds.forEach(([x, z], i) => F.bed(K, x, z, { double: i === 0 && members >= 2 && x < 1, upper: up2 && i > 0, poor, blanket: poor ? M.sack : blankets[(i + K.R.int(0, 5)) % 6], canopy: rich && i === 0 ? M.red : null, frame: rich ? M.darkWood : M.wood }));
     // 食卓と椅子
     const seats = clamp(Math.max(2, members), 2, 6);
     const tw = seats > 4 ? 3 : 2, tx = Math.floor(W / 2 - tw / 2), tz = Math.floor(D / 2) - 0.5;
@@ -680,11 +681,17 @@ const BUILD = {
     if (rich) {
       F.candle(K, tx + tw / 2, tz + 0.5, 0.72, { noStand: true, arms: 3 });
       F.wallPic(K, 'N', 4.2, 1.1, 0.7, 0.9, M.portrait);
-      F.plant(K, 0.5, D - 0.6); F.plant(K, W - 0.5, D - 0.6);
+      F.plant(K, 0.5, D - 0.6); if (!up2) F.plant(K, W - 0.5, D - 0.6);
       F.chest(K, 1.2, D - 0.9, { mat: M.darkWood });
     } else if (!poor) F.crate(K, 0.2, D - 0.8);
     else { F.sack(K, 0.5, D - 0.6); }
     if (!hh) { for (let i = 0; i < 6; i++) K.box(R.range(1, W - 2), 0, R.range(1, D - 2), R.range(0.2, 0.5), 0.05, R.range(0.2, 0.5), M.soot); }
+    if (up2) { // 二階へ上がる階段（南の壁ぞい、東の隅へ上っていく）
+      const x0 = W - 2.5;
+      for (let i = 0; i < 4; i++) K.box(x0 + i * 0.6, 0, D - 0.95, 0.6, 0.45 * (i + 1), 0.85, i % 2 ? M.wood : M.darkWood);
+      K.box(x0, 0.45 * 4 + 0.35, D - 0.98, 2.4, 0.06, 0.06, M.darkWood); K.box(x0, 0, D - 0.98, 0.06, 0.8, 0.06, M.darkWood);
+      K.solid(x0, D - 0.95, 2.4, 0.85);
+    }
   },
 
   castle(K, ctx) {
@@ -1681,6 +1688,7 @@ export class InteriorView {
       const m = hh.money || 0;
       sub += `・${hh.name || ''}（${m > 260 ? '裕福' : m < 45 ? '質素' : 'ふつう'}な暮らし）`;
     } else if (type === 'house') sub += '・空き家';
+    if (type === 'house' && (b.floors || 1) >= 2) sub += '・二階建て';
     if (this.dungeon) sub += `・${G.rooms.length}つの部屋`;
     const n = this.countInside();
     sub += n.people || n.monsters ? `・中に${n.people ? `${n.people}人` : ''}${n.people && n.monsters ? '・' : ''}${n.monsters ? `魔物${n.monsters}体` : ''}` : '・誰もいない';

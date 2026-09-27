@@ -139,9 +139,9 @@ function MS(sim) {
   if (!S.matter) S.matter = { v: 1, res: {}, relic: {}, seen: {}, stats: { got: 0, made: 0, used: 0, bought: 0, imported: 0, loot: 0, hunt: 0 }, byHow: {} };
   return S.matter;
 }
-export function markSeen(sim, id) {
+export function markSeen(sim, id, ctx) {
   const M = MS(sim);
-  if (M.seen[id] == null) M.seen[id] = sim.today;
+  if (M.seen[id] == null) { M.seen[id] = sim.today; if (M.init && sim.onDiscover) sim.onDiscover(id, ctx || {}); }   // 新発見のお知らせ（discovery.js）
 }
 export function ensureMatter(sim) {
   const M = MS(sim);
@@ -228,11 +228,11 @@ function pickWeighted(R, list, ok) {
   return null;
 }
 const sround = (R, q) => { const f = Math.floor(q); return f + (R.next() < q - f ? 1 : 0); };
-function give(sim, hh, sid, id, q, how, p = null) {
+function give(sim, hh, sid, id, q, how, p = null, ctx = null) {
   if (!hh || q <= 0) return 0;
   const home = p && carryHooks.carry ? carryHooks.carry(sim, p, id, q, how) : q;   // 持ち物に入れる。家の中なら家の蔵へ（carry.js）
   if (home > 0) stash(sim, hh, id, home);
-  markSeen(sim, id);
+  markSeen(sim, id, { hh: hh.id, s: sid, how, p: p?.id, ...(ctx || {}) });   // ctx は新発見のお知らせ用（discovery.js）
   const M = MS(sim); M.stats.got += q; M.byHow[how] = (M.byHow[how] || 0) + q;
   return q;
 }
@@ -306,7 +306,7 @@ function craftHour(sim, p, hh, speed) {
   const it = MAT.get(p.mk.id);
   if (p.mk.prog < (it.make.t || 1)) return;
   const id = p.mk.id; p.mk = null;
-  if (makeOne(sim, sid, hh, it)) { give(sim, hh, sid, id, it.make.n || 1, 'craft'); MS(sim).stats.made += it.make.n || 1; }
+  if (makeOne(sim, sid, hh, it)) { give(sim, hh, sid, id, it.make.n || 1, 'craft', null, { p: p.id }); MS(sim).stats.made += it.make.n || 1; }
 }
 // 材料を蔵から使い、足りない分は市場で持ち主から買う
 function makeOne(sim, sid, hh, it) {
@@ -334,7 +334,7 @@ export function matterHunt(sim, hh, sp, sid, who = null) {
     if (q <= 0) continue;
     q = Math.floor(resOk(sim, sid, it, q)); if (q <= 0) continue;
     resTake(sim, sid, it, q);
-    give(sim, hh, sid, x.id, q, 'hunt', who);
+    give(sim, hh, sid, x.id, q, 'hunt', who, { sp });
     MS(sim).stats.hunt += q;
   }
 }
@@ -348,7 +348,7 @@ export function matterLoot(sim, p, place) {
     if (!x) break;
     const it = MAT.get(x.id);
     resTake(sim, p.s, it, 1);
-    give(sim, hh, p.s, x.id, 1, 'loot', p);
+    give(sim, hh, p.s, x.id, 1, 'loot', p, { place });
     MS(sim).stats.loot++;
     got.push(it.name);
   }
@@ -363,7 +363,7 @@ function milkDaily(sim) {
     for (const x of SRC.get('milk:' + c.sp) || []) {
       const it = MAT.get(x.id);
       const q = sround(R, x.rate * 0.5 * (it.rare ? RARW[it.rare] : 1) * (c.hunger > 40 ? 1 : 0.4));
-      if (q > 0 && (hh.stock?.[x.id] || 0) < 20) give(sim, hh, hh.s, x.id, q, 'milk');
+      if (q > 0 && (hh.stock?.[x.id] || 0) < 20) give(sim, hh, hh.s, x.id, q, 'milk', null, { sp: c.sp });
     }
   }
 }
@@ -386,7 +386,7 @@ function tradeImports(sim) {
       if (mh.money - cost < 80) continue;
       mh.money -= cost; moneyOut(sim, cost, '遠い国から品を仕入れた');
       ownStock(sim, s.id, id, mh.id, q);
-      markSeen(sim, id);
+      markSeen(sim, id, { hh: mh.id, s: s.id, how: 'trade' });
       MS(sim).stats.imported += q;
     }
   }
@@ -405,7 +405,7 @@ function householdCraft(sim) {
     if (!id) continue;
     const it = MAT.get(id);
     if (hh.money < inputCost(sim, hh.s, it) + 20) continue;
-    if (makeOne(sim, hh.s, hh, it)) { give(sim, hh, hh.s, id, it.make.n || 1, 'home'); MS(sim).stats.made += it.make.n || 1; }
+    if (makeOne(sim, hh.s, hh, it)) { give(sim, hh, hh.s, id, it.make.n || 1, 'home', null, { p: maker.id }); MS(sim).stats.made += it.make.n || 1; }
   }
 }
 
@@ -518,7 +518,7 @@ export function matterArrive(sim, p, a) {
   const g = pickItem(sim, p, m, k, budget);
   if (!g) return;
   if (marketBuy(sim, p.s, g, 1, personPayer(sim, p), { whole: true, who: JOBS[p.job]?.name || '町の人' }) < 1) return;
-  M.stats.bought++; markSeen(sim, g);
+  M.stats.bought++; markSeen(sim, g, { p: p.id, s: p.s, how: 'buy' });
   applyUse(sim, p, g, k);
 }
 // 使ったときの決まった動き（物ごとに別の処理は書かない）

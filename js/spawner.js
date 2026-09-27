@@ -366,7 +366,7 @@ export function spawnerDaily(sim) {
     sp.power = Math.min(1, sp.power + 0.03);   // 傷ついた湧き口も、年月とともに力を取り戻す
     // 生きている子が減った（討たれた）なら育ちが戻り、満ちたままなら湧き口が育つ
     if (sp.alive < sp.prev) sp.grow = Math.max(0, sp.grow - 0.2 * (sp.prev - sp.alive));
-    else if (sp.alive >= capOf(sp)) sp.grow = Math.min(GROW_MAX, sp.grow + 0.12);
+    else if (sp.alive >= capOf(sp)) sp.grow = Math.min(GROW_MAX, sp.grow + 0.08);
     sp.prev = sp.alive;
   }
   // 封じられた巣（expansion.js など）の見張り：封印が解けたら湧き口も息を吹き返す
@@ -408,12 +408,13 @@ function computeThreat(sim) {
   }
   for (const { site, b, sum, n } of sites) {
     let press = 0;
-    for (const id of site.spawners) { const sp = P.list[id]; if (!isSealed(sim, sp)) press += sp.power * (1 + sp.grow * 3); }
-    const raw = Math.min(100, sum + press * 2);
+    for (const id of site.spawners) { const sp = P.list[id]; if (!isSealed(sim, sp)) press += sp.power * (1 + sp.grow * 2); }
+    const raw = Math.min(100, sum + press * 1.5);
     site.threat = Math.round((site.threat * 0.5 + raw * 0.5) * 10) / 10;
     site.count = n;
     const stage = site.sealed ? 0 : STAGE_AT.reduce((st, v, i) => (site.threat >= v ? i : st), 0);
-    if (stage > site.stage && stage >= 2) {
+    if (stage > site.stage && stage >= 2 && !(site.newsStage >= stage && sim.today - (site.newsDay ?? -99) < 6)) {
+      site.newsStage = stage; site.newsDay = sim.today;
       const near = townsNear(sim, b.door.x, b.door.z)[0];
       const text = stage === 3 ? `${b.name}の魔物の脅威が限界に達した。${near ? `${near.name}の人々は大群を恐れている` : '大群があふれ出すかもしれない'}` : `${b.name}の魔物が増え、${near ? `${near.name}のあたりで` : ''}群れが人里を荒らしはじめた`;
       sim.news(text, 2, b.door); note(sim, text);
@@ -469,8 +470,8 @@ function ravageOrder(sim, site) {
 // 段階3：大群。ダンジョンに群れ（monsters.js）がいれば、その群れの話し合いに任せる。いなければ湧き口からあふれ出す
 function horde(sim, site) {
   const S = sim.S, P = S.spawner, R = sim.rng, b = sim.building(site.bid);
-  if (sim.today - site.lastHorde < 12 || sim.today - P.lastHorde < 5 || P.hordes.length) return;
-  const band = Object.values(S.bands || {}).find((x) => x.lair === b.id && !x.war && !x.rebel && x.members.length >= 3);
+  if (sim.today - site.lastHorde < 12 || sim.today - P.lastHorde < 4 || P.hordes.length) return;
+  const band = Object.values(S.bands || {}).find((x) => x.lair === b.id && !x.war && !x.rebel && x.members.length >= 4);
   const M = S.monsterWar;
   if (band && (!M || sim.today - M.last >= 20) && sim.today - (band.lastBigWar ?? -99) >= 30) {
     band.rage = Math.max(band.rage || 0, 3);   // 巣が手狭になり、群れが人里を襲う相談を始める（monsters.js の grudgeDaily）
@@ -516,6 +517,9 @@ function postQuests(sim) {
     const openHere = S.quests.filter((q) => q.s === cap.id && q.state === 'open').length;
     const ours = S.quests.filter((q) => q.s === cap.id && live(q) && q.spawnSite != null).length;
     if (openHere >= 11 || ours >= 6) continue;   // 掲示板があふれないように
+    // 名のある主（竜など）が棲む巣のそばには、湧き口の依頼を出さない（主の討伐は名のある魔物の依頼に任せる）
+    const lord = Object.values(S.creatures).find((c) => alive(S, c) && c.named && dist(c.pos.x, c.pos.z, b.door.x, b.door.z) < 16);
+    if (lord) continue;
     const mine = S.quests.filter((q) => live(q) && q.spawnSite === b.id);
     const k = S.kingdoms[cap.kingdom];
     const town = S.towns[cap.id];
@@ -525,7 +529,7 @@ function postQuests(sim) {
     if (hunts < site.stage && !deadly(b.door.x, b.door.z)) {
       const taken = new Set(S.quests.filter(live).map((q) => q.target));
       const cs = Object.values(S.creatures).filter((c) => alive(S, c) && hostileKind(c) && !c.named && !c.inDungeon && !c.quested && !taken.has(c.id) && c.sp !== 'demonlord'
-        && dist(c.pos.x, c.pos.z, b.door.x, b.door.z) < NEAR + 10);
+        && dist(c.pos.x, c.pos.z, b.door.x, b.door.z) < NEAR + 10 && !Object.values(S.creatures).some((o) => o.named && o.hp > 0 && dist(o.pos.x, o.pos.z, c.pos.x, c.pos.z) < 14));
       for (let i = hunts; i < site.stage && cs.length; i++) {
         const c = cs.splice(R.int(0, cs.length - 1), 1)[0];
         const power = c.atk + c.maxhp / 8;
@@ -534,7 +538,10 @@ function postQuests(sim) {
         const king = site.stage >= 2 && k && k.treasury - 100 >= reward;
         const giver = king ? S.people[k.kingId] : near ? R.pick(sim.living().filter((p) => p.s === near.id && sim.isAdult(p) && p.rank !== 'king')) : null;
         c.quested = true;
-        post(sim, { type: 'hunt', s: cap.id, from: near?.id ?? cap.id, target: c.id, spawnSite: b.id, rank: rankFor(power), where: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) }, reward, giver: giver?.id,
+        // 難しさ：その魔物と、まわりにいるいちばん強い仲間の強さの大きいほう（群れのそばは一段むずかしい）
+        const pack = Object.values(S.creatures).filter((o) => alive(S, o) && hostileKind(o) && !o.inDungeon && dist(o.pos.x, o.pos.z, c.pos.x, c.pos.z) < 10);
+        const rank = Math.min(6, rankFor(Math.max(power, ...pack.map((o) => o.atk + o.maxhp / 8))) + (pack.length >= 4 ? 1 : 0));
+        post(sim, { type: 'hunt', s: cap.id, from: near?.id ?? cap.id, target: c.id, spawnSite: b.id, rank, where: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) }, reward, giver: giver?.id,
           title: `${b.name}のあたりに湧いた${c.name}を討伐してほしい（${king ? '王の布告・' : ''}魔物の脅威${Math.round(site.threat)}）` });
       }
     }
@@ -595,11 +602,11 @@ function departures(sim) {
     } else {
       const b = sim.building(+String(q.target).slice(1));
       if (!b || b.type === 'hideout') continue;
-      what = q.seal ? `${b.name}の湧き口を封じる戦い` : `${b.name}の魔物討伐と探索`;
+      what = q.seal ? `${b.name}の湧き口を封じる戦い` : P.sites[b.id] ? `${b.name}の魔物討伐と探索` : `${b.name}の探索`;
     }
     const names = crew.map((m) => `${advClassName(m) || JOBS[m.job]?.name || ''}${m.given}`).join('・');
     const pos = lead.pos;
-    if (pt || crew.length >= 2) {
+    if (crew.length >= 2) {
       const text = pt ? `〈${pt.name}〉（${names}）が、${what}に出発した` : `冒険者の一行（${names}）が、${what}に出発した`;
       sim.news(text, q.seal ? 3 : 2, pos);
       if (q.spawnSite != null) note(sim, text);
@@ -663,7 +670,7 @@ function recruit(sim) {
     const t = threatOfKingdom(sim, k.id);
     // 上限：大人の4％＋脅威の段階ごとに2％（町の働き手が足りなくならないように）
     const cap_ = Math.max(6, Math.round(adults * (0.04 + 0.02 * t.stage)));
-    if (advs >= cap_ || !R.chance(0.2 + 0.15 * t.stage)) continue;
+    if (advs >= cap_ || !R.chance(0.3 + 0.2 * t.stage)) continue;
     // 同じ町で同じ仕事の人が3人以上いる者だけ（抜けても困らない）
     const byJob = {};
     for (const p of people) if (p.job) byJob[p.s + ':' + p.job] = (byJob[p.s + ':' + p.job] || 0) + 1;
@@ -688,6 +695,17 @@ function recruit(sim) {
     }
     if (!best) continue;
     becomeAdventurer(sim, best, cap, why, t);
+    if (t.stage >= 2 && advs + 1 < cap_ && R.chance(0.5)) {   // 脅威が高いときは、あとに続く者も出る
+      let b2 = null, s2 = 0, w2 = '';
+      for (const p of people) {
+        if (p === best || p.s === cap.id && isAdventurer(p) || isAdventurer(p) || p.spouseId != null || p.jail != null || p.quest || ['king', 'royal', 'noble'].includes(p.rank) || JOBS[p.job]?.guardTown || p.job === 'guildmaster') continue;
+        const age = sim.ageOf(p);
+        if (age < 16 || age > 35 || (p.values?.courage ?? 0) < 0.55 || (p.job && (byJob[p.s + ':' + p.job] || 0) < 3)) continue;
+        const sc = (p.values?.ambition ?? 0.5) + (p.values?.courage ?? 0.5) + sim.rng.next();
+        if (sc > s2) { s2 = sc; b2 = p; w2 = sim.hh(p) && sim.hh(p).money < 25 ? '貧しい暮らしから抜け出す' : '名を上げる'; }
+      }
+      if (b2) becomeAdventurer(sim, b2, cap, w2, t);
+    }
   }
 }
 function becomeAdventurer(sim, y, cap, why, t) {

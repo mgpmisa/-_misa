@@ -103,6 +103,7 @@ function busyWorkers(sim) {
   return set;
 }
 const jobName = (p) => JOBS[p?.job]?.name || '';
+const hname = (hh) => (/家$/.test(hh.name || '') ? hh.name : `${hh.name || ''}の家`);   // 「ランゲ家」はそのまま、「ランゲ（宿住まい）」なら「〜の家」
 
 // ---------- 見積もり ----------
 function matPrice(sim, sid, g) { const m = sim.S.towns[sid]; const pr = m?.price?.[g]; return pr > 0 ? pr : MAT_V[g]; }
@@ -124,14 +125,14 @@ function startExpand(sim, hh, b, payer, byLord) {
   Hs.jobs[b.id] = { b: b.id, hh: hh.id, payer: payer.id, lord: !!byLord, need: { ...MATS }, stage: 'mat', wait: 0, days: 0, stall: 0, start: sim.today, carp: carp.id, mason: mason ? mason.id : null, est: cost, spent: 0 };
   Hs.n.started++;
   const head = headOf(sim, hh), lh = byLord ? headOf(sim, payer) : null;
-  const who = `${jobName(carp)}の${carp.given}`;
+  const who = `${CARP_JOBS.includes(carp.job) ? '' : '手の空いた'}${jobName(carp)}の${carp.given}`;
   if (head) {
     const txt = byLord ? `大家の${lh ? lh.given : payer.name}が、家を二階建てに建て増してくれることになった。家賃は上がるが、みんな寝台で眠れる` : `家族が増えて寝台が足りないので、${who}に頼んで家を二階建てに建て増すことにした`;
     for (const p of alive(sim, hh)) if (sim.ageOf(p) >= 10) sim.remember(p, txt, { emo: 0.5, imp: 0.6, about: [carp.id], k: 'house' });
   }
-  if (lh) sim.remember(lh, `借り手の${hh.name}の家が手狭なので、${who}に二階の建て増しを頼んだ`, { emo: 0.1, imp: 0.5, about: [carp.id], k: 'house' });
-  sim.remember(carp, `${hh.name}の家の二階の建て増しを請け負った`, { emo: 0.4, imp: 0.45, k: 'work' });
-  if (mason) sim.remember(mason, `${hh.name}の家の建て増しで、石の土台と壁を任された`, { emo: 0.3, imp: 0.35, k: 'work' });
+  if (lh) sim.remember(lh, `借り手の${hname(hh)}が手狭なので、${who}に二階の建て増しを頼んだ`, { emo: 0.1, imp: 0.5, about: [carp.id], k: 'house' });
+  sim.remember(carp, `${hname(hh)}の二階の建て増しを請け負った`, { emo: 0.4, imp: 0.45, k: 'work' });
+  if (mason) sim.remember(mason, `${hname(hh)}の建て増しで、石の土台と壁を任された`, { emo: 0.3, imp: 0.35, k: 'work' });
   sim.pushLog(`${byLord ? `大家の${lh ? sim.fullName(lh) : payer.name}が、借り手の${hh.name}のために` : `${hh.name}が`}、${who}に頼んで家を二階建てに建て増しはじめた（見積もり${cost}銅貨）。`, 'event', [head?.id, carp.id].filter((x) => x != null), b.door);
   void R;
   return true;
@@ -207,11 +208,13 @@ function finishExpand(sim, b, hh, payer, j) {
   const n = alive(sim, hh).length;
   const spent = Math.round(j.spent);
   const mk = j.makeshift ? `（${j.makeshift}）` : '';
-  for (const p of alive(sim, hh)) if (sim.ageOf(p) >= 6) sim.remember(p, j.lord ? `大家が家を二階建てにしてくれた。家族${n}人がみな寝台で眠れる。家賃は週${oldRent}から${b.rent}銅貨に上がった` : `家が二階建てになった。${spent}銅貨かかったが、家族${n}人がみな寝台で眠れる`, { emo: 0.8, imp: 0.75, about: carp ? [carp.id] : [], k: 'house' });
+  const cap2 = bedCapacity(b, n);
+  const beds = n <= cap2 ? `家族${n}人がみな寝台で眠れる` : `寝台で眠れるのは${cap2}人になった（まだ${n - cap2}人は寝わら）`;
+  for (const p of alive(sim, hh)) if (sim.ageOf(p) >= 6) sim.remember(p, j.lord ? `大家が家を二階建てにしてくれた。${beds}。家賃は週${oldRent}から${b.rent}銅貨に上がった` : `家が二階建てになった。${spent}銅貨かかったが、${beds}`, { emo: n <= cap2 ? 0.8 : 0.5, imp: 0.75, about: carp ? [carp.id] : [], k: 'house' });
   if (lh) sim.remember(lh, `${hh.name}に貸している家を二階建てにした。${spent}銅貨かかったが、家賃は週${b.rent}銅貨になる`, { emo: 0.3, imp: 0.5, k: 'house' });
-  if (carp && carp.deathYear == null) sim.remember(carp, `${hh.name}の家の二階の建て増しを仕上げた`, { emo: 0.6, imp: 0.5, k: 'work' });
+  if (carp && carp.deathYear == null) sim.remember(carp, `${hname(hh)}の二階の建て増しを仕上げた`, { emo: 0.6, imp: 0.5, k: 'work' });
   if (head) sim.gossip(head, '家を二階建てに建て増した', 0.5, sim.living().filter((q) => q.s === hh.s && q.hh !== hh.id).slice(0, 40), { congrat: '家を二階建てにしたんだってね。立派になったね', silent: true });
-  sim.pushLog(`${town.name}の${hh.name}の家が二階建てになった${mk}。${j.lord ? `費用${spent}銅貨は大家が払い、家賃は週${oldRent}から${b.rent}銅貨に上がった` : `費用は${spent}銅貨、家の値打ちは${Math.round(oldValue)}から${b.value}銅貨に上がった`}。`, 'event', [head?.id, carp?.id].filter((x) => x != null), b.door);
+  sim.pushLog(`${town.name}の${hname(hh)}が二階建てになった${mk}。${j.lord ? `費用${spent}銅貨は大家が払い、家賃は週${oldRent}から${b.rent}銅貨に上がった` : `費用は${spent}銅貨、家の値打ちは${Math.round(oldValue)}から${b.value}銅貨に上がった`}。`, 'event', [head?.id, carp?.id].filter((x) => x != null), b.door);
   sim.chron(`${town.name}の${head ? sim.fullName(head) : hh.name}の家が、家族が増えて二階建てに建て増された`, town.kingdom);
 }
 

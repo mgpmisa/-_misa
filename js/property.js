@@ -12,7 +12,7 @@ export function houseValue(sim, b) {
   if (b.type === 'mansion') return 1500;
   if (b.type === 'castle') return 20000;
   const s = sim.S.world.settlements.find((t) => t.buildings.includes(b.id));
-  return Math.round(b.w * b.d * 40 * (TOWN_MUL[s?.type] || 1));
+  return Math.round(b.w * b.d * 40 * (TOWN_MUL[s?.type] || 1) * ((b.floors || 1) >= 2 ? 1.7 : 1));   // 二階建て（housing.js）は1.7倍
 }
 export const weeklyRent = (sim, b) => Math.max(4, Math.round(houseValue(sim, b) / 28));
 const hhName = (sim, id) => sim.S.households[id]?.name || '町';

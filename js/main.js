@@ -1,4 +1,5 @@
 import { Sim } from './sim.js';
+import { showDiscovery } from './discovery.js';
 import { Renderer } from './render.js';
 import { UI } from './ui.js';
 import { markTilesChanged } from './pathfar.js';
@@ -53,6 +54,7 @@ function frame(now) {
       case 'say': ui.say(e.id, e.text); if (ui.ivOpen != null) ui.iv.say(e.id, e.text); break;
       case 'log': ui.addLog(e.entry); break;
       case 'news': ui.onNews(e.entry); break;
+      case 'discover': showDiscovery(ui, e.entry); break;
       case 'died': if (ui.follow === e.id) ui.follow = null; break;
       case 'hit': if (ui.ivOpen != null) ui.iv.hit(e.id); renderer.hit(e.id); if (ui.bubblesOn) ui.floatHit(e.id, e.dmg); break;
       case 'building': renderer.addBuilding(e.id); break;

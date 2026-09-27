@@ -54,6 +54,8 @@ import { accrueWage, paydayDaily } from './payday.js';
 import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
+import { housingDaily } from './housing.js';   // 手狭な家の建て増し・引っ越し・独り立ち
+import { discoveryHourly } from './discovery.js';   // 新しく見つかった物のお知らせ
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
 const mortY = (a) => { for (const [x, p] of MORT_Y) if (a <= x) return p; return 0.3; };
@@ -1829,6 +1831,7 @@ export class Sim {
     rescueHourly(this);
     financeHourly(this);
     marketHourly(this);   // 終わった市の露店を片づける
+    discoveryHourly(this);   // 新しく見つかった物のお知らせ（discovery.js）
     divineHourly(this);
     partyLifeHourly(this);   // 絆・家族恋しさ・宿の数（partylife.js）
     carryHourly(this);   // 荷の重い人・家の蔵の片づけ・荷運びの雇い・落とし物を拾う（carry.js）
@@ -1944,6 +1947,7 @@ export class Sim {
     bankDaily(this, GOODS);
     marketDaily(this);
     matterDaily(this);   // 世界の物（matter.js）
+    housingDaily(this);   // 手狭な家の建て増し・引っ越し・独り立ち（housing.js）
     shopsDaily(this);   // 店の借り賃・差し押さえ・酒を売る許し・町の負担
     paydayDaily(this);
     creatureDaily(this);
