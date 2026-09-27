@@ -166,6 +166,10 @@ function eligible(sim, s, pop) {
   return big ? pop >= 30 : pop >= 70;
 }
 function townPeople(sim, sid) { return sim.living().filter((q) => q.s === sid); }
+// 館の近く（同じ国で、歩いて通える町や村）に住む人。働き手は住み込みにせず、自分の家から通う
+const NEAR = 40;
+function nearTown(sim, sid, q) { const a = sim.town(sid), b = sim.townOf(q); return !!a && !!b && (b.id === a.id || (b.kingdom === a.kingdom && !b.tribe && !b.tribal && Math.hypot(a.x - b.x, a.z - b.z) <= NEAR)); }
+function regionPeople(sim, sid) { return sim.living().filter((q) => nearTown(sim, sid, q)); }
 function priestOf(sim, sid) { return sim.living().find((q) => q.s === sid && q.job === 'priest' && q.needs) || null; }
 // 王と司祭の方針
 function policy(sim, s) {
@@ -299,12 +303,12 @@ const S_pending = (sim) => new Set((sim.S.pendingWeddings || []).flatMap((w) => 
 function recruit(sim, sid, h) {
   const A = A_(sim), R = sim.rng;
   const cands = [], pend = S_pending(sim);
-  for (const q of townPeople(sim, sid)) {
+  for (const q of regionPeople(sim, sid)) {
     if (!canWork(sim, q, A, pend)) continue;
     const hh = sim.hh(q);
     const poor = hh.money / Math.max(1, hh.members.length) < 35 || !q.job || q.job === 'beggar';
     const will = hash(q.id * 31 + 7) * 0.7 + (poor ? -0.3 : 0) + (q.values?.faith ?? 0.3) * 0.5 + ((q.pers?.C ?? 0.5) - 0.5) * 0.2;
-    if (will < 0.3) cands.push(q);
+    if (will < 0.36) cands.push(q);
   }
   if (!cands.length) return null;
   const q = R.pick(cands);
@@ -352,7 +356,7 @@ export function leisureDecide(sim, p, add) {
   // 逢い引き（想い合う独り身どうし）
   if (single && age >= 17 && h >= 16.5 && h < 20.5 && n.lust < 70) {
     const lz = p.lz || (p.lz = {});
-    if (lz.tryst !== sim.today && R.chance(0.35)) {
+    if ((lz.tryst ?? -99) < sim.today - 1 && R.chance(0.35)) {
       const q = sim.crushOf(p);
       if (q && alive(q) && sim.ageOf(q) >= 17 && sim.rel(q, p).a >= 35 && q.jail == null) {
         add(1.5 + (100 - n.lust) / 20 + E, 'ltryst', sim.placeFor(p, 'plaza'), 80, { friend: q.id });
@@ -362,14 +366,17 @@ export function leisureDecide(sim, p, add) {
   // 大人向け：歓楽の館
   if (!adultOn(sim) || age < 18 || h < 18 && h >= 1) return;
   const A = sim.S.leisure?.adult;
-  const house = A?.houses?.[p.s];
+  if (!A) return;
+  let hsid = A.houses[p.s] ? p.s : null;
+  if (hsid == null) for (const k of Object.keys(A.houses)) if (nearTown(sim, +k, p)) { hsid = +k; break; }
+  const house = hsid != null ? A.houses[hsid] : null;
   if (!house || house.closed) return;
   if (n.lust > 45 || age > 65) return;
   if (['king', 'royal'].includes(p.rank) || hh.royal) return;
   const pp = A.ppl[p.id];
   if (pp && (pp.w != null || pp.k != null)) return;
   if (pp?.last != null && sim.today - pp.last < 3 + (p.id % 4)) return;
-  if (!openState(sim, p.s, house).open) return;
+  if (!openState(sim, hsid, house).open) return;
   // 行くかどうかは性格で分かれる
   const faith = p.values?.faith ?? 0.5, C = p.pers?.C ?? 0.5;
   let w = Math.pow(1 - faith, 2) * (1.25 - C);
@@ -377,11 +384,11 @@ export function leisureDecide(sim, p, add) {
   if (CLERGY.has(p.job)) w *= 0.05;
   if (EASY_JOBS.has(p.job) && single && age < 40) w *= 1.5;
   if (w < 0.05 || !R.chance(Math.min(0.6, w))) return;
-  const fee = feeOf(sim, p.s, house);
+  const fee = feeOf(sim, hsid, house);
   if (spendable(sim, p) < fee + 5) return;
   const b = sim.building(house.bid);
   if (!b) return;
-  add(1 + (100 - n.lust) / 14 * Math.min(1, w + 0.2), 'lvisit', { x: b.door.x, z: b.door.z, bld: b.id }, R.int(50, 80), { lzs: p.s });
+  add(1 + (100 - n.lust) / 14 * Math.min(1, w + 0.2) - (hsid !== p.s ? 1 : 0), 'lvisit', { x: b.door.x, z: b.door.z, bld: b.id }, R.int(50, 80));
 }
 function feeOf(sim, sid, h) {
   const s = sim.town(sid);
@@ -419,8 +426,10 @@ function trystArrive(sim, p, a) {
 
 function visitArrive(sim, p, a) {
   const A = A_(sim), R = sim.rng;
-  const sid = a.lzs ?? p.s;
-  const h = A.houses[sid];
+  // どの町の館か（行動には建物の番号だけが残る）
+  let sid = null;
+  for (const [k, x] of Object.entries(A.houses)) if (x.bid === a.bld) { sid = +k; break; }
+  const h = sid != null ? A.houses[sid] : null;
   const done = () => { a.until = sim.S.t + 5; };
   if (!adultOn(sim) || !h) { done(); return; }
   // 年齢の点検（客）
@@ -549,7 +558,7 @@ export function leisureDo(sim, p, dt) {
           L.stats.tryst++;
           sim.remember(p, `夕暮れの広場で${q.given}と待ち合わせ、ふたりで歩いた`, { emo: 0.8, imp: 0.55, about: [q.id], k: 'love' });
           sim.remember(q, `${p.given}に誘われて、夕暮れの広場をふたりで歩いた`, { emo: 0.75, imp: 0.55, about: [p.id], k: 'love' });
-          if (sim.rng.chance(0.4)) sim.pushLog(`${p.given}と${q.given}が夕暮れの広場で逢い引きした。`, 'event', [p.id, q.id], p.pos);
+          if (sim.rng.chance(0.3)) sim.pushLog(`${p.given}と${q.given}が夕暮れの広場で逢い引きした。`, 'event', [p.id, q.id], p.pos);
           if (sim.ageOf(p) >= 18 && sim.ageOf(q) >= 18) sim.maybeEngage(p, q);
         }
       } else if (a.friend == null) n.lust += 6 * hr;   // 呼ばれて来た側（相手が来るのを待っている）
@@ -635,7 +644,8 @@ function leisureHourly_(sim) {
     Z.fest[sid] = true;
     const pairs = pairUp(sim, cand, 6);
     for (const [x, y] of pairs) { L.stats.festDance++; danceTogether(sim, x, y, 'festival'); }
-    if (pairs.length && R.chance(0.5)) {
+    if (pairs.length && Z.festLog?.[sid] !== sim.today) {
+      (Z.festLog || (Z.festLog = {}))[sid] = sim.today;
       const [x, y] = pairs[0];
       sim.pushLog(`祭りの踊りの輪で、${x.given}と${y.given}が手を取り合った。`, 'event', [x.id, y.id], x.pos);
     }
@@ -774,19 +784,19 @@ function adultDaily(sim) {
     const pend = S_pending(sim);
     for (const id of h.workers.slice()) {
       const w = S.people[id];
-      if (!alive(w) || w.s !== sid || w.jail != null) { removeWorker(sim, sid, h, w, false); continue; }
+      if (!alive(w) || !nearTown(sim, sid, w) || w.jail != null) { removeWorker(sim, sid, h, w, false); continue; }
       if (w.spouseId != null || pend.has(w.id)) { removeWorker(sim, sid, h, w, true); continue; }
       // 低く見られることのつらさ
       bump(w, { esteem: -3 });
       // 足を洗う（いつでも辞められる。借金で縛られているあいだは辞められない＝罪）
       if (!h.bind) {
         const age = sim.ageOf(w);
-        const pq = 0.012 + (w.needs.esteem < 30 ? 0.012 : 0) + (age > 33 ? 0.015 : 0) + (w.values?.faith ?? 0.3) * 0.02 + ((sim.hh(w)?.money || 0) > 150 ? 0.01 : 0);
+        const pq = 0.005 + (w.needs.esteem < 25 ? 0.008 : 0) + (age > 33 ? 0.01 : 0) + (w.values?.faith ?? 0.3) * 0.015 + ((sim.hh(w)?.money || 0) > 200 ? 0.008 : 0);
         if (R.chance(pq)) removeWorker(sim, sid, h, w, true);
       }
     }
     // 人手が足りなければ、自分から申し出る人を受け入れる（1日1人まで）
-    const cap = Math.min(4, 1 + Math.floor(townPeople(sim, sid).length / 90));
+    const cap = Math.min(4, 2 + Math.floor(regionPeople(sim, sid).length / 200));
     if (h.workers.length < cap && keeper) recruit(sim, sid, h);
     // 見回り：町に医者か修道女がいれば見回ってもらえる
     h.inspected = sim.living().some((q) => q.s === sid && HEALERS.includes(q.job) && q.jail == null);
