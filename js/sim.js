@@ -43,6 +43,7 @@ import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, 
 import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
 import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth } from './tribes.js';
 import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
+import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
@@ -579,6 +580,7 @@ export class Sim {
     }
     const sick = sickAction(this, p);
     if (sick) { this.startAction(p, sick); return; }
+    if (needsDecide(this, p)) return;   // 旅先で食べる・寝る、野で食べ物を探す（needs.js）
     // 特別な任務（行軍・討伐・逃走）
     if (p.mission) {
       const m = p.mission;
@@ -687,6 +689,7 @@ export class Sim {
     underworldDecide(this, p, cands, add);
     healthDecide(this, p, cands, add);
     divineDecide(this, p, cands, add);
+    needsCands(this, p, cands);
     cands.sort((a, b) => b.score - a.score);
     let c = cands[0];
     if (c.type === 'beg') {
@@ -921,6 +924,7 @@ export class Sim {
     buildingsArrive(this, p, a);
     gearArrive(this, p);
     laborArrive(this, p);
+    needsArrive(this, p, a);
   }
 
   doShop(p) {
@@ -1750,6 +1754,7 @@ export class Sim {
       if (!p.talk && this.isWatched(p) && this.rng.chance(0.35)) p.thought = mindThought(this, p) || innerThought(this, p);
       // 危険の記憶は少しずつ薄れる
       if (p.danger) for (const k of Object.keys(p.danger)) { p.danger[k] *= 0.985; if (p.danger[k] < 0.2) delete p.danger[k]; }
+      needsHourly(this, p);
     }
   }
 

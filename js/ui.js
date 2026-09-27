@@ -15,6 +15,7 @@ import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
 import { elderCard, elderBuildingRows } from './elder.js';
 import { BLD_LABEL, BLD_GO, BLD_PREF, BLD_TYPE_LABEL, buildingRows } from './buildings.js';
+import { NEEDS_LABEL, NEEDS_GO, NEEDS_PREF, needsLabel } from './needs.js';
 import { laborCard, laborNationHTML, LABOR_LABEL, LABOR_GO, LABOR_PREF } from './labor.js';
 import { monsterHtml } from './monsters.js';
 import { growthHtml, growthCreatureHtml } from './growth.js';
@@ -69,6 +70,7 @@ Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '�
 Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Object.assign(PREF_LABEL, LABOR_PREF);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 Object.assign(ACTION_LABEL, BLD_LABEL); Object.assign(ACTION_GO, BLD_GO); Object.assign(PREF_LABEL, BLD_PREF);
+Object.assign(ACTION_LABEL, NEEDS_LABEL); Object.assign(ACTION_GO, NEEDS_GO); Object.assign(PREF_LABEL, NEEDS_PREF);
 for (const t of Object.keys(BLD_TYPE_LABEL)) INTERIOR_TYPES.add(t);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
 const JA_ORDER = new Intl.Collator('ja');   // 名前の並べ替え（localeCompare を毎回作らない。並びは同じ）
@@ -649,7 +651,7 @@ export class UI {
       h += divinePersonHTML(this.sim, p);
       const bar = (label, v) => `<span>${label}</span><div class="bar"><i class="${v < 30 ? 'low' : v < 55 ? 'mid' : ''}" style="width:${Math.round(v)}%"></i></div>`;
       h += `<div class="section"><h4>7つの欲求（満たされ具合）</h4><div class="bars">${bar('気分', p.mood)}${Object.entries(DESIRES).map(([k, n]) => bar(n, p.needs[k])).join('')}</div>
-        <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
+        <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}${needsLabel(p) ? `<dt>欲求のつらさ</dt><dd>${esc(needsLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
         </dl></div>`;
       if (p.deathYear == null) h += growthHtml(sim, p) || '';
       if (p.deathYear == null) h += gearHtml(sim, p, esc);
