@@ -14,6 +14,7 @@ import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import { convoyViews } from './logistics.js';
 import { ShadowPool, CrowdDots, dotColor } from './crowd.js';
+import { spacingBegin, spacedPos, spacingFace, spacingSlideCorpse } from './spacing.js'; // 立ち止まった者どうしが重ならない立ち位置（技術部）
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
 const wx = (x) => x - W / 2 + 0.5;
@@ -786,6 +787,7 @@ export class Renderer {
     this.partyRings.begin();
     const farView = this.camera.zoom < 0.55;
     this.dots.begin();
+    spacingBegin(sim);
     const place = (e, isHuman) => {
       const near = Math.abs(e.pos.x - (t.x + W / 2)) < viewR * 1.6 && Math.abs(e.pos.z - (t.z + H / 2)) < viewR * 1.6;
       if (farView) {   // 引いた眺め：点だけ（絵は作らない。作ってあった絵は下で片づく）
@@ -801,10 +803,12 @@ export class Renderer {
       r.sprite.visible = r.shadow.visible = vis && near;
       if (!r.sprite.visible) { r.hid = true; return; }
       // 表示の位置：世界は0.5分きざみ（数フレームに1回）で動くので、前の位置から今の位置へ一定の速さでつなぐ
-      if (r.tx !== e.pos.x || r.tz !== e.pos.z || r.hid) {
-        const jump = r.hid || Math.abs(e.pos.x - r.tx) + Math.abs(e.pos.z - r.tz) > 3;
-        r.fx = jump ? e.pos.x : r.sx; r.fz = jump ? e.pos.z : r.sz;
-        r.tx = e.pos.x; r.tz = e.pos.z; r.hid = false;
+      // 立ち止まっている者は、ほかと重ならない立ち位置へ（見た目だけ。本当の位置は変えない。spacing.js）
+      const sp = spacedPos(sim, e, isHuman), ex = sp.x, ez = sp.z;
+      if (r.tx !== ex || r.tz !== ez || r.hid) {
+        const jump = r.hid || Math.abs(e.pos.x - (r.rx ?? r.tx)) + Math.abs(e.pos.z - (r.rz ?? r.tz)) > 3;
+        r.fx = jump ? ex : r.sx; r.fz = jump ? ez : r.sz;
+        r.tx = ex; r.tz = ez; r.rx = e.pos.x; r.rz = e.pos.z; r.hid = false;
         r.dur = Math.min(700, Math.max(40, nowMs - r.tChange)); r.tChange = nowMs;
       }
       const kk = Math.min(1, (nowMs - r.tChange) / r.dur);
@@ -814,7 +818,8 @@ export class Renderer {
       const moved = Math.hypot(dx, dz);
       let target = null;
       if (e.fight) { const o = sim.entity(e.fight.target); if (o) target = o; }
-      const vx = target ? target.pos.x - e.pos.x : dx, vz = target ? target.pos.z - e.pos.z : dz;
+      const fc = !target && isHuman && moved < 0.0005 ? spacingFace(sim, e) : null;   // 立ち止まったら、話し相手や輪の中心を向く
+      const vx = target ? target.pos.x - e.pos.x : fc ? fc.x - r.sx : dx, vz = target ? target.pos.z - e.pos.z : fc ? fc.z - r.sz : dz;
       if (Math.hypot(vx, vz) > 0.001) {
         const sx = vx * right.x + vz * right.y, sf = vx * fwd.x + vz * fwd.y;
         r.dir = Math.abs(sx) > Math.abs(sf) ? (sx > 0 ? 2 : 1) : (sf > 0 ? 3 : 0);
@@ -855,6 +860,7 @@ export class Renderer {
         const e = sim.person(id);
         if (!e || e.deathYear == null || r.sheet.cols < 3) continue;
         if (!r.corpse) r.corpse = { t0: now };
+        spacingSlideCorpse(sim, id, r, realDt);
         const k = now - r.corpse.t0;
         this.applyAnim(r, e, 'death', now, r.dir, 1);
         const dur = r.animTex?.get('death') ? animDuration(r.animTex.get('death').s) : 1;
@@ -863,6 +869,7 @@ export class Renderer {
         if (k < dur + 5) seen.add(id);
       } else if (r.e && r.e.hp <= 0) {
         if (!r.corpse) r.corpse = nowMs;
+        spacingSlideCorpse(sim, id, r, realDt, r.e);
         if (nowMs - r.corpse < 20000) { this.creatureAnim(r, r.e, false, nowMs); seen.add(id); }
       }
     }
