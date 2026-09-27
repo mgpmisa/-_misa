@@ -5,6 +5,7 @@
 import { DEATH_CAUSES, DAYS_PER_YEAR } from './data.js';
 import { countItem, takeItem } from './items.js';
 import { pay, earn, spendable } from './property.js';
+import { marketBuy } from './market.js';
 
 // 死因の追加（data.js を書き換えずに、表示名だけ足す）
 for (const [k, v] of Object.entries({ illness: '病', fever: '熱病', wound: '傷の悪化' })) if (!DEATH_CAUSES[k]) DEATH_CAUSES[k] = v;
@@ -311,7 +312,7 @@ export function treat(sim, doc, pat) {
   let eff = (HEALERS[job] || 4) * (0.6 + skill * 0.8);
   const m = sim.market(pat.s);
   let fee = job === 'doctor' ? 6 : job === 'herbalist' ? 3 : 0, med = false;
-  if ((job === 'doctor' || job === 'herbalist') && m.stock.medicine >= 1) { m.stock.medicine -= 1; eff += 6; fee += Math.round(m.price.medicine); med = true; }
+  if ((job === 'doctor' || job === 'herbalist') && m.stock.medicine >= 1 && sim.hh(doc) && marketBuy(sim, pat.s, 'medicine', 1, sim.hh(doc), { whole: true }) >= 1) { eff += 6; fee += Math.round(m.price.medicine); med = true; }   // 医者が薬を買い、薬代を診察代に上乗せする
   else if (countItem(doc, 'potion') > 0 && job !== 'priest') { takeItem(doc, 'potion', 1); eff += 5; med = true; }
   if (sim.hasTech(doc, 'medicine')) eff *= 1.25;
   if (a.kind === 'wound' && sim.hasTech(doc, 'healing')) eff *= 1.3;
@@ -349,7 +350,7 @@ function familyMedicine(sim, p) {
   if (!hh || m.stock.medicine < 1) return;
   const price = m.price.medicine;
   if (hh.money < price + 20 || !sim.rng.chance(0.5)) return;
-  hh.money -= price; m.stock.medicine -= 1;
+  if (marketBuy(sim, p.s, 'medicine', 1, hh, { whole: true }) < 1) return;   // 薬代は薬の持ち主（薬師・商人）へ
   a.sev = Math.max(0, a.sev - 7);
   const carer = a.carer != null ? sim.person(a.carer) : null;
   if (carer && carer.memories && sim.rng.chance(0.5)) sim.remember(carer, `寝込んでいる${p.given}のために市場で薬を買ってきた`, { emo: 0.1, imp: 0.4, about: [p.id] });

@@ -233,16 +233,19 @@ export function reportQuest(sim, p) {
   else { const k = S.kingdoms[sim.town(q.s).kingdom]; if (k) { const x = Math.min(Math.max(0, k.treasury - 100), q.reward); k.treasury -= x; fundR += x; } }
   if (fundR < q.reward) { const town = S.towns[q.s]; const x = Math.min(q.reward - fundR, Math.max(0, town.fund || 0)); town.fund -= x; fundR += x; }
   q.reward = Math.round(fundR);
-  const share = Math.round(q.reward / members.length);
+  let pot = fundR;
+  { const gm = sim.living().find((x) => x.job === 'guildmaster' && x.s === q.s && sim.hh(x) && !q.takenBy.includes(x.id)); if (gm && pot >= 10) { const cut = pot * 0.1; pot -= cut; sim.hh(gm).money += cut; } }   // ギルドの仲介料（依頼主 → ギルドマスター）
+  if (!members.length) S.towns[q.s].fund += pot;   // 受け取る者がいなければ、ギルドの積立（町の蓄え）へ
+  const share = pot / Math.max(1, members.length);
   for (const m of members) {
-    m.purse = (m.purse || 0) + share * 0.7; if (sim.hh(m)) sim.hh(m).money += share * 0.3;
+    m.purse = (m.purse || 0) + share * 0.7; if (sim.hh(m)) sim.hh(m).money += share * 0.3; else m.purse += share * 0.3;
     m.qp = (m.qp || 0) + 1 + q.rank;
     const before = m.advRank || 0;
     m.advRank = advRank(m);
     m.fame += 2 + q.rank * 2;
     m.needs.esteem = Math.min(100, m.needs.esteem + 25);
     m.quest = null;
-    sim.remember(m, `「${q.title}」をやり遂げ、${share}銅貨の報酬を受け取った`, { emo: 0.7, imp: 0.6, k: 'quest' });
+    sim.remember(m, `「${q.title}」をやり遂げ、${Math.round(share)}銅貨の報酬を受け取った`, { emo: 0.7, imp: 0.6, k: 'quest' });
     if (m.advRank > before) {
       sim.remember(m, `冒険者ランクが${RANKS_ADV[m.advRank]}に上がった`, { emo: 0.9, imp: 0.85, k: 'quest' });
       if (m.advRank >= 4) sim.news(`冒険者${sim.fullName(m)}が${RANKS_ADV[m.advRank]}ランクに昇格した`, 2, m.pos);
@@ -343,7 +346,8 @@ export function partiesDaily(sim) {
         if (y.s !== cap.id) {
           const inn = sim.townBuilding(cap, 'tavern');
           const id = S.nextHh++;
-          S.households[id] = { id, members: [], house: inn ? inn.id : null, inn: true, s: cap.id, money: 10, food: 0, comfort: 0, name: `${y.family}（宿住まい）` };
+          S.households[id] = { id, members: [], house: inn ? inn.id : null, inn: true, s: cap.id, money: 0, food: 0, comfort: 0, name: `${y.family}（宿住まい）` };
+          { const oh = sim.hh(y); const x = oh ? Math.max(0, Math.min(10, oh.money)) : 0; if (oh) oh.money -= x; S.households[id].money = x; }   // 持たせ金は実家から
           sim.moveTo(y, S.households[id]); y.s = cap.id;
         }
         sim.remember(y, `家族の反対を押し切って、${from.name}を出て冒険者になった`, { emo: 0.7, imp: 1, k: 'career' });

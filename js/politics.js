@@ -291,6 +291,7 @@ export function politicsDaily(sim, opts = {}) {
     if (k.treasury > 900 && sim.today - k.lastFeast > 20 && kind > 0.5 && R.chance(0.15)) {
       k.lastFeast = sim.today; k.treasury -= 200;
       const cap = sim.town(k.capital);
+      { const cooks = sim.living().filter((q) => q.s === cap.id && ['innkeeper', 'baker', 'butcher', 'brewer', 'cook'].includes(q.job) && sim.hh(q)); if (cooks.length) for (const q of cooks) sim.hh(q).money += 200 / cooks.length; else S.towns[cap.id].fund += 200; }   // 料理と酒の代金
       const from = sim.dayIndex * 1440 + 17 * 60;
       S.gatherings.push({ type: 'festival', place: 'plaza', from, to: from + 5 * 60, s: cap.id, label: '王の祝宴' });
       sim.news(`${title(king)}${king.given}が${cap.name}で民に祝宴をふるまう`, 2, cap);

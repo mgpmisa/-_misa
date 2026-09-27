@@ -9,6 +9,8 @@ import { SPECIES, KINGDOMS, DAYS_PER_YEAR, DAYS_PER_SEASON } from './data.js';
 import { T, W, H, CORE, walkable, tileAt, biomeOf, isWater } from './world.js';
 import { makeCreature, killCreature, applyStats, townMask } from './creatures.js';
 import { startFight } from './society.js';
+import { stash } from './market.js';
+import { moneyOut, flow } from './ledger.js';
 
 // ---------- 渡り鳥（ガン）：data.js に無いので、ここで種を足す ----------
 if (!SPECIES.goose) SPECIES.goose = { name: 'ガン', kind: 'wild', shape: 'bird', col: '#8a7a66', col2: '#f2eee4', size: 0.5, hp: 7, atk: 1, speed: 1.5, diet: 'grass', flies: true };
@@ -1360,13 +1362,13 @@ function livestockCare(sim, animals, si, dos) {
     else if (c.stateOwned || c.keeper == null) {
       // 国の厩舎・町の動物は町の蓄えから。蓄えが尽きても、馬丁が干し草を工面する
       const town = S.towns[c.owner];
-      if (town && town.fund > cost + 20) { town.fund -= cost; F.stats.feedCost += cost; }
+      if (town && town.fund > cost + 20) { town.fund -= cost; F.stats.feedCost += cost; hayTo(sim, c.owner, cost); }
       c.fed = true;
     } else {
       const hh = S.households[c.keeper];
       if (hh) {
         if (def.diet === 'meat' && (hh.food || 0) > hh.members.length * 1.5) { hh.food -= 0.12; c.fed = true; }
-        else if (hh.money > cost + 8) { hh.money -= cost; c.fed = true; F.stats.feedCost += cost; }
+        else if (hh.money > cost + 8) { hh.money -= cost; c.fed = true; F.stats.feedCost += cost; hayTo(sim, hh.s, cost, hh.id); }
       }
     }
     // なつき
@@ -1396,9 +1398,7 @@ function livestockCare(sim, animals, si, dos) {
       const hh = S.households[c.keeper];
       const m = S.towns[c.owner];
       if (!hh || !m) continue;
-      m.stock.wool = (m.stock.wool || 0) + 1.5;
-      const mc = sim.mcash(c.owner); const earn = Math.max(0, Math.min(1.5 * (m.price.wool || 4) * 0.85, mc.cash));   // 羊毛の代金は市場の金庫から
-      mc.cash -= earn; hh.money += earn; F.stats.products += 1.5;
+      stash(sim, hh, 'wool', 1.5); F.stats.products += 1.5;   // 羊毛は飼い主の蔵へ（市場で売ったときに収入）
       const q = hhMembers(sim, hh).find((x) => sim.ageOf(x) >= 14);
       if (q) sim.remember(q, `春の毛刈りで${c.given || '羊'}の毛を刈った。よい羊毛がとれた`, { emo: 0.5, imp: 0.35, k: 'farm' });
     }
@@ -1414,8 +1414,7 @@ function livestockCare(sim, animals, si, dos) {
     const hh = S.households[c.keeper];
     const m = S.towns[s.id];
     const meat = Math.max(1, Math.round(SPECIES[c.sp].size * 3));
-    m.stock.meat = (m.stock.meat || 0) + meat;
-    if (hh) hh.money += meat * (m.price.meat || 6) * 0.85;
+    if (hh) stash(sim, hh, 'meat', meat); else m.stock.meat = (m.stock.meat || 0) + meat;   // 肉は飼い主の蔵へ（売ったときに収入）
     const q = hhMembers(sim, hh).find((x) => sim.ageOf(x) >= 14);
     if (q) sim.remember(q, `${c.given || SPECIES[c.sp].name}を肉屋に売った。${R.pick(['少し寂しい', '世話になった', '仕方のないことだ'])}`, { emo: -0.2, imp: 0.35, k: 'farm' });
     c._faDone = true; // 飼い主の悲しみは上で記録した
@@ -1423,6 +1422,16 @@ function livestockCare(sim, animals, si, dos) {
   }
 }
 
+// 干し草代は、同じ町の農家（麦わらと干し草を作る家）へ
+function hayTo(sim, sid, cost, not) {
+  const S = sim.S;
+  const k = `${sid}:${Math.floor(S.t / 1440)}`;
+  if (sim._hay?.k !== k) sim._hay = { k, list: Object.values(S.households).filter((h) => h.s === sid && !h.bandits && h.members.some((id) => S.people[id]?.job === 'farmer')) };
+  const list = sim._hay.list.filter((h) => h.id !== not && S.households[h.id]);
+  const to = list.length ? list[(Math.floor(S.t) + list.length) % list.length] : null;
+  if (to) to.money += cost; else if (S.towns[sid]) S.towns[sid].fund += cost;
+  flow(sim, '家畜の飼い主', to ? '農夫' : '町の蓄え', cost, '干し草代');
+}
 function restock(sim, animals) {
   const S = sim.S, R = sim.rng, F = S.fauna;
   for (const s of S.world.settlements) {
@@ -1442,7 +1451,7 @@ function restock(sim, animals) {
       const x = R.int(s.ranch.x0, s.ranch.x1), z = R.int(s.ranch.z0, s.ranch.z1);
       const c = makeCreature(sim, sp, x, z, { owner: s.id, range: 0, age: R.int(20, 120) });
       if (!S.creatures[c.id]) continue;
-      hh.money -= price;
+      hh.money -= price; moneyOut(sim, price, 'よその村から家畜を買った');
       c.keeper = hh.id; c.sex = R.chance(0.7) ? 'f' : 'm'; ensureAnimal(sim, c);
       have.add(sp); bought.push(c);
     }

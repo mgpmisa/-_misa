@@ -32,6 +32,7 @@ import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { T, W, H, tryPlace, walkable } from './world.js';
 import { spendable, pay, earn } from './property.js';
 import { restDayFor } from './labor.js';
+import { marketBuy, ownStock } from './market.js';
 import { markTilesChanged } from './pathfar.js';
 
 // 試験用のお金の見張り：sim._bAudit に総額を数える関数を入れると、この仕組みの中で増えた・減ったお金を sim._bLeak に記録する
@@ -561,15 +562,15 @@ function arriveImpl(sim, p, a) {
       const tailor = workerOf(sim, p.s, 'tailor', b?.id) || workerOf(sim, p.s, 'weaver');
       const m = S.towns[p.s];
       a.until = S.t + 25;
-      if (!tailor || !sim.hh(tailor) || (m.stock.cloth || 0) < 1) { if (p.memories && R.chance(0.3)) sim.remember(p, '仕立て屋に行ったが、布が切れていて服を作ってもらえなかった', { emo: -0.2, imp: 0.2 }); p.clothWear = Math.max(0, (p.clothWear || 0) - 10); break; }
+      if (!tailor || !sim.hh(tailor) || ((m.stock.cloth || 0) < 1 && (sim.hh(tailor).stock?.cloth || 0) < 1)) { if (p.memories && R.chance(0.3)) sim.remember(p, '仕立て屋に行ったが、布が切れていて服を作ってもらえなかった', { emo: -0.2, imp: 0.2 }); p.clothWear = Math.max(0, (p.clothWear || 0) - 10); break; }
       const cost = clothesPrice(sim, p.s);
       if (spendable(sim, p) < cost) break;
       payTo(sim, p, cost, tailor, p.s);
       // 仕立て屋は布を市場から買う
       const cp = m.price.cloth || GOODS.cloth.base;
       const th = sim.hh(tailor);
-      const x = Math.min(cp, Math.max(0, th.money));
-      th.money -= x; m.cash = (m.cash || 0) + x; m.stock.cloth -= 1;
+      void cp;
+      if ((th.stock?.cloth || 0) >= 1) th.stock.cloth -= 1; else marketBuy(sim, p.s, 'cloth', 1, th, { force: true });   // 布の代金は布の持ち主（機織り・商人）へ
       p.clothWear = 0; p.needs.esteem = Math.min(100, p.needs.esteem + 18);
       B.stats.clothes++;
       if (p.memories) sim.remember(p, `${tailor.given}の仕立て屋で、新しい服をあつらえた（${cost}銅貨）`, { emo: 0.5, imp: 0.35, about: [tailor.id], k: 'shop' });
@@ -589,7 +590,8 @@ function arriveImpl(sim, p, a) {
       if (spendable(sim, p) < cost) break;
       payTo(sim, p, cost, seller, p.s);
       const cp = Math.min(m.price[good] || 5, Math.max(0, sh.money));
-      sh.money -= cp; m.cash = (m.cash || 0) + cp; m.stock[good] -= 1;
+      void cp;
+      if ((sh.stock?.[good] || 0) >= 1) sh.stock[good] -= 1; else marketBuy(sim, p.s, good, 1, sh, { force: true });   // 薬の代金は薬の持ち主へ
       if (p.ail) { p.ail.sev = Math.max(0, p.ail.sev - (good === 'medicine' ? 14 : 8)); p.ail.treated = (p.ail.treated || 0) + 1; }
       p.hp = Math.min(p.maxhp, p.hp + p.maxhp * (good === 'medicine' ? 0.25 : 0.12));
       p.needs.survival = Math.min(100, p.needs.survival + 10);
@@ -692,15 +694,11 @@ function shopSettle(sim) {
   for (const s of S.world.settlements) {
     const at = B.at[s.id]; if (!at) continue;
     const m = S.towns[s.id];
-    if (at.genstore != null && (m.commission || 0) > 0) {
-      const sk = workerOf(sim, s.id, 'shopkeeper');
-      if (sk && sim.hh(sk) && !s.buildings.some((id) => sim.building(id)?.type === 'market')) { sim.hh(sk).money += m.commission; m.commission = 0; }
-    }
     const baths = B.day[s.id]?.bath || 0;
     if (at.bathhouse != null && baths) {
       const bk = workerOf(sim, s.id, 'bathkeeper');
       const q = Math.min(m.stock.wood || 0, baths * 0.15);
-      if (bk && sim.hh(bk) && q > 0) { const c = Math.min(q * (m.price.wood || 2), Math.max(0, sim.hh(bk).money - 5)); sim.hh(bk).money -= c; m.cash = (m.cash || 0) + c; m.stock.wood -= q; }
+      if (bk && sim.hh(bk) && q > 0) marketBuy(sim, s.id, 'wood', q, sim.hh(bk));   // 薪の代金は材木の持ち主（木こり・商人）へ
     }
   }
   B.day = {};
@@ -767,8 +765,9 @@ function buildMissing(sim, s, pop) {
   const b = placeInTown(sim, s, type, true);
   if (!b) return;
   // 材料は市場から、手間賃は町の大工・石工・人夫へ
-  m.fund -= mat; m.cash = (m.cash || 0) + mat;
-  m.stock.wood = Math.max(0, (m.stock.wood || 0) - wood); m.stock.stone = Math.max(0, (m.stock.stone || 0) - stone);
+  void mat;
+  marketBuy(sim, s.id, 'wood', Math.min(m.stock.wood || 0, wood), 't' + s.id, { force: true });   // 材料の代金は材木・石材の持ち主へ
+  marketBuy(sim, s.id, 'stone', Math.min(m.stock.stone || 0, stone), 't' + s.id, { force: true });
   const builders = sim.living().filter((q) => q.s === s.id && ['carpenter', 'mason', 'roadworker', 'pioneer', 'shipwright'].includes(q.job) && sim.hh(q));
   if (builders.length) { m.fund -= labor; for (const q of builders) earn(sim, q, labor / builders.length, 0.4); }
   sim.news(`${s.name}に${b.name}が建った`, 1, { x: b.door.x, z: b.door.z });
@@ -791,9 +790,7 @@ function granaryDaily(sim, s) {
   if (scarce && G.wheat >= 1) {
     // 飢饉：蓄えを安く（元の値段で）市場へ出す。代金は市場の金庫から町の蓄えへ
     const q = Math.min(G.wheat, 20);
-    const pay = Math.min(q * base, Math.max(0, m.cash || 0));
-    G.wheat -= q; m.stock.wheat = (m.stock.wheat || 0) + q;
-    m.cash -= pay; m.fund = (m.fund || 0) + pay;
+    G.wheat -= q; ownStock(sim, s.id, 'wheat', 't' + s.id, q);   // 町の麦として店先に並べる（売れた代金は町の蓄えへ）
     B.stats.graRelease += q;
     if (!G.warned || sim.today - G.warned > 5) { G.warned = sim.today; sim.news(`${s.name}の穀物倉が開かれ、蓄えの小麦が市場に出された`, 1, { x: s.x, z: s.z }); }
     return;
@@ -802,7 +799,7 @@ function granaryDaily(sim, s) {
   const cheap = sim.seasonIdx() === 2 || price < base * 0.9;
   if (cheap && G.wheat < cap && (m.stock.wheat || 0) > target * 0.6) {
     const q = Math.min(cap - G.wheat, (m.stock.wheat || 0) - target * 0.6, 12, Math.max(0, (m.fund || 0) - 120) / price);
-    if (q >= 1) { const c = q * price; m.fund -= c; m.cash = (m.cash || 0) + c; m.stock.wheat -= q; G.wheat += q; B.stats.graBuy += q; }
+    if (q >= 1) { const got = marketBuy(sim, s.id, 'wheat', q, 't' + s.id); G.wheat += got; B.stats.graBuy += got; }   // 代金は麦の持ち主（農夫・商人）へ
   }
 }
 
@@ -909,7 +906,8 @@ function orphanageDaily(sim) {
     while (oh.food < n * 3 && guard-- > 0) {
       const g = ['bread', 'wheat', 'fish'].find((x) => (m.stock[x] || 0) >= 1 && oh.money >= m.price[x]);
       if (!g) break;
-      m.stock[g] -= 1; oh.money -= m.price[g]; m.cash = (m.cash || 0) + m.price[g]; oh.food += GOODS[g].meals;
+      if (marketBuy(sim, cap.id, g, 1, oh, { whole: true }) < 1) break;
+      oh.food += GOODS[g].meals;
     }
   }
 }

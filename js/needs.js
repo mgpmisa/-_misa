@@ -34,6 +34,7 @@ import { lodgingKeeper, innPlan, bldInteriorSize } from './buildings.js';
 import { sleepPlan } from './chores.js';
 import { tooDangerous } from './danger.js';
 import { GOODS, JOBS } from './data.js';
+import { marketBuy, personPayer } from './market.js';
 
 // 試験用のお金の見張り：sim._nAudit に総額を数える関数を入れると、この仕組みの中で増えた・減ったお金を sim._nLeak に記録する
 const audited = (name, fn) => function (sim, ...a) {
@@ -255,16 +256,11 @@ function buyRationNearby(sim, p) {
   if ((m.stock.bread || 0) < 3) return;
   const cost = m.price.bread;
   if (spendable(sim, p) < cost + 8) return;
-  marketSell(sim, p, s.id, 'bread', cost);
-  p.ration = (p.ration || 0) + GOODS.bread.meals;
+  if (marketSell(sim, p, s.id, 'bread', cost) >= 1) p.ration = (p.ration || 0) + GOODS.bread.meals;
 }
 // 市場から1つ買う（sim.buy と同じ割合で市場の金庫と手数料へ）。経済部の marketBuy ができたら差し替える
 function marketSell(sim, p, sid, g, cost) {
-  const m = sim.mcash(sid);
-  m.stock[g] -= 1;
-  pay(sim, p, cost);
-  m.cash += cost * 0.94;
-  m.commission = (m.commission || 0) + cost * 0.06;
+  return marketBuy(sim, sid, g, 1, personPayer(sim, p), { whole: true, price: cost });   // 代金は品の持ち主（商人・作り手・町）へ（market.js）
 }
 
 // ================================================================ decide の候補を直す（旅の途中で家へ引き返さない）
@@ -317,11 +313,10 @@ function arriveEat(sim, p, a) {
     const cost = g ? Math.round(m.price[g] * 1.6 + 1) : 0;
     if (g && spendable(sim, p) >= cost) {
       const keeper = keeperOf(sim, sid, ['innkeeper', 'hostkeeper']);
+      const kh = keeper && sim.hh(keeper);
       pay(sim, p, cost);
-      m.stock[g] -= 1;
-      sim.mcash(sid).cash += m.price[g];
-      const rest = cost - m.price[g];
-      if (keeper && sim.hh(keeper)) earn(sim, keeper, rest, 0.3); else m.fund = (m.fund || 0) + rest;
+      if (kh) { kh.money += cost; if ((kh.stock?.[g] || 0) >= 1) kh.stock[g] -= 1; else marketBuy(sim, sid, g, 1, kh, { force: true }); }   // 客 → 主。主は材料を持ち主から仕入れる
+      else { m.fund = (m.fund || 0) + cost; marketBuy(sim, sid, g, 1, 't' + sid, { force: true }); }   // 主がいなければ町の炊き出し（町の蓄えで材料を買う）
       n.hunger = Math.min(100, n.hunger + 30 * GOODS[g].meals);
       n.pleasure = Math.min(100, n.pleasure + 4);
       st.wayEatInn++;

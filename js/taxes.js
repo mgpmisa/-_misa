@@ -7,6 +7,7 @@ import { clamp } from './rng.js';
 import { JOBS, GOODS } from './data.js';
 import { markWanted, arrest, startFight, humanStats } from './society.js';
 import { houseValue, headOf } from './property.js';
+import { ownStock } from './market.js';
 
 export const TAX_NAME = { poll: '人頭税', land: '地代', sales: '売上税', toll: '関税', war: '戦費税', fine: '罰金', crown: '王領', tithe: '十分の一税' };
 export const PERIOD = 5;                         // 徴税日の間隔（日）。1季（10日）に2回
@@ -381,8 +382,8 @@ function smugglersDaily(sim) {
       sim.remember(p, '夜の桟橋で抜け荷を降ろしているところを見つかった', { emo: -0.8, imp: 0.8, k: 'tax' });
       sim.pushLog(`${s.name}の桟橋で、密輸人${sim.fullName(p)}の抜け荷が見つかった。衛兵が行方を追っている。`, 'event', [p.id], p.pos);
     } else {
-      hh.money += profit;
-      if (R.chance(0.3)) sim.remember(p, `夜の入り江で抜け荷をさばき、関税も払わず${profit}銅貨もうけた`, { emo: 0.4, imp: 0.3, k: 'tax' });
+      ownStock(sim, p.s, R.pick(['cloth', 'jewelry', 'pottery']), p.hh, profit / 20);   // 抜け荷の品を店先に預ける（売れたときにお金）
+      if (R.chance(0.3)) sim.remember(p, '夜の入り江で抜け荷を降ろし、関税も払わずに店先へ流した', { emo: 0.4, imp: 0.3, k: 'tax' });
     }
   }
 }
@@ -738,18 +739,15 @@ export function taxesDaily(sim) {
     const king = S.people[k.kingId];
     // 王領（直轄地）からの上がり：旧 politics の基本収入 30＋町×10 をここに移した
     const towns = S.world.settlements.filter((s) => s.kingdom === k.id);
-    // 王の直轄の畑・森・牧場の産物を町の市場に卸し、その代金を市場の金庫から受け取る（お金は湧かない）
-    let crown = 0;
+    // 王の直轄の畑・森・牧場の産物は、国の品として町の市場の店先に並ぶ。売れたときに代金が国庫へ入る（market.js）
     for (const s of towns) {
       if (S.towns[s.id].occupied || ((s.tribal || s.indep) && s.annexed == null)) continue;
-      const want = s.id === k.capital ? 30 : 10, mc = sim.mcash(s.id), m = sim.market(s.id);
-      const g = s.type === 'port' ? 'fish' : s.type === 'village' ? 'wheat' : 'wood';
-      const price = Math.max(0.5, m.price[g] || 2);
-      const amt = Math.max(0, Math.min(want, mc.cash * 0.05));
-      if (amt < 0.5) continue;
-      mc.cash -= amt; m.stock[g] = (m.stock[g] || 0) + amt / price; crown += amt;
+      const m = sim.market(s.id);
+      const g = s.type === 'port' ? 'fish' : 'wheat';   // 王都のまわりの王領の畑の麦も、王都の市場へ
+      const qty = (s.id === k.capital ? 30 : 10) / Math.max(1, GOODS[g].base);
+      if ((m.stock[g] || 0) > GOODS[g].target * 1.5) continue;   // 余っていれば出さない
+      ownStock(sim, s.id, g, 'k' + k.id, qty);
     }
-    k.treasury += crown; k.fisc.dayIn += crown; k.fisc.cur.crown += crown;
     kingPolicy(sim, k);
     royalBounty(sim, k);
     unrestDaily(sim, k);

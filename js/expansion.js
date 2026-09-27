@@ -26,6 +26,8 @@ import { humanStats, startFight } from './society.js';
 import { killCreature, townMask } from './creatures.js';
 import { addSaying } from './politics.js';
 import { speechStyle } from './speech.js';
+import { marketBuy, ownStock } from './market.js';
+import { moneyOut, newcomerMoney, flow } from './ledger.js';
 
 // ---------- 定数 ----------
 export const EXP_CS = 8;                       // 区画の大きさ（danger.js の危険地図と同じ）
@@ -322,7 +324,7 @@ function armySize(sim, kid) { let n = 0; for (const p of sim.living()) if (ARMY.
 function upkeep(sim, k) {
   const tr = sim.S.territory;
   const extra = Math.max(0, territorySize(sim, k.id) - (tr.init[k.id] || 0));
-  if (extra > 0) { k.treasury -= extra * 0.25; const st = sim.S.expansion.stats; st.spent = st.spent || {}; st.spent.upkeep = Math.round((st.spent.upkeep || 0) + extra * 0.25); }
+  if (extra > 0) { k.treasury -= extra * 0.25; { const t = sim.S.towns[k.capital]; if (t) t.fund += extra * 0.25; else k.treasury += extra * 0.25; } const st = sim.S.expansion.stats; st.spent = st.spent || {}; st.spent.upkeep = Math.round((st.spent.upkeep || 0) + extra * 0.25); }
 }
 
 // ---------- 王の判断 ----------
@@ -521,8 +523,19 @@ function newProject(sim, k, kind, ci, extra = {}) {
 }
 function spend(sim, k, pr, amt) {
   k.treasury -= amt; if (pr) pr.spent += amt;
+  payOut(sim, k, pr, amt);
   const st = sim.S.expansion.stats; st.spent = st.spent || {}; const key = pr ? `${pr.kind}:${pr.stage}` : 'other'; st.spent[key] = Math.round((st.spent[key] || 0) + amt);
 }
+// 工事と支度の支払い先：開拓団の大人たち（手間賃）。団員がいなければ王都の蓄え（役人・職人の手間賃）へ
+// ただし開拓の手当（grant）と日当は、呼んだ側がすでに本人へ渡している（payOut を二重にしない）
+function payOut(sim, k, pr, amt) {
+  if (!(amt > 0) || spend._skip) return;
+  const S = sim.S;
+  const adults = pr ? (pr.members || []).map((id) => S.people[id]).filter((p) => p && p.deathYear == null && sim.isAdult(p) && sim.hh(p)) : [];
+  if (adults.length) { const each = amt / adults.length; for (const p of adults) sim.hh(p).money += each; flow(sim, '国庫', '開拓団', amt, '普請の手間賃'); }
+  else { const t = S.towns[k.capital]; if (t) t.fund += amt; else k.treasury += amt; flow(sim, '国庫', '町の蓄え', amt, '開拓の支度（役人と職人の手間賃）'); }
+}
+function spendTo(sim, k, pr, amt) { spend._skip = true; try { spend(sim, k, pr, amt); } finally { spend._skip = false; } }
 function dirWord(from, to) {
   const dx = to.x - from.x, dz = to.z - from.z;
   const a = Math.atan2(dz, dx) * 180 / Math.PI;
@@ -559,7 +572,7 @@ function startExplore(sim, k) {
   const c = cCenter(ci);
   scout.mission = { type: 'travel', x: c.x, z: c.z, until: S.t + 14 * 60 };
   scout.action = null;
-  earn(sim, scout, 15, 0.6);
+  earn(sim, scout, 15, 0.6); spendTo(sim, k, pr, 15);
   sim.remember(scout, `${kname(k.id)}から、未開の${dirWord(sim.town(scout.s), c)}の地を探る役目を仰せつかった`, { emo: 0.4, imp: 0.6, k: 'frontier' });
   sim.pushLog(`${kname(k.id)}が、${sim.fullName(scout)}を斥候として${dirWord(sim.town(scout.s), c)}の未踏の地へ送り出した。`, 'event', [scout.id], scout.pos);
 }
@@ -587,7 +600,7 @@ function startVillage(sim, k, c, site) {
     pr.scout = scout.id;
     scout.mission = { type: 'travel', x: site.x, z: site.z, until: S.t + 12 * 60 };
     scout.action = null;
-    earn(sim, scout, 10, 0.6);
+    earn(sim, scout, 10, 0.6); spendTo(sim, k, pr, 10);
     sim.remember(scout, `${pr.dir}の${FEATURE_WORD[pr.feature]}に村を開けるか、下見を命じられた`, { emo: 0.3, imp: 0.5, k: 'frontier' });
   }
   spend(sim, k, pr, 20);
@@ -748,7 +761,7 @@ function stepRecruit(sim, pr, k) {
     if (u.type === 'hh') hh.expProj = pr.id;
     const adultsN = u.ids.filter((id) => sim.isAdult(S.people[id])).length;
     const g = pr.grant * adultsN;
-    spend(sim, k, pr, g);
+    spendTo(sim, k, pr, g);
     hh.money += g;
   }
   for (const id of pr.members) {
@@ -868,7 +881,7 @@ function stepWork(sim, pr, k, pop) {
   if (!adults.length) return fail(sim, pr, '開拓団の大人がひとりもいなくなった');
   // 国庫が尽きると、手当も資材も止まる
   if (k.treasury < 40) { pr.morale -= 0.05; if (R.chance(0.3)) for (const p of adults) sim.remember(p, '国からの手当が止まり、開拓地の暮らしが苦しくなった', { emo: -0.5, imp: 0.4, k: 'frontier' }); if (pr.morale <= 0) return fail(sim, pr, '国の手当が尽き、開拓団は散り散りになった'); return; }
-  for (const p of adults) { earn(sim, p, 2, 0.5); spend(sim, k, pr, 2); }
+  for (const p of adults) { earn(sim, p, 2, 0.5); spendTo(sim, k, pr, 2); }
   if (attackCheck(sim, pr, k)) return;
   let labor = laborOf(sim, pr);
   const changed = [];
@@ -878,8 +891,7 @@ function stepWork(sim, pr, k, pop) {
       const i = pr.clear.shift();
       if (!CLEARABLE.has(w.tiles[i])) continue;
       w.tiles[i] = T.GRASS; changed.push(i); labor -= 1; pr.cleared++;
-      if (m) m.stock.wood += 1.2;
-      k.treasury += 0.8;   // 伐った木を売った代金の一部は国のもの
+      if (m) ownStock(sim, pr.from, 'wood', 'k' + k.id, 1.2);   // 伐った木は国の品として市場へ（売れたときに国庫へ）
     }
     if (R.chance(0.15)) toil(sim, pr, adults, 'clear');
     if (!pr.clear.length) {
@@ -893,7 +905,7 @@ function stepWork(sim, pr, k, pop) {
       const i = pr.fence.shift();
       const t = w.tiles[i];
       if (!(BUILDABLE.has(t) || CLEARABLE.has(t) || t === T.ROCK || t === T.SWAMP)) continue;
-      if (m && m.stock.wood >= 1) { m.stock.wood -= 1; spend(sim, k, pr, m.price.wood * 0.5); } else spend(sim, k, pr, GOODS.wood.base * 1.6);
+      if (m && m.stock.wood >= 1) marketBuy(sim, pr.from, 'wood', 1, 'k' + k.id, { force: true }); else { const c = GOODS.wood.base * 1.6; k.treasury -= c; pr.spent += c; moneyOut(sim, c, 'よその国から資材を取り寄せた'); }
       w.tiles[i] = T.FENCE; changed.push(i); labor -= 1.5;
     }
     if (R.chance(0.12)) toil(sim, pr, adults, 'fence');
@@ -988,7 +1000,8 @@ function found(sim, pr, k) {
   (S.expansion.origK = S.expansion.origK || {})[sid] = pr.k;
   const stock = {}, price = {};
   for (const [g, G] of Object.entries(GOODS)) { stock[g] = G.target * (g === 'wheat' ? 0.5 : g === 'wood' ? 0.8 : 0.15); price[g] = G.base; }
-  S.towns[sid] = { stock, price, commission: 0, fund: 40, history: [], occupied: false, damage: 0 };
+  S.towns[sid] = { stock, price, fund: 0, history: [], occupied: false, damage: 0 };
+  { const x = Math.max(0, Math.min(40, k.treasury)); k.treasury -= x; S.towns[sid].fund += x; }   // 村の蓄えの元手は国庫から
   S.culture = S.culture || {}; S.culture[sid] = [];
   if (S.initPop) S.initPop[sid] = 0;
   // 広場と十字の通り
@@ -1031,6 +1044,7 @@ function addMigrants(sim, pr, s) {
     sim.remember(p, `${origin}から流れてきて、${s.name}の開拓団に加わった`, { emo: 0.5, imp: 0.95, k: 'arrival' });
     p.deeds.push(`${origin}から${s.name}の開拓に加わった`);
   }
+  newcomerMoney(sim, S.households[hhId], members, 'よそから来た開拓民の持ち金');
   pr.units.push({ type: 'hh', hh: hhId, ids: members.map((p) => p.id), migrant: true });
   pr.members.push(...members.map((p) => p.id));
   sim.dirty();
@@ -1076,12 +1090,12 @@ function buildQueue(sim, pr, k, labor, changed) {
 // 資材：市場にあれば買い、なければ遠くから取り寄せる（国庫払い）。戻り値は国が払った額
 function materials(sim, pr, k, wood, stone) {
   const m = sim.market(pr.from);
-  let cost = 0;
   for (const [g, n] of [['wood', wood], ['stone', stone]]) {
     if (!n) continue;
-    if (m && m.stock[g] >= n) { m.stock[g] -= n; cost += n * m.price[g]; } else cost += n * GOODS[g].base * 1.6;
+    if (m && m.stock[g] >= n) { const price = m.price[g]; marketBuy(sim, pr.from, g, n, 'k' + k.id, { force: true }); pr.spent += n * price; }
+    else { const c = n * GOODS[g].base * 1.6; k.treasury -= c; pr.spent += c; moneyOut(sim, c, 'よその国から資材を取り寄せた'); }
   }
-  return cost;
+  return 0;
 }
 function placeIn(sim, s, type, name, bw, bd, extra = {}) {
   const w = sim.S.world;
@@ -1403,8 +1417,7 @@ function postBounties(sim, pr, k, n) {
   for (const c of cs) {
     const power = c.atk + c.maxhp / 8;
     const rank = Math.min(6, Math.floor(power / 9));
-    const reward = Math.round((15 + power * 3) * (c.named ? 3 : 1.4));
-    spend(sim, k, pr, reward);
+    const reward = Math.round((15 + power * 3) * (c.named ? 3 : 1.4));   // 報酬は果たしたときに国庫から（guild.js）
     c.quested = true;
     S.nextQuest = (S.nextQuest || 0) + 1;
     const q = { id: S.nextQuest, state: 'open', takenBy: [], posted: sim.today, deadline: sim.today + 16, type: 'hunt', s: k.capital, from: pr.from ?? k.capital, target: c.id, rank, reward, giver: k.kingId, title: `${sim.placeName(c.pos.x, c.pos.z)}の${c.name}を討て（${kshort(k.id)}王の布告・開拓のため）`, exp: pr.id };
@@ -1438,7 +1451,7 @@ function stepPurge(sim, pr, k) {
   const S = sim.S, R = sim.rng, P = pr.purge, X = S.expansion;
   const days = sim.today - pr.sday;
   const troops = P.troops.map((id) => S.people[id]).filter((p) => p && p.deathYear == null && p.expedition === pr.id);
-  for (const p of troops) { earn(sim, p, 3, 0.6); spend(sim, k, pr, 3); }
+  for (const p of troops) { earn(sim, p, 3, 0.6); spendTo(sim, k, pr, 3); }
   const th = threatsNear(sim, pr.x, pr.z);
   let rem = th.ids.map((id) => S.creatures[id]).filter((c) => c && c.hp > 0);
   // 戦い（遠くの土地でも進むよう、日ごとにまとめて決める。近くにいれば毎時の本物の戦いも起きる）
@@ -1712,7 +1725,7 @@ function stepFort(sim, pr, k) {
     if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
     b = placeBox(sim, 'fort', pr.name, c.x - 1 + dx, c.z - 1 + dz, 3, 3, { kingdom: pr.k, special: true, fort: true, faces: pr.others.map(kshort).join('・'), capital: k.capital, exp: pr.id }, true);
   }
-  if (!b) { S.expansion.bad = S.expansion.bad || {}; S.expansion.bad[pr.ci] = sim.today; k.treasury += 120; return fail(sim, pr, '砦を建てる場所が見つからなかった', true); }
+  if (!b) { S.expansion.bad = S.expansion.bad || {}; S.expansion.bad[pr.ci] = sim.today; return fail(sim, pr, '砦を建てる場所が見つからなかった', true); }
   (w.specials = w.specials || []).push(b.id);
   (w.forts = w.forts || []).push(b.id);
   spend(sim, k, pr, materials(sim, pr, k, 10, 16));
@@ -1776,13 +1789,18 @@ function resourceYields(sim, pop) {
     if (hands <= 0) continue;
     for (const r of list) {
       switch (r) {
-        case 'timber': m.stock.wood += 0.6 * hands; break;
-        case 'stone': m.stock.stone += 0.4 * hands; break;
-        case 'ore': m.stock.ore += 0.4 * hands; break;
-        case 'gem': if (sim.rng.chance(0.03 * hands)) m.stock.gem += 1; break;
-        case 'fertile': m.stock.wheat += 1.0 * hands; break;
-        case 'harbor': m.stock.fish += 0.5 * hands; break;
-        case 'salt': S.kingdoms[k].treasury += 1.2 * hands; break;    // 塩の専売
+        case 'timber': ownStock(sim, best.id, 'wood', 'k' + k, 0.6 * hands); break;
+        case 'stone': ownStock(sim, best.id, 'stone', 'k' + k, 0.4 * hands); break;
+        case 'ore': ownStock(sim, best.id, 'ore', 'k' + k, 0.4 * hands); break;
+        case 'gem': if (sim.rng.chance(0.03 * hands)) ownStock(sim, best.id, 'gem', 'k' + k, 1); break;
+        case 'fertile': ownStock(sim, best.id, 'wheat', 'k' + k, 1.0 * hands); break;
+        case 'harbor': ownStock(sim, best.id, 'fish', 'k' + k, 0.5 * hands); break;
+        case 'salt': {   // 塩の専売：町の人が国の塩を買う
+          const buyer = Object.values(S.households).filter((h) => h.s === best.id && !h.bandits && !h.royal && h.money > 30).sort((a, b) => b.money - a.money)[0];
+          const x = buyer ? Math.min(1.2 * hands, buyer.money - 30) : 0;
+          if (x > 0) { buyer.money -= x; S.kingdoms[k].treasury += x; flow(sim, '町の人', '国庫', x, '専売の塩'); }
+          break;
+        }
         case 'water': break;
       }
     }

@@ -35,6 +35,7 @@ import { ITEMS, makeItem, addItem, autoEquip, itemName, itemValue } from './item
 import { humanStats, markWanted } from './society.js';
 import { spendable, pay, earn } from './property.js';
 import { learnAt, gainSkill } from './growth.js';
+import { owe } from './payday.js';
 
 // ---------- 名前と分類 ----------
 export const GEAR_LABEL = { repair: '装備の修理を頼んでいる', lesson: '道場で謝礼を払って稽古している' };
@@ -484,7 +485,7 @@ export function gearDaily(sim) {
     if (isCrown(p)) {
       const f = payFactor(sim, k);
       const amt = r1(CROWN_DEF[p.job] * generosity(sim, k) * f);
-      if (worked && amt >= 0.3) { k.treasury -= amt; spend(sim, k, amt); earn(sim, p, amt, 0.5); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }
+      if (worked && amt >= 0.3) { owe(sim, p, 'k' + k.id, amt, '危険手当'); spend(sim, k, amt); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }   // 給料日に国庫から（payday.js）
       else if (worked) g.paid = 0;
       hazard = clamp(amt / CROWN_DEF[p.job], 0, 1.5);
       if (k.treasury < 30) paidOK = false;
@@ -492,7 +493,7 @@ export function gearDaily(sim) {
     } else if (TOWN_DEF[p.job]) {
       const t = S.towns[p.s];
       const amt = r1(TOWN_DEF[p.job] * (t.fund > 150 ? 1 : t.fund > 60 ? 0.5 : 0));
-      if (worked && amt > 0) { t.fund -= amt; earn(sim, p, amt, 0.5); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }
+      if (worked && amt > 0) { owe(sim, p, 't' + p.s, amt, '危険手当'); st.hazardPaid += amt; g.earned += amt; g.paid = amt; }   // 給料日に町の蓄えから
       hazard = amt / TOWN_DEF[p.job];
       if (t.fund < 10) paidOK = false;
     } else if (isAdv(p)) { paidOK = spendable(sim, p) > 15; hazard = 0.6; }

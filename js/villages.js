@@ -33,6 +33,8 @@ import { humanStats, startFight } from './society.js';
 import { speechStyle } from './speech.js';
 import { houseValue, transferEstate } from './property.js';
 import { clamp } from './rng.js';
+import { marketBuy, marketDeliver } from './market.js';
+import { moneyIn } from './ledger.js';
 
 // ---------- 新しい職業と死因（data.js は編集しない） ----------
 const NEW_JOBS = {
@@ -352,7 +354,7 @@ export function initVillages(sim, opt = {}) {
   seedRelations(sim);
   sim._townMask = null;
   sim.dirty();
-  if (opt.late) { const add = moneyTotal(sim) - money0; if (add > 0) { S.ledger = S.ledger || { seed: 0, outside: 0 }; S.ledger.outside = (S.ledger.outside || 0) + add; } }
+  if (opt.late) { const add = moneyTotal(sim) - money0; if (add > 0) moneyIn(sim, add, '新しく見つかった独立村の持ち金'); }
   const names = S.villages.list.map((V) => `${V.name}（${KINDS[V.kind].label}）`);
   if (names.length) sim.pushLog(`どの国にも属さない村がある：${names.join('、')}。`, 'event');
   return S.villages;
@@ -462,7 +464,7 @@ function buildVillage(sim, fv, kind, changed, popGoal) {
   // 市場（物々交換の場）と村の蓄え
   const stock = {}, price = {};
   for (const [g, G] of Object.entries(GOODS)) { const mine = K.goods.includes(g); stock[g] = G.target * (mine ? 0.9 : ['wheat', 'meat', 'bread', 'fish'].includes(g) ? 0.5 : 0.12); price[g] = G.base; }
-  S.towns[sid] = { stock, price, commission: 0, fund: R.int(90, 180), history: [], occupied: false, damage: 0, unrest: 0, alms: 0, mats: {} };
+  S.towns[sid] = { stock, price, fund: R.int(90, 180), history: [], occupied: false, damage: 0, unrest: 0, alms: 0, mats: {} };
   S.culture = S.culture || {};
   S.culture[sid] = V.laws.map((l) => ({ text: LAWS[l].name, w: 3, origin: '村の掟' }));
   if (S.expansion) { S.expansion.sk[sid] = faces; (S.expansion.origK = S.expansion.origK || {})[sid] = faces; }
@@ -1011,18 +1013,12 @@ function doBarter(sim, t, p) {
   if (!from || !to) return;
   const V = XV(sim).list[sim.town(p.s)?.vid];
   const goods = t.data.goods || {};
-  if (typeof sim.mcash === 'function') sim.mcash(t.to);
-  if (to.cash == null) to.cash = 0;   // 市場の金庫がない本体でも止まらない（経済部の新しい決まりに合わせる直しは別に行う）
   let got = 0;
-  for (const [g, n] of Object.entries(goods)) {
-    to.stock[g] = (to.stock[g] || 0) + n;
-    const val = Math.min(n * (to.price[g] || GOODS[g].base) * 0.8, to.cash);
-    to.cash -= val; got += val;
-  }
-  // 代金の6割は村の蓄えへ、4割は運んだ者の家へ
-  const fundPart = got * 0.6;
-  if (from) from.fund = (from.fund || 0) + fundPart;
-  const hh = sim.hh(p); if (hh) hh.money += got - fundPart;
+  // 村の品は相手の町の商人が買い取る（買わなければ店に預け、売れたときに村の蓄えへ）
+  for (const [g, n] of Object.entries(goods)) got += marketDeliver(sim, t.to, g, n, 't' + p.s, { consign: true }).got;
+  // 代金はいったん村の蓄えに入る。そのうち4割を運んだ者の家へ
+  const hh = sim.hh(p);
+  if (hh && from) { const carry = Math.min(got * 0.4, Math.max(0, from.fund || 0)); from.fund -= carry; hh.money += carry; }
   // 村に足りないものを買って帰る（村の蓄えから相手の市の金庫へ）
   const want = (V ? KINDS[V.kind].wants : ['wheat']).filter((g) => GOODS[g]);
   for (const g of want) {
@@ -1030,7 +1026,7 @@ function doBarter(sim, t, p) {
     if (n <= 0) continue;
     const cost = n * (to.price[g] || GOODS[g].base);
     if ((from.fund || 0) < cost + 20) continue;
-    from.fund -= cost; to.cash += cost; to.stock[g] -= n; from.stock[g] = (from.stock[g] || 0) + n;
+    const bought = marketBuy(sim, t.to, g, n, 't' + p.s); from.stock[g] = (from.stock[g] || 0) + bought;   // 村の蓄え → 品の持ち主
   }
   const vk = partyKeyOfSid(sim, t.to), pk = partyKeyOf(sim, p);
   addFeel(sim, vk, pk, 0.6, null, 1);
@@ -1089,7 +1085,7 @@ function upkeep(sim, V, s) {
       const par = [S.people[p.fatherId], S.people[p.motherId]].find((q) => q && allowed.has(q.job) && q.job !== 'vchief');
       const job = par && R.chance(0.6) ? par.job : pickJob(sim, Object.entries(K.jobs), count, p);
       count[job] = (count[job] || 0) + 1;
-      p.job = job; p.rank = JOBS[job].rank; p.skill[job] = Math.max(p.skill[job] || 0, 0.25); p.plan = null; p.shop = null;
+      p.job = job; p.rank = JOBS[job].rank; p.skill[job] = Math.max(p.skill[job] || 0, 0.25); if (p.plan?.saved > 0) p.purse = (p.purse || 0) + p.plan.saved; p.plan = null; p.shop = null;
       if (JOBS[job].combat) { armVillager(p, R); Object.assign(p, humanStats(sim, p)); }
     }
   }
@@ -2091,7 +2087,7 @@ function askHelp(sim, V, k, kind) {
     const amt = xfer(acct(sim, k), acct(sim, me), Math.min(60, fund * 0.15));
     // 食べ物・薬（品物は市から市へ）
     const from = q.sid != null ? S.towns[q.sid] : null, to = S.towns[V.sid];
-    if (from && to) for (const g of kind === 'plague' ? ['medicine', 'herbs'] : ['wheat', 'meat', 'bread']) { const n = Math.min(12, (from.stock[g] || 0) * 0.3); from.stock[g] -= n; to.stock[g] = (to.stock[g] || 0) + n; }
+    if (from && to) for (const g of kind === 'plague' ? ['medicine', 'herbs'] : ['wheat', 'meat', 'bread']) { const n = Math.min(12, (from.stock[g] || 0) * 0.3); const got = marketBuy(sim, q.sid, g, n, 't' + q.sid, { force: true }); to.stock[g] = (to.stock[g] || 0) + got; }   // 援助の品は、送る側の町が持ち主から買って送る
     addFeel(sim, me, k, 14, `${label}のとき、${q.name}が助けてくれた`, 0.3);
     note(sim, [me, k], `${label}に苦しむ${V.name}の頼みに、${q.name}が応えて${amt ? `${r0(amt)}銅貨と` : ''}${kind === 'plague' ? '薬' : '食べ物'}を送った`, 2, V, q.kind === 'kingdom' ? q.k : undefined);
     tell(sim, me, `${label}のとき、${q.name}が助けてくれた。この恩は忘れない`, 0.7, 0.8, 10);
@@ -2667,7 +2663,7 @@ export function moneyTotal(sim) {
   let t = 0;
   for (const h of Object.values(S.households)) t += h.money || 0;
   for (const p of Object.values(S.people)) t += p.purse || 0;
-  for (const m of Object.values(S.towns)) t += (m.fund || 0) + (m.cash || 0) + (m.commission || 0) + (m.alms || 0);
+  for (const m of Object.values(S.towns)) t += (m.fund || 0) + (m.alms || 0) + (m.guild?.box || 0);
   for (const k of S.kingdoms || []) t += k.treasury || 0;
   return t;
 }

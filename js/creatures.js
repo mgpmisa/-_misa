@@ -10,6 +10,7 @@ import { DROPS, addItem, makeItem } from './items.js';
 import { splitCoins, splitLoot } from './guild.js';
 import { faunaThink, faunaDied, popTarget, canHunt } from './fauna.js';
 import { monsterThink, onMonsterKilled } from './monsters.js';
+import { moneyIn } from './ledger.js';
 
 // 生息数の目安
 const POP = {
@@ -479,7 +480,8 @@ export function killCreature(sim, c, killer) {
       if (p.job === 'hunter') p.needs.esteem = Math.min(100, p.needs.esteem + 10);
     } else {
       const loot = (def.loot || 5) * c.lv + (c.bounty || 0);
-      splitCoins(sim, p, loot);
+      splitCoins(sim, p, loot);   // 退治の報酬は国庫・町の蓄えから（guild.js）
+      if (c.treasure > 0) { const x = c.treasure; c.treasure = 0; moneyIn(sim, x, '竜の巣の宝'); const hh = sim.hh(p); if (hh) hh.money += x; else p.purse = (p.purse || 0) + x; sim.remember(p, `${c.name}の巣から${x}銅貨ぶんの宝を持ち帰った`, { emo: 0.8, imp: 0.8, k: 'hunt' }); }
       p.fame += Math.round((def.loot || 5) / 8) + (c.named ? 30 : 0);
       p.needs.esteem = Math.min(100, p.needs.esteem + 15 + (c.named ? 50 : 0));
       sim.remember(p, `${c.name}を倒した${loot > 30 ? `（${Math.round(loot)}銅貨の報酬）` : ''}`, { emo: 0.6, imp: c.named || def.loot >= 60 ? 1 : 0.45, k: 'hunt', where: { x: Math.round(c.pos.x), z: Math.round(c.pos.z) } });

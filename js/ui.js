@@ -15,6 +15,10 @@ import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
 import { elderCard, elderBuildingRows } from './elder.js';
 import { BLD_LABEL, BLD_GO, BLD_PREF, BLD_TYPE_LABEL, buildingRows } from './buildings.js';
+import { econFlowHTML } from './ledger.js';
+import { MARKET_LABEL, MARKET_GO, MARKET_PREF, marketTownHTML, stockText } from './market.js';
+import { wageText } from './payday.js';
+import { shopRows } from './shops.js';
 import { NEEDS_LABEL, NEEDS_GO, NEEDS_PREF, needsLabel } from './needs.js';
 import { laborCard, laborNationHTML, LABOR_LABEL, LABOR_GO, LABOR_PREF } from './labor.js';
 import { monsterHtml } from './monsters.js';
@@ -71,6 +75,7 @@ Object.assign(ACTION_LABEL, { levy: '税を取り立てている', petition: '�
 Object.assign(ACTION_LABEL, LABOR_LABEL); Object.assign(ACTION_GO, LABOR_GO); Object.assign(PREF_LABEL, LABOR_PREF);
 Object.assign(ACTION_LABEL, CHORE_LABEL); Object.assign(ACTION_GO, CHORE_GO); Object.assign(PREF_LABEL, CHORE_PREF);
 Object.assign(ACTION_LABEL, BLD_LABEL); Object.assign(ACTION_GO, BLD_GO); Object.assign(PREF_LABEL, BLD_PREF);
+Object.assign(ACTION_LABEL, MARKET_LABEL); Object.assign(ACTION_GO, MARKET_GO); Object.assign(PREF_LABEL, MARKET_PREF);
 Object.assign(ACTION_LABEL, NEEDS_LABEL); Object.assign(ACTION_GO, NEEDS_GO); Object.assign(PREF_LABEL, NEEDS_PREF);
 for (const t of Object.keys(BLD_TYPE_LABEL)) INTERIOR_TYPES.add(t);
 const WEATHER = { sunny: '晴れ', cloudy: 'くもり', rain: '雨', snow: '雪' };
@@ -511,7 +516,7 @@ export class UI {
       <canvas id="priceChart" width="300" height="90"></canvas>
       <p>黄＝パン　緑＝小麦（最近の値動き）</p>
       <p>世帯 ${hhs.length}　平均の蓄え ${avg.toFixed(0)}銅貨　町の蓄え ${Math.round(m.fund)}銅貨<br>
-      貧しい世帯 ${poor}　お腹をすかせた人 ${hungry}人　盗み ${m.crime || 0}件${m.occupied ? '<br><b class="up">魔王軍に占領されている</b>' : ''}</p>${bankEconHTML(this.sim, sid, esc) || ''}`;
+      貧しい世帯 ${poor}　お腹をすかせた人 ${hungry}人　盗み ${m.crime || 0}件${m.occupied ? '<br><b class="up">魔王軍に占領されている</b>' : ''}</p>${bankEconHTML(this.sim, sid, esc) || ''}${marketTownHTML(this.sim, sid)}${econFlowHTML(this.sim, esc)}`;
     const cv = $('priceChart'), g = cv.getContext('2d');
     const hist = m.history;
     if (hist.length > 1) {
@@ -664,7 +669,7 @@ export class UI {
       const worth = (p.inv || []).reduce((s2, it) => s2 + itemValue(it), 0);
       h += `<div class="section"><h4>装備と持ち物</h4><dl class="kv">${Object.entries(slotName).map(([k, n]) => eq[k] ? `<dt>${n}</dt><dd>${esc(itemName(eq[k]))}${ITEMS[eq[k].id].atk ? `（攻+${Math.round(ITEMS[eq[k].id].atk * eq[k].q)}）` : ITEMS[eq[k].id].def ? `（守+${Math.round(ITEMS[eq[k].id].def * eq[k].q)}）` : ''}${gearItemNote(eq[k]) ? `<br><span class="sub">${esc(gearItemNote(eq[k]))}</span>` : ''}</dd>` : '').join('')}
         <dt>持ち物</dt><dd>${inv.map((it) => esc(itemName(it))).join('、') || 'なし'}</dd>${p.treasures?.length ? `<dt>宝物</dt><dd>${p.treasures.map(esc).join('、')}</dd>` : ''}
-        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
+        <dt>所持金</dt><dd>${Math.round(p.purse || 0)}銅貨（持ち物の値打ち ${worth}銅貨）</dd>${wageText(sim, p) ? `<dt>給金</dt><dd>${esc(wageText(sim, p))}</dd>` : ''}${bankPersonHTML(sim, p, esc) || ''}</dl></div>`;
       if (isAdventurer(p)) {
         const q = (S.quests || []).find((x) => x.id === p.quest);
         const pt = p.party ? S.advParties?.[p.party] : null;
@@ -782,7 +787,7 @@ export class UI {
       h += `<div class="section"><h4>家の値打ちと持ち主</h4><dl class="kv"><dt>住まい</dt><dd>${status}</dd><dt>持ち主</dt><dd>${own ? `${esc(own.name)}${oh ? `（${this.pLink(oh, oh.given)}）` : ''}` : '町'}</dd><dt>値打ち</dt><dd>${b.value || '—'}銅貨</dd>${b.rent ? `<dt>家賃</dt><dd>週${b.rent}銅貨${b.arrears ? `　<b class="down">滞納${b.arrears}週</b>` : ''}</dd>` : ''}</dl></div>`;
     }
     const hh = b.hh != null ? S.households[b.hh] : null;
-    if (hh) h += `<div class="section"><h4>暮らしている家族</h4><dl class="kv"><dt>蓄え</dt><dd>${Math.round(hh.money)}銅貨</dd><dt>食糧</dt><dd>${Math.floor(hh.food)}食分</dd></dl><ul class="rels" style="margin-top:6px">${hh.members.map((id) => S.people[id]).filter(Boolean).map((q) => `<li><span>${this.pLink(q, `${q.given}・${q.family}`)}</span><span class="dead">${sim.ageOf(q)}歳</span></li>`).join('')}</ul></div>`;
+    if (hh) h += `<div class="section"><h4>暮らしている家族</h4><dl class="kv"><dt>蓄え</dt><dd>${Math.round(hh.money)}銅貨</dd><dt>食糧</dt><dd>${Math.floor(hh.food)}食分</dd>${stockText(sim, hh) ? `<dt>蔵の品</dt><dd>${esc(stockText(sim, hh))}</dd>` : ''}</dl><ul class="rels" style="margin-top:6px">${hh.members.map((id) => S.people[id]).filter(Boolean).map((q) => `<li><span>${this.pLink(q, `${q.given}・${q.family}`)}</span><span class="dead">${sim.ageOf(q)}歳</span></li>`).join('')}</ul></div>`;
     if (b.type === 'smithy' && b.settlement != null) {
       const shop = S.towns[b.settlement].shop || [];
       h += `<div class="section"><h4>店に並ぶ品</h4><ul class="rels">${shop.map((it) => `<li><span>${esc(itemName(it))}</span><span class="dead">${Math.round(itemValue(it) * 1.2)}銅貨</span></li>`).join('') || '<li>品切れ</li>'}</ul></div>`;
@@ -791,8 +796,8 @@ export class UI {
       const qs = (S.quests || []).filter((q) => q.s === b.settlement && ['open', 'taken', 'report'].includes(q.state));
       h += `<div class="section"><h4>依頼掲示板</h4><ul class="rels">${qs.map((q) => `<li><span>［${RANKS_ADV[q.rank]}］${esc(q.title)}</span><span class="dead">${q.reward}銅貨</span></li>`).join('') || '<li>いまは依頼がない</li>'}</ul></div>`;
     }
-    const br = buildingRows(sim, b);
-    if (br.length) h += `<div class="section"><h4>${esc(BLD_TYPE_LABEL[b.type] || '')}</h4><dl class="kv">${br.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
+    const br = [...shopRows(sim, b), ...(buildingRows(sim, b) || [])];
+    if (br.length) h += `<div class="section"><h4>${esc(BLD_TYPE_LABEL[b.type] || '店と持ち主')}</h4><dl class="kv">${br.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const er = elderBuildingRows(sim, b);
     if (er.length) h += `<div class="section"><h4>救貧院</h4><dl class="kv">${er.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
     const inside = sim.living().filter((q) => q.inside === b.id);

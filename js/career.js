@@ -157,6 +157,7 @@ function newPlan(sim, p, cnt) {
   const rate = 0.5 + p.pers.C * 1.2;
   const years = clamp(Math.ceil(c.need / (rate * DAYS_PER_YEAR)) + R.int(0, 2), 1, 8);
   const fromDream = DREAM_GOAL[p.dream] === (c.goal === 'newshop' ? 'shop' : c.goal);
+  if (p.plan?.saved > 0) { p.purse = (p.purse || 0) + p.plan.saved; p.plan.saved = 0; }   // 前の計画の貯えは財布へ戻す
   p.plan = { goal: c.goal, job: c.job, txt: c.txt, need: c.need, saved: 0, since: sim.today, deadline: sim.today + years * DAYS_PER_YEAR, stage: 'saving', fromDream };
   // 夢が叶った・夢を諦めた人は、この計画を新しい夢にする
   if (p._dreamFree) { p.dream = c.txt; p.plan.fromDream = true; p._dreamFree = false; }
@@ -242,7 +243,7 @@ function planDay(sim, p, plan, cnt) {
     p.purse = (p.purse || 0) - fromPurse;
     let fromHh = 0;
     if (hh && hh.money > 110 && sim.ageOf(p) >= 20) { fromHh = Math.min((hh.money - 110) * 0.02, 2); hh.money -= fromHh; }
-    plan.saved = Math.min(plan.need, plan.saved + fromPurse + fromHh);
+    { const add = fromPurse + fromHh, over = Math.max(0, plan.saved + add - plan.need); plan.saved += add - over; if (over > 0) p.purse = (p.purse || 0) + over; }   // 貯めすぎた分は財布へ（消さない）
     if (plan.saved >= plan.need) { plan.stage = 'waiting'; sim.remember(p, `${plan.txt}ためのお金がとうとう貯まった`, { emo: 0.7, imp: 0.6, k: 'career' }); }
     else if (plan.saved >= plan.need * 0.8 && !plan.near) { plan.near = true; sim.remember(p, `${plan.txt}まで、あと少しだ`, { emo: 0.5, imp: 0.4, k: 'career' }); }
   }
@@ -312,6 +313,7 @@ function achieve(sim, p, plan, cnt) {
       if ((cnt[p.s]?.knight || 0) >= quotaOf(sim, p.s, 'knight') + 1) return;
       if ((p.lv || 1) < 3 && !sim.rng.chance(0.3)) return;
       const k = sim.kingdomOf(p);
+      { const x = plan.saved * 0.8; const sm = sim.living().find((q) => q.s === p.s && q.job === 'smith' && sim.hh(q)); if (sm) sim.hh(sm).money += x; else S.towns[p.s].fund += x; }   // 鎧と馬の代金は鍛冶屋へ
       p.purse += plan.saved * 0.2; plan.saved = 0;
       const old = p.job;
       setJob(sim, p, 'knight', 0.35);
@@ -322,6 +324,7 @@ function achieve(sim, p, plan, cnt) {
     }
     case 'scholar': {
       if ((cnt[p.s]?.scholar || 0) >= quotaOf(sim, p.s, 'scholar') + 1 || !canLeave(sim, cnt, p.s, p.job)) return;
+      { const t = sim.living().find((q) => q !== p && ['scholar', 'teacher', 'magister'].includes(q.job) && sim.hh(q) && sim.town(q.s).kingdom === sim.townOf(p).kingdom); if (t) sim.hh(t).money += plan.saved; else S.towns[p.s].fund += plan.saved; }   // 師への謝礼と書物の代金
       plan.saved = 0;
       const old = p.job;
       setJob(sim, p, 'scholar', 0.3);

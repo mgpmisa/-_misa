@@ -10,6 +10,7 @@ import { dangerAt } from './danger.js';
 import { around } from './creatures.js';
 import { startFight, markWanted } from './society.js';
 import { isAdventurer, advRank, RANKS_ADV, QUEST_TYPE_NAME } from './guild.js';
+import { marketBuy, marketDeliver } from './market.js';
 
 export const MAX_CONVOYS = 14;          // 同時に走る隊商の上限
 const CHECK_EVERY = 10;                 // 道中の判定の間隔（分）
@@ -230,7 +231,7 @@ export function startTradeConvoy(sim, p, tr) {
   const qty = Math.min(kind === 'ship' ? 20 : 10, Math.floor(from.stock[g] / 2), Math.floor(hh.money / Math.max(0.1, from.price[g])));
   if (qty <= 0) { p._tradeCd = S.t + 240; return false; }
   const cost = qty * from.price[g];
-  from.stock[g] -= qty; hh.money -= cost; sim.mcash(p.s).cash += cost;   // 代金は出発地の市場の金庫へ
+  if (marketBuy(sim, p.s, g, qty, hh, { force: true }) < qty - 1e-6) { p._tradeCd = S.t + 240; return false; }   // 代金は出発地の品の持ち主（商人・作り手）へ
   const risk = kind === 'cart' ? routeRisk(sim, path) : { risk: 0, danger: 0, bandit: false };
   const c = newConvoy(sim, { kind, goods: { [g]: qty }, cost, from: p.s, to: tr.dest, path, owner: p.id, hh: p.hh, risk: risk.risk, roundTrip: kind === 'ship' });
   if (tr.fund != null) { c.fund = tr.fund; const ph = sim.hh(p); if (ph && ph !== hh) { const f = Math.min(5, Math.max(0, hh.money)); hh.money -= f; ph.money += f; } }   // 市場組合に雇われた荷運び：手間賃5銅貨
@@ -247,7 +248,7 @@ export function startTradeConvoy(sim, p, tr) {
     if (scared) risk.risk += 4;
     if (risk.risk >= 3.5) hireEscort(sim, p, c, risk);
     if (scared && !c.guards.length) {
-      from.stock[g] += qty; { const mc = sim.mcash(p.s); const back = Math.min(cost, mc.cash); mc.cash -= back; hh.money += back; }
+      marketDeliver(sim, p.s, g, qty, tr.fund != null ? 't' + tr.fund : p.hh, { consign: true });   // 出すのをやめた荷は、店に戻して売ってもらう
       S.convoys.splice(S.convoys.indexOf(c), 1); S.logi.departed--;
       p.action = null; if (p._spot > 1e6) p._spot = 0; p._tradeCd = S.t + 720;
       sim.remember(p, `${dest.name}への道に盗賊が出ると聞き、護衛も見つからないので荷を出すのを見合わせた`, { emo: -0.3, imp: 0.4, k: 'trade' });
@@ -297,14 +298,17 @@ function hireEscort(sim, p, c, risk) {
 }
 
 // ---------- 定期船（港どうし。船長の家の資金で荷を積み、往復する） ----------
-function pickCargo(sim, fromSid, toSid, budget) {
+function pickCargo(sim, fromSid, toSid, budget, payer) {
   const a = sim.market(fromSid), b = sim.market(toSid);
   const opts = Object.keys(GOODS).map((g) => ({ g, r: b.price[g] / a.price[g] })).filter((o) => o.r > 1.08 && a.stock[o.g] > GOODS[o.g].target * 0.45).sort((x, y) => y.r - x.r);
   const goods = {}; let n = 0, cost = 0;
   for (const { g } of opts) {
     const q = Math.min(12, SHIP_CAP - n, Math.floor(a.stock[g] - GOODS[g].target * 0.35), Math.floor((budget - cost) / a.price[g]));
     if (q <= 0) continue;
-    goods[g] = q; n += q; cost += q * a.price[g]; a.stock[g] -= q;
+    const price = a.price[g];
+    const got = payer ? marketBuy(sim, fromSid, g, q, payer, { whole: true }) : 0;
+    if (got <= 0) continue;
+    goods[g] = got; n += got; cost += got * price;
     if (n >= SHIP_CAP) break;
   }
   return { goods, cost };
@@ -318,8 +322,7 @@ function launchLiner(sim, port) {
   if (!cap) return;
   const dest = R.pick(dests);
   const hh = sim.hh(cap);
-  const { goods, cost } = pickCargo(sim, port.id, dest.id, Math.max(0, Math.min(300, (hh?.money || 0) * 0.6)));
-  if (hh) hh.money -= cost; sim.mcash(port.id).cash += cost;
+  const { goods, cost } = pickCargo(sim, port.id, dest.id, Math.max(0, Math.min(300, (hh?.money || 0) * 0.6)), hh);
   const c = newConvoy(sim, { kind: 'ship', goods, cost, from: port.id, to: dest.id, path: seaRoute(sim, port.id, dest.id), owner: cap.id, hh: cap.hh, roundTrip: true, liner: true });
   board(sim, cap, c, 'sail');
   for (const q of crewAll.filter((x) => x !== cap).slice(0, 2)) { board(sim, q, c, 'sail'); c.crew.push(q.id); }
@@ -437,7 +440,7 @@ function robbed(sim, c, band, hide, where) {
   S.logi.robbed++; S.logi.lostValue += val;
   S.logi.bad = S.logi.bad || {}; S.logi.bad[routeKey(c.from, c.to)] = sim.today;   // この道は危ないと町に知れ渡る
   const bhh = band[0] && sim.hh(band[0]);
-  if (bhh) { const mc = sim.mcash(c.to); const pay = Math.max(0, Math.min(val * 0.4, mc.cash)); mc.cash -= pay; bhh.money += pay; }   // 故買屋を通して市場へ流す（代金は市場の金庫から）          // 奪った荷は闇で売りさばく
+  if (bhh) for (const [g, n] of Object.entries(lost)) if (n > 0) marketDeliver(sim, c.to, g, n * 0.6, bhh, { consign: true });   // 奪った荷は闇で市場に流す（売れたときに盗賊の家計へ）   // 故買屋を通して市場へ流す（代金は市場の金庫から）          // 奪った荷は闇で売りさばく
   if (band[0]) markWanted(sim, band[0], '追いはぎ', 15);
   if (hide) hide.robberies = (hide.robberies || 0) + 1;
   for (const b of band) sim.remember(b, `街道で商人の荷車を襲い、${goodsText(lost)}を奪った`, { emo: 0.3, imp: 0.5, k: 'crime' });
@@ -525,11 +528,9 @@ function stormCheck(sim, c) {
 function sellGoods(sim, c, sid) {
   const m = sim.market(sid);
   let earn = 0;
-  for (const [g, n] of Object.entries(c.goods)) { if (n <= 0) continue; earn += n * m.price[g] * 0.92; m.stock[g] += n; }
-  const hh = acctOf(sim, c);
-  // 買い取りの代金は、着いた町の市場の金庫から（金庫が細ければ、払える分だけ）
-  const mc = sim.mcash(sid); earn = Math.max(0, Math.min(earn, mc.cash)); mc.cash -= earn;
-  if (hh) hh.money += earn; else mc.cash += earn;
+  const who = c.fund != null ? 't' + c.fund : (sim.S.households[c.hh] ? c.hh : 't' + sid);
+  for (const [g, n] of Object.entries(c.goods)) { if (n <= 0) continue; earn += marketDeliver(sim, sid, g, n, who, { consign: true, capMul: 1.3 }).got; }
+  void m;
   return earn;
 }
 function arriveConvoy(sim, c) {
@@ -569,8 +570,7 @@ function arriveConvoy(sim, c) {
 function departReturn(sim, c) {
   const S = sim.S;
   const hh = acctOf(sim, c);
-  const { goods, cost } = pickCargo(sim, c.to, c.from, Math.max(0, Math.min(300, (hh?.money || 0) * 0.6)));
-  if (hh) hh.money -= cost; sim.mcash(c.to).cash += cost;
+  const { goods, cost } = pickCargo(sim, c.to, c.from, Math.max(0, Math.min(300, (hh?.money || 0) * 0.6)), hh);
   c.goods = goods; c.cost = cost;
   const back = seaRoute(sim, c.to, c.from);
   if (!back) { abandon(sim, c, null); return; }
@@ -590,15 +590,16 @@ function payEscort(sim, c) {
   q.state = 'done'; q.closed = sim.today;
   if (!guards.length) return;
   q.doneBy = guards.map((g) => g.given).join('・');
-  const share = Math.round(q.reward / guards.length);
-  if (hh) hh.money -= q.reward;
+  const paid = hh ? q.reward : 0;   // 荷主が払えた分だけを配る
+  const share = paid / guards.length;
+  if (hh) hh.money -= paid;
   for (const g of guards) {
-    g.purse = (g.purse || 0) + share * 0.7; const gh = sim.hh(g); if (gh) gh.money += share * 0.3;
+    g.purse = (g.purse || 0) + share * 0.7; const gh = sim.hh(g); if (gh) gh.money += share * 0.3; else g.purse += share * 0.3;
     g.qp = (g.qp || 0) + 1 + q.rank;
     const before = g.advRank || 0; g.advRank = advRank(g);
     g.fame = (g.fame || 0) + 1 + q.rank;
     if (g.quest === q.id) g.quest = null;
-    sim.remember(g, `「${q.title}」をやり遂げ、${share}銅貨の報酬を受け取った`, { emo: 0.6, imp: 0.5, k: 'quest' });
+    sim.remember(g, `「${q.title}」をやり遂げ、${Math.round(share)}銅貨の報酬を受け取った`, { emo: 0.6, imp: 0.5, k: 'quest' });
     if (g.advRank > before) sim.remember(g, `冒険者ランクが${RANKS_ADV[g.advRank]}に上がった`, { emo: 0.9, imp: 0.85, k: 'quest' });
   }
   sim.pushLog(`冒険者${q.doneBy}が「${q.title}」を達成した。`, 'event', guards.map((g) => g.id), c.pos);

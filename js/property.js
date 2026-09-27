@@ -3,6 +3,7 @@
 import { landlords as landlordList } from './perf.js';
 import { JOBS } from './data.js';
 import { lodgingKeeper } from './buildings.js';
+import { distrain } from './shops.js';
 import { ITEMS, addItem, autoEquip, itemName, itemValue } from './items.js';
 
 const TOWN_MUL = { capital: 1.6, port: 1.2, village: 0.8 };
@@ -76,7 +77,7 @@ export function pay(sim, p, amt) {
   const hh = sim.hh(p);
   const fromPurse = Math.min(p.purse || 0, amt);
   p.purse = (p.purse || 0) - fromPurse;
-  if (amt > fromPurse && hh) hh.money -= amt - fromPurse;
+  if (amt > fromPurse) { if (hh) hh.money -= amt - fromPurse; else p.purse -= amt - fromPurse; }
 }
 // 稼ぎの一部は自分の財布へ、残りは家計へ
 export function earn(sim, p, amt, keep = 0.5) {
@@ -152,6 +153,7 @@ export function propertyDaily(sim) {
       lord.money += b.rent - need;
       if (need <= 0.5) { b.arrears = 0; continue; }
       b.arrears = (b.arrears || 0) + 1;
+      if (b.arrears === 2) distrain(sim, tenant, lord.id, need, '家賃');   // 2週目：差し押さえ
       const head = headOf(sim, tenant), lh = headOf(sim, lord);
       if (head) sim.remember(head, `家賃を払えず、${lh ? lh.given : hhName(sim, lord.id)}に待ってもらった`, { emo: -0.6, imp: 0.55, about: lh ? [lh.id] : [], k: 'rent' });
       if (b.arrears >= 3) evict(sim, b, tenant, lord);
@@ -266,7 +268,7 @@ export function inherit(sim, p) {
   const S = sim.S;
   const heir = heirOf(sim, p);
   const inv = (p.inv || []).filter((it) => !(ITEMS[it.id]?.type === 'consumable'));
-  const purse = Math.round(p.purse || 0);
+  const purse = p.purse || 0;   // 端数を丸めない（丸めるとお金が湧いたり消えたりする）
   p.purse = 0;
   if (!heir) {
     if (purse > 0) S.towns[p.s].fund += purse;
@@ -280,7 +282,7 @@ export function inherit(sim, p) {
   autoEquip(heir);
   p.estate = { to: heir.id, purse, items: inv.length };
   const bits = [];
-  if (purse >= 5) bits.push(`${purse}銅貨`);
+  if (purse >= 5) bits.push(`${Math.round(purse)}銅貨`);
   if (best && itemValue(best) >= 20) bits.push(`形見の${itemName(best)}`);
   if (bits.length) sim.remember(heir, `亡き${sim.kinTerm(heir, p) || p.given}から${bits.join('と')}を受け継いだ`, { emo: -0.2, imp: 0.75, about: [p.id], k: 'inherit' });
   return heir;
@@ -296,9 +298,12 @@ export function transferEstate(sim, oldHh, heirHhId) {
   }
   if (oldHh.land) { if (to != null) S.households[to].land = (S.households[to].land || 0) + oldHh.land; oldHh.land = 0; }
   for (const c of Object.values(S.creatures)) if (c.keeper === oldHh.id) c.keeper = to;
-  if (to == null) S.towns[oldHh.s].fund += Math.max(0, oldHh.money);
-  else S.households[to].money += Math.max(0, oldHh.money);
+  if (to == null) S.towns[oldHh.s].fund += oldHh.money;
+  else S.households[to].money += oldHh.money;
   oldHh.money = 0;
+  if (oldHh.stock && to != null) { const st = S.households[to].stock || (S.households[to].stock = {}); for (const [g, n] of Object.entries(oldHh.stock)) st[g] = (st[g] || 0) + n; }   // 蔵の品も受け継ぐ
+  // 市場に預けた品と未払いの給金は、受け継いだ家へ
+  for (const t of Object.values(S.towns)) for (const list of Object.values(t.lots || {})) for (const l of list) if (l.o === oldHh.id) l.o = to != null ? to : 't' + oldHh.s;
 }
 
 // 小作：自分の畑を持たない農夫は、収穫の一部を地主に納める
@@ -309,7 +314,8 @@ export function fieldShare(sim, p, qty) {
   const lord = landlordList(sim).filter((h) => h.land >= 8 && (h.s === p.s || sim.town(h.s).kingdom === town.kingdom)).sort((a, b) => (a.s === p.s ? -1 : 1) - (b.s === p.s ? -1 : 1) || b.land - a.land)[0];
   if (!lord) return qty;
   const cut = qty * 0.3;
-  lord.food += cut * 0.3; lord.money += cut * 0.7 * sim.price('wheat', p.s) * 0.8;
+  lord.food += cut * 0.3;
+  const st = lord.stock || (lord.stock = {}); st.wheat = (st.wheat || 0) + cut * 0.7;   // 残りの麦は地主の蔵へ。地主が市場で売ったときにお金になる
   return qty - cut;
 }
 // 畑を買う：お金が貯まった小作は、地主から畑を買い取って自作農になる

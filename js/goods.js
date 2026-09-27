@@ -97,7 +97,7 @@ export const CATALOG = {
   horn:      C('ユニコーンの角', 'magic', 200, 1, { src: 'monster', item: 'horn', rare: true, uses: '霊薬・王族の収集' }),
   // ---- 魔術素材（魔石の等級：魔石＜大魔石＜魔核） ----
   magicstone:C('魔石', 'magic', 30, 4, { src: 'monster', item: 'magicstone', uses: '魔法の研究・魔灯・霊薬・護符・魔法の杖' }),
-  crystal:   C('大魔石', 'magic', 160, 1, { src: 'craft', rare: true, uses: '宮廷魔術の大研究・王族の収集' }),
+  magicstone_large:   C('大魔石', 'magic', 160, 1, { src: 'craft', rare: true, uses: '宮廷魔術の大研究・王族の収集' }),
   demoncore: C('魔核', 'magic', 90, 1, { src: 'monster', item: 'demoncore', rare: true, uses: '宮廷魔術の研究・王族の収集' }),
   magiclamp: C('魔灯', 'magic', 34, 3, { src: 'craft', uses: '屋敷と灯台と街路の明かり' }),
   charm:     C('護符・お守り', 'magic', 10, 6, { src: 'craft', uses: '冒険者と信心深い人のお守り' }),
@@ -115,7 +115,7 @@ export const CATALOG = {
   amber:     C('琥珀', 'jewel', 15, 4, { src: 'sea', port: true, prod: [0.5, 2, 0.1], uses: '装身具・香水・収集' }),
   // ---- 収集品 ----
   coin:      C('古代の硬貨', 'collect', 25, 3, { src: 'ruin', rare: true, uses: '好事家の収集・学者の研究' }),
-  fossil:    C('化石', 'collect', 30, 2, { src: 'earth', rare: true, uses: '好事家の収集・学者の研究' }),
+  fossil_shell:    C('貝の化石', 'collect', 30, 2, { src: 'earth', rare: true, uses: '好事家の収集・学者の研究' }),
   antique:   C('骨董・古文書', 'collect', 70, 2, { src: 'ruin', prod: [1, 1, 1.8], rare: true, uses: '貴族の収集・学者の研究・競売' }),
   book:      C('書物', 'collect', 22, 4, { src: 'craft', uses: '学者と魔法使いの研究・貴族の書庫・教会' }),
   // ---- 王族の趣味の品 ----
@@ -204,7 +204,7 @@ export const RECIPES = [
   R('perfume', ALCH, { herbs: 2, spice: 0.3, glass: 0.3 }, { perfume: 1 }, 3, { alt: ['gatherer', 'gardener', 'courtmage'], name: '香水を調合する' }),
   R('perfume_a', ALCH, { amber: 0.5, herbs: 1, glass: 0.3 }, { perfume: 1 }, 3, { alt: ['gardener', 'courtmage'], name: '琥珀の香水を調合する' }),
   R('magiclamp', MAGE, { magicstone: 0.3, glass: 1, iron: 0.2 }, { magiclamp: 1 }, 3, { name: '魔灯を組む' }),
-  R('crystal', ['courtmage', 'wizard'], { magicstone: 4 }, { crystal: 1 }, 8, { alt: ['sage', 'magister'], name: '魔石を練り合わせて大魔石にする' }),
+  R('magicstone_large', ['courtmage', 'wizard'], { magicstone: 4 }, { magicstone_large: 1 }, 8, { alt: ['sage', 'magister'], name: '魔石を練り合わせて大魔石にする' }),
   R('jewelry_g', JEWEL, { gem: 0.2, silver: 0.5 }, { jewelry: 1 }, 6, { alt: ['smith'], name: '原石を磨いて銀の台にはめる' }),
   R('jewelry_p', JEWEL, { pearl: 0.5, silver: 0.3 }, { jewelry: 1 }, 5, { alt: ['smith', 'diver'], name: '真珠の首飾りを作る' }),
   R('jewelry_a', JEWEL, { amber: 1, silver: 0.3 }, { jewelry: 0.6 }, 4, { alt: ['smith'], name: '琥珀の飾りを作る' }),
@@ -226,12 +226,12 @@ export const GATHER = {
   beekeeper:  { main: [['honey', 0.35]], by: [['wax', 0.08]] },
   gatherer:   { main: [['herbs', 0.6], ['dye', 0.35]], by: [['fruit', 0.1], ['resin', 0.03], ['rareherb', 0.012], ['honey', 0.03], ['wax', 0.01]], find: [['truffle', 0.006]] },
   diver:      { main: [['pearl', 0.03]], by: [['dye', 0.03], ['salt', 0.05], ['amber', 0.01]] },
-  mason:      { main: [['rubble', 1.5]], by: [], find: [['fossil', 0.002]] },
+  mason:      { main: [['rubble', 1.5]], by: [], find: [['fossil_shell', 0.002]] },
   charcoal:   { main: [['firewood', 1.6]], by: [['resin', 0.05]] },
   woodcutter: { main: [['wood', 1.6], ['firewood', 2.2]], by: [['resin', 0.05], ['firewood', 0.3]], find: [['truffle', 0.002]] },
-  miner:      { main: [['ore', 0.9], ['rubble', 1.6]], by: [['rubble', 0.4], ['silver', 0.02], ['gold', 0.004]], find: [['gem', 0.03], ['coin', 0.001], ['fossil', 0.002], ['magicstone', 0.003]] },
-  roadworker: { main: [], by: [['rubble', 0.8], ['clay', 0.3], ['sand', 0.15]], find: [['coin', 0.0015], ['fossil', 0.0015]] },
-  pioneer:    { main: [], by: [['rubble', 0.6], ['clay', 0.3], ['sand', 0.1], ['firewood', 0.3]], find: [['coin', 0.001], ['fossil', 0.001], ['antique', 0.0004]] },
+  miner:      { main: [['ore', 0.9], ['rubble', 1.6]], by: [['rubble', 0.4], ['silver', 0.02], ['gold', 0.004]], find: [['gem', 0.03], ['coin', 0.001], ['fossil_shell', 0.002], ['magicstone', 0.003]] },
+  roadworker: { main: [], by: [['rubble', 0.8], ['clay', 0.3], ['sand', 0.15]], find: [['coin', 0.0015], ['fossil_shell', 0.0015]] },
+  pioneer:    { main: [], by: [['rubble', 0.6], ['clay', 0.3], ['sand', 0.1], ['firewood', 0.3]], find: [['coin', 0.001], ['fossil_shell', 0.001], ['antique', 0.0004]] },
   gardener:   { main: [], by: [['fruit', 0.1], ['herbs', 0.05]] },
   farmer:     { main: [], by: [['fruit', 0.12], ['honey', 0.02], ['wax', 0.006], ['rubble', 0.05], ['spice', 0.08], ['silk', 0.015], ['dye', 0.02]], find: [['coin', 0.0005]] },
   rancher:    { main: [], by: [['milk', 0.6], ['hide', 0.1], ['feather', 0.06], ['bone', 0.04]] },
@@ -468,7 +468,7 @@ export function goodsWork(sim, p, dt, eff, mode = 'full') {
 }
 
 // 珍しい品を掘り当てた・見つけた
-const FIND_TXT = { gem: '宝石の原石を掘り当てた', coin: '土の中から古代の硬貨を掘り出した', fossil: '岩の中から見事な化石を見つけた', antique: '土の中から古い壺と古文書を掘り出した', truffle: '森の奥で白き地茸を見つけた', roe: '網に上等の魚卵がかかった', amber: '浜で大きな琥珀を拾った', pearl: '大粒の真珠を見つけた', magicstone: '岩の割れ目から魔石を掘り出した', liver: '仕留めた獲物から上等の肝がとれた', dragonegg: '竜の巣で卵を見つけた', crystal: '洞窟の奥で大魔石を見つけた', gold: '金の粒を掘り当てた', bandage: 'ミイラの古布を持ち帰った' };
+const FIND_TXT = { gem: '宝石の原石を掘り当てた', coin: '土の中から古代の硬貨を掘り出した', fossil_shell: '岩の中から見事な化石を見つけた', antique: '土の中から古い壺と古文書を掘り出した', truffle: '森の奥で白き地茸を見つけた', roe: '網に上等の魚卵がかかった', amber: '浜で大きな琥珀を拾った', pearl: '大粒の真珠を見つけた', magicstone: '岩の割れ目から魔石を掘り出した', liver: '仕留めた獲物から上等の肝がとれた', dragonegg: '竜の巣で卵を見つけた', magicstone_large: '洞窟の奥で大魔石を見つけた', gold: '金の粒を掘り当てた', bandage: 'ミイラの古布を持ち帰った' };
 export function findGood(sim, p, g, who) {
   const G = ensureGoods(sim);
   const got = putGoods(sim, p, p.s, g, 1);
@@ -492,7 +492,7 @@ export function goodsEarthworks(sim, sid, tiles = 1, p = null) {
     const x = gatherAmt(sim, p, s, g, n * tiles, 'earth');
     if (x > 0) { m.stock[g] += x; noteMade(G, g, x); }
   }
-  for (const [g, ch] of [['coin', 0.01], ['fossil', 0.008], ['antique', 0.003]]) {
+  for (const [g, ch] of [['coin', 0.01], ['fossil_shell', 0.008], ['antique', 0.003]]) {
     if (!R.chance(Math.min(0.6, ch * tiles * kingdomMul(sim, s, g)))) continue;
     if (p) findGood(sim, p, g, '開拓の'); else { m.stock[g] += 1; noteMade(G, g, 1); }
   }
@@ -514,7 +514,7 @@ export function goodsOnExplore(sim, p, b) {
   const t = b.type;
   if ((t === 'ruin' || t === 'ruins' || t === 'pyramid' || t === 'observatory') && R.chance(0.3)) findGood(sim, p, R.chance(0.6) ? 'coin' : 'antique');
   if (t === 'pyramid' && R.chance(0.3)) findGood(sim, p, R.chance(0.6) ? 'bandage' : 'gold');
-  if ((t === 'cave' || t === 'mine') && R.chance(0.12)) findGood(sim, p, R.chance(0.7) ? 'fossil' : 'crystal');
+  if ((t === 'cave' || t === 'mine') && R.chance(0.12)) findGood(sim, p, R.chance(0.7) ? 'fossil_shell' : 'magicstone_large');
   if (t === 'cave' && R.chance(0.03)) findGood(sim, p, 'dragonegg');
 }
 
@@ -823,7 +823,7 @@ function personNeeds(sim, p, si) {
       const w = payer === k ? { money: k.treasury } : payer;
       if (R.chance(0.35) && takeGoods(sim, p.s, 'magicstone', 0.3, w)) { k.research += 1.5; }
       if (p.job === 'courtmage' && k.treasury > 900 && R.chance(0.08)) {
-        const g = ['crystal', 'demoncore', 'dragonegg'].find((x) => m.stock[x] >= 1);
+        const g = ['magicstone_large', 'demoncore', 'dragonegg'].find((x) => m.stock[x] >= 1);
         if (g && takeGoods(sim, p.s, g, 1, w)) {
           k.research += g === 'dragonegg' ? 40 : 20;
           sim.remember(p, `国の金で${goodName(g)}を手に入れ、研究に使った`, { emo: 0.6, imp: 0.6, k: 'research' });
@@ -837,7 +837,7 @@ function personNeeds(sim, p, si) {
   if ((LEARNED.has(p.job) || MAGIC_JOBS.has(p.job)) && k) {
     if (R.chance(0.06) && hh.money > m.price.book + 30 && takeGoods(sim, p.s, 'book', 1, hh)) { k.research += 3; sim.remember(p, '新しい書物を手に入れて読みふけった', { emo: 0.4, imp: 0.3, k: 'study' }); }
     if (p.job === 'scholar' || p.job === 'sage') {
-      for (const g of ['fossil', 'coin', 'antique']) {
+      for (const g of ['fossil_shell', 'coin', 'antique']) {
         if (m.stock[g] >= 1 && R.chance(0.05)) {
           const w = k.treasury > 400 ? { money: k.treasury } : hh;
           if (takeGoods(sim, p.s, g, 1, w)) {
@@ -945,9 +945,9 @@ function armory(sim, k) {
 export const HOBBIES = {
   gourmet: { name: '美食', goods: ['truffle', 'liver', 'roe', 'spice', 'wine', 'cheese', 'mead', 'dragonegg'] },
   jewels:  { name: '宝飾', goods: ['jewelry', 'pearl', 'amber', 'gem', 'gold', 'finery', 'perfume'] },
-  antique: { name: '骨董', goods: ['antique', 'coin', 'fossil', 'book', 'silver'] },
+  antique: { name: '骨董', goods: ['antique', 'coin', 'fossil_shell', 'book', 'silver'] },
   arts:    { name: '芸術', goods: ['painting', 'statue', 'instrument', 'finery', 'glass'] },
-  arcana:  { name: '魔道', goods: ['magiclamp', 'crystal', 'demoncore', 'elixir', 'magicstone', 'horn'] },
+  arcana:  { name: '魔道', goods: ['magiclamp', 'magicstone_large', 'demoncore', 'elixir', 'magicstone', 'horn'] },
   beasts:  { name: '珍獣の品', goods: ['scale', 'horn', 'dragonegg', 'fang', 'hide'] },
 };
 const EAT = new Set(['truffle', 'liver', 'roe', 'spice', 'wine', 'cheese', 'mead', 'perfume', 'elixir', 'magicstone']);

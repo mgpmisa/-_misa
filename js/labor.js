@@ -29,6 +29,7 @@ import { debtsOf } from './finance.js';
 import { fallIll, isBedridden } from './health.js';
 import { markWanted, arrest, humanStats } from './society.js';
 import { makeItem, addItem, autoEquip, countItem } from './items.js';
+import { marketBuy, personPayer } from './market.js';
 
 // ---------- 表 ----------
 export const NEED_JP = { hunger: '食', sleep: '眠り', survival: '身の安全', lust: '恋', sloth: '楽', pleasure: '楽しみ', esteem: '見栄・名誉' };
@@ -431,7 +432,7 @@ export const SPEND = [
   { id: 'wine', every: 2, need: 'pleasure', name: '上等な酒', type: 'dine', place: 'tavern', dur: 70,
     ok: (sim, p) => sim.hour() >= 15 && sim.ageOf(p) >= 16,
     deal: (sim, p) => { const s = findSeller(sim, p.s, ['innkeeper', 'brewer'], p); return s ? { cost: price(sim, p, 'ale') * 4 + 2, seller: s } : null; },
-    fx: (sim, p) => { bump(p, { pleasure: 25, esteem: 3 }); const m = sim.market(p.s); if (m.stock.ale >= 1) m.stock.ale -= 1; }, txt: null },
+    fx: (sim, p, c, d) => { bump(p, { pleasure: 25, esteem: 3 }); const sh = d.seller && sim.hh(d.seller); if (sh) { if ((sh.stock?.ale || 0) >= 1) sh.stock.ale -= 1; else marketBuy(sim, p.s, 'ale', 1, sh); } }, txt: null },
   { id: 'fortune', every: 4, need: 'pleasure', name: '占い', type: 'show', place: 'plaza', dur: 30,
     deal: (sim, p) => { const s = findSeller(sim, p.s, ['fortune'], p); return s ? { cost: 2, seller: s } : null; },
     fx: (sim, p) => bump(p, { pleasure: 12, survival: 5 }), txt: (sim, p) => sim.rng.pick(['占い師に「近いうちによいことがある」と言われた', '占い師に「水辺に気をつけよ」と言われた', '占い師に恋の行方を占ってもらった']) },
@@ -483,7 +484,7 @@ export const SPEND = [
       for (const q of d.guests) { sim.relMut(q, p).a = Math.min(100, sim.rel(q, p).a + 6); sim.remember(q, `${p.given}の宴に招かれた`, { emo: 0.6, imp: 0.45, about: [p.id], k: 'feast' }); }
       // 肉屋にも取り分
       const bt = findSeller(sim, p.s, ['butcher', 'rancher', 'hunter'], p);
-      if (bt && d.cost > 20) { const cut = Math.round(d.cost * 0.25); d.seller && sim.hh(d.seller) && (sim.hh(d.seller).money -= cut); earn(sim, bt, cut, 0.4); }
+      if (bt && d.cost > 20 && d.seller && sim.hh(d.seller)) { const cut = Math.round(d.cost * 0.25); sim.hh(d.seller).money -= cut; earn(sim, bt, cut, 0.4); }   // 宴の肉は、宿の主が肉屋から買う
       sim.pushLog(`${sim.fullName(p)}が酒場で宴を開き、${d.guests.map((q) => q.given).join('・')}をもてなした。`, 'event', [p.id, ...d.guests.map((q) => q.id)], p.pos);
     }, txt: (sim, p, c, d) => `酒場で宴を開き、${d.guests.length}人をもてなした` },
   { id: 'houseshow', need: 'esteem', name: '家の見栄', type: 'shopping', place: 'market', dur: 30,
@@ -589,14 +590,13 @@ export function laborArrive(sim, p) {
     if (sim.rng.chance(0.3)) sim.remember(p, `${it.name}に手が出なかった。懐がさびしい`, { emo: -0.3, imp: 0.25, k: 'spend' });
     return;
   }
-  if (d.stock) { const m = sim.market(p.s); m.stock[d.stock] = Math.max(0, (m.stock[d.stock] || 0) - 1); }
   if (d.alms) { pay(sim, p, d.cost); sim.S.towns[p.s].alms = (sim.S.towns[p.s].alms || 0) + d.cost; recordSpend(sim, p, d.cost, it.need); }
-  else if (d.margin != null) {
-    // 市場の在庫から買う：商人の取り分だけが商人に、残りは市場の仕入れ（作り手に払われた分）として町の蓄えへ戻す
-    transfer(sim, p, d.cost, null, it.need);
-    const cut = Math.round(d.cost * d.margin * 10) / 10;
-    sim.S.towns[p.s].fund -= cut;
-    if (d.seller && sim.hh(d.seller)) { earn(sim, d.seller, cut, 0.4); sim.S.labor.income[d.seller.job] = (sim.S.labor.income[d.seller.job] || 0) + cut; } else sim.S.towns[p.s].fund += cut;
+  else if (d.stock) {
+    // 市場の在庫から買う：代金は品の持ち主（買い取った商人、または店先に預けた作り手）へ（market.js）
+    const got = marketBuy(sim, p.s, d.stock, 1, personPayer(sim, p), { price: d.cost });
+    if (got < 1) { L.nextSpend = sim.S.t + 120; return; }
+    recordSpend(sim, p, d.cost, it.need);
+    sim.S.labor.stats.buys = (sim.S.labor.stats.buys || 0) + 1;
   } else transfer(sim, p, d.cost, d.seller, it.need);
   it.fx(sim, p, ctx, d);
   (L.last || (L.last = {}))[it.id] = sim.today;

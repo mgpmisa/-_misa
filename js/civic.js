@@ -13,6 +13,8 @@ import { restDayFor } from './labor.js';
 import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { chooseYouthJob } from './history.js';
 import { gearDutyBonus } from './gear.js';
+import { marketBuy, marketDeliver } from './market.js';
+import { moneyOut, flow } from './ledger.js';
 
 // ---------- ui.js に足すラベル ----------
 export const CIVIC_LABEL = {
@@ -307,8 +309,9 @@ export function civicWork(sim, p, dt, eff) {
       const g = Object.keys(GOODS).filter((k) => GOODS[k].meals === 0 || k === 'honey').sort((a, b) => m.stock[b] / GOODS[b].target - m.stock[a] / GOODS[a].target)[0];
       const n = Math.min(6, Math.floor(m.stock[g] / 3), Math.floor((hh?.money || 0) * 0.3 / Math.max(0.5, m.price[g])));
       if (n >= 2 && m.stock[g] > GOODS[g].target * 0.8) {
-        m.stock[g] -= n; hh.money -= n * m.price[g]; sim.mcash(p.s).cash += n * m.price[g];
-        p.pack = { g, n, cost: n * m.price[g] };
+        const price = m.price[g];
+        const got = marketBuy(sim, p.s, g, n, hh, { whole: true });
+        if (got >= 1) p.pack = { g, n: got, cost: got * price };
       }
       break;
     }
@@ -335,8 +338,9 @@ function layTile(sim, job, p) {
   const mat = t === T.RIVER ? 'wood' : 'stone';
   const m = sim.market(job.s);
   const need = t === T.RIVER ? 3 : 1;
-  if (m.stock[mat] >= need) { m.stock[mat] -= need; if (k) { const c = need * m.price[mat]; k.treasury -= c; sim.mcash(job.s).cash += c; } }   // 材料の代金は市場の金庫へ
-  else if (k) { const c = need * GOODS[mat].base * 1.5; k.treasury -= c; const L = sim.S.ledger = sim.S.ledger || { seed: 0, outside: 0 }; L.outside -= c; }   // 足りない材料は国の外から取り寄せる（お金は世界の外へ出ていく）
+  if (m.stock[mat] >= need && k) marketBuy(sim, job.s, mat, need, 'k' + job.k, { force: true });   // 材料の代金は品の持ち主（石工・木こり・商人）へ
+  else if (m.stock[mat] >= need) m.stock[mat] -= need;
+  else if (k) { const c = need * GOODS[mat].base * 1.5; k.treasury -= c; moneyOut(sim, c, 'よその国から資材を取り寄せた'); }   // 足りない材料は国の外から取り寄せる（お金は世界の外へ出ていく）
   if (t === T.RIVER) w.tiles[i] = T.BRIDGE;
   else if (t !== T.BLD && t !== T.WALL && t !== T.FENCE && !isWater(t)) w.tiles[i] = T.ROAD;
   const c = cache(w); c.net = null;
@@ -388,10 +392,9 @@ export function civicArrive(sim, p, a) {
   const R = sim.rng;
   if (a.type === 'peddle' && p.pack && a.dest != null) {
     const m = sim.market(a.dest), g = p.pack.g, n = p.pack.n;
-    const mc = sim.mcash(a.dest);
-    const got = Math.max(0, Math.min(n * m.price[g] * 0.92, mc.cash));   // 買い取りは行き先の市場の金庫から
-    m.stock[g] += n; mc.cash -= got;
-    const hh = sim.hh(p); if (hh) hh.money += got; else mc.cash += got;
+    const hh = sim.hh(p);
+    const got = marketDeliver(sim, a.dest, g, n, hh || ('t' + a.dest), { consign: true }).got;   // 行き先の商人が買い取る（買わなければ店先に預ける）
+    void m;
     const dest = sim.town(a.dest);
     sim.remember(p, `${dest.name}で${GOODS[g].name}${n}を売り歩き、${Math.round(got - p.pack.cost)}銅貨の${got >= p.pack.cost ? 'もうけ' : '損'}が出た`, { emo: got >= p.pack.cost ? 0.4 : -0.3, imp: 0.3, k: 'trade' });
     p.pack = null;
@@ -400,10 +403,11 @@ export function civicArrive(sim, p, a) {
   if (a.type === 'coach' && a.dest != null) {
     const dest = sim.town(a.dest);
     p.coachDay = sim.today;
-    const ft = sim.S.towns[a.dest] || sim.S.towns[p.s];
-    const fare = Math.max(0, Math.min(R.int(3, 9), (ft.fund || 0) * 0.02));   // 運賃は旅客の払い（町の往来の上がり＝町の蓄えから）
-    ft.fund -= fare;
-    const hh = sim.hh(p); if (hh) hh.money += fare; else ft.fund += fare;
+    const pax = sim.living().filter((q) => q !== p && q.s === a.dest && sim.isAdult(q) && q.jail == null && (sim.hh(q)?.money || 0) > 40 && q.hh !== p.hh);
+    const ph = pax.length ? sim.hh(R.pick(pax)) : null;   // 乗った客（町の人）が運賃を払う
+    const fare = ph ? R.int(3, 9) : 0;
+    const hh = sim.hh(p);
+    if (ph && hh) { ph.money -= fare; hh.money += fare; flow(sim, '駅馬車の客', '御者', fare, '運賃'); }
     if (R.chance(0.3)) sim.remember(p, `駅馬車で${dest.name}まで客を運び、${fare}銅貨の運賃を受け取った`, { emo: 0.2, imp: 0.25, k: 'work' });
     a.until = sim.S.t + 30;
   }

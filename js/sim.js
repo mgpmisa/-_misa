@@ -47,6 +47,10 @@ import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, bui
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
+import { ensureLedger, ledgerDaily, moneyIn, flow, meal, newcomerMoney } from './ledger.js';
+import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCandidates, marketArrive, marketDaily, marketHourly } from './market.js';
+import { accrueWage, paydayDaily } from './payday.js';
+import { ensureShops, shopsDaily, millToll } from './shops.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
 const mortY = (a) => { for (const [x, p] of MORT_Y) if (a <= x) return p; return 0.3; };
@@ -325,7 +329,7 @@ export class Sim {
         const mul = s.type === 'capital' ? 1.3 : s.type === 'port' ? (k === 'fish' ? 1.8 : 0.9) : (k === 'wheat' ? 1.4 : 0.7);
         stock[k] = g.target * mul; price[k] = g.base;
       }
-      this.S.towns[s.id] = { stock, price, commission: 0, fund: 200, history: [], occupied: false, damage: 0 };
+      this.S.towns[s.id] = { stock, price, fund: 200, history: [], occupied: false, damage: 0 };
     }
   }
 
@@ -459,13 +463,9 @@ export class Sim {
   price(g, sid = 0) { return Math.max(1, Math.round(this.S.towns[sid].price[g])); }
   priceRatio(g, sid = 0) { return this.S.towns[sid].price[g] / GOODS[g].base; }
   // 市場の金庫：売り手への支払いはここから出て、買い手の代金はここに入る（お金は湧かず消えない）
-  // 市場の金庫。世界ができたとき（古いセーブは読み込んだとき）だけ、元手800銅貨を置く（S.ledger.seed に記録）。
-  // あとから開かれた町の市場は元手0から始まり、売り買いの代金だけでふくらむ
-  mcash(sid) { const m = this.S.towns[sid]; if (m.cash == null) m.cash = 0; return m; }
-  seedMarkets() {
-    const L = this.S.ledger = this.S.ledger || { seed: 0, outside: 0 };
-    for (const s of this.S.world.settlements) { const m = this.S.towns[s.id]; if (m && m.cash == null) { m.cash = 800; L.seed += 800; } }
-  }
+  // 市場には「どこでもない金庫」を置かない。在庫には持ち主（商人・作り手・町・国）の札が付き、
+  // 売り買いの代金は、買い手 → 品の持ち主へ動く（market.js）。古いセーブの金庫は町の商人へ返す
+  seedMarkets() { ensureMarket(this); ensureShops(this); ensureLedger(this); }
   marketHasFood(sid) { const m = this.S.towns[sid]; return ['bread', 'fish', 'wheat', 'meat'].some((g) => m.stock[g] >= 1); }
   updatePrices() {
     for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
@@ -474,21 +474,17 @@ export class Sim {
       m.price[k] += (target - m.price[k]) * 0.25;
     }
   }
-  sell(p, good, qty) {
-    const m = this.market(p.s), hh = this.hh(p);
-    this.mcash(p.s);
-    const earn = Math.max(0, Math.min(qty * m.price[good] * 0.85 * tradeMul(p), m.cash));
-    m.stock[good] += qty; m.cash -= earn; hh.money += earn;
-    return earn;
-  }
+  // 作った品は、その場では売らない。家の蔵に入れ、あとで市場へ運んで売る（お金はそのとき入る）
+  sell(p, good, qty) { return stash(this, p, good, qty); }
+  // 市場で買う：代金は品の持ち主（商人・作り手・町）へ
   buy(p, good, qty) {
-    const m = this.market(p.s), hh = this.hh(p);
-    qty = Math.min(qty, Math.floor(m.stock[good]), Math.floor(hh.money / m.price[good]));
-    if (qty <= 0) return 0;
-    const cost = qty * m.price[good];
-    this.mcash(p.s);
-    m.stock[good] -= qty; hh.money -= cost; m.cash += cost * 0.94; m.commission += cost * 0.06;
-    return qty;
+    const hh = this.hh(p);
+    if (!hh) return 0;
+    return marketBuy(this, p.s, good, qty, hh, { whole: true });
+  }
+  innkeeperOf(sid, salt = 0) {
+    const L = this.living().filter((q) => q.job === 'innkeeper' && q.s === sid && q.jail == null && this.hh(q));
+    return L.length ? L[(salt + this.dayIndex) % L.length] : null;
   }
   hasTech(p, tech) { const k = this.kingdomOf(p); return k && k.techs.includes(tech); }
 
@@ -610,6 +606,7 @@ export class Sim {
     const mealTime = (h >= 6 && h < 8.5) || (h >= 11.5 && h < 13.5) || (h >= 18 && h < 20);
     // 小さな子は自分で食べ物を探さない。家の蓄えから食べさせてもらう
     if (age < 6 && n.hunger < 55 && hh.food >= 0.5) { hh.food -= 0.5; n.hunger = Math.min(100, n.hunger + 50); }
+    if (n.hunger < 60 && hh.food < 1 && hh.stock) cookFromStock(this, hh, hh.members.length * 2);   // 蔵の麦・魚・肉で自炊する
     if (n.hunger < 60 && !bedtime && age >= 6) {
       const sc = (100 - n.hunger) / 14 + (mealTime ? 2.5 : 0);
       const innMeal = this.price('bread', p.s) * 2 + 1;
@@ -688,6 +685,7 @@ export class Sim {
     buildingsOptions(this, p, add);
     careerOptions(this, p, add);
     financeCandidates(this, p, add);
+    marketCandidates(this, p, add);
     gearCandidates(this, p, add);
     laborCandidates(this, p, add);
     underworldDecide(this, p, cands, add);
@@ -837,18 +835,24 @@ export class Sim {
       case 'shop': this.doShop(p); break;
       case 'eat':
         if (a.food === 'inn') {
-          // 宿の食事：宿屋が市場から材料を仕入れて料理する（材料がなければ出せない）
+          // 宿の食事：客は宿屋の主に払う。主は自分の蔵の品か、市場で仕入れた品（代金は品の持ち主へ）で料理を出す
           const m = this.market(p.s);
-          const g = ['bread', 'fish', 'meat'].find((x) => m.stock[x] >= 1);
-          const keepers = this.living().filter((q) => q.job === 'innkeeper' && q.s === p.s);
-          const keeper = keepers.length ? keepers[(p.id + this.dayIndex) % keepers.length] : null;
-          const cost = g ? Math.round(m.price[g] * 1.6 + 1) : 0;
-          if (g && spendable(this, p) >= cost) {
-            pay(this, p, cost);
-            m.stock[g] -= 1;
-            this.mcash(p.s).cash += m.price[g];   // 仕入れ値は市場の金庫へ
-            if (keeper && this.hh(keeper)) this.hh(keeper).money += cost - m.price[g]; else this.S.towns[p.s].fund += cost - m.price[g]; // 残りが宿のもうけ（宿の主がいなければ町の蓄え）
+          const keeper = this.innkeeperOf(p.s, p.id), kh = keeper && this.hh(keeper);
+          const FOODS = ['bread', 'fish', 'meat'];
+          const g = (kh && FOODS.find((x) => (kh.stock?.[x] || 0) >= 1)) || FOODS.find((x) => m.stock[x] >= 1);
+          if (g && kh && kh !== hh) {
+            const cost = Math.round(m.price[g] * 1.6 + 1);
+            if (spendable(this, p) >= cost) {
+              pay(this, p, cost); kh.money += cost;
+              flow(this, '宿の客', '宿屋の主人', cost, '宿の食事');
+              if ((kh.stock?.[g] || 0) >= 1) kh.stock[g] -= 1; else marketBuy(this, p.s, g, 1, kh, { force: true });
+              p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
+              meal(this, 'inn', GOODS[g].meals);
+            }
+          } else if (g && hh && marketBuy(this, p.s, g, 1, hh, { whole: true }) >= 1) {
+            // 宿の主がいない：客が市場の屋台で買って、その場で食べる
             p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
+            meal(this, 'bought', GOODS[g].meals);
           }
         }
         else if (hh.food >= 1) { hh.food -= 1; p.needs.hunger = Math.min(100, p.needs.hunger + 60); }
@@ -871,12 +875,18 @@ export class Sim {
       case 'tavern': {
         const qty = this.rng.int(1, 2) + (p.pers.N > 0.7 && this.rng.chance(0.3) ? 1 : 0);
         const m = this.market(p.s);
-        const cost = qty * m.price.ale;
-        if (spendable(this, p) > cost) {
-          pay(this, p, cost);
-          const keeper = this.living().find((q) => q.job === 'innkeeper' && q.s === p.s);
-          { const ale = Math.min(cost, Math.min(qty, m.stock.ale) * m.price.ale * 0.6); this.mcash(p.s).cash += ale; const rest = cost - ale; if (keeper && this.hh(keeper)) this.hh(keeper).money += rest; else this.S.towns[p.s].fund += rest; }   // 酒の仕入れは市場へ、残りは酒場の主へ
-          m.stock.ale = Math.max(0, m.stock.ale - qty);
+        const keeper = this.innkeeperOf(p.s, p.id), kh = keeper && this.hh(keeper);
+        // 酒場の麦酒：主の蔵の酒か、市場の酒（酒造りの品）を主が仕入れて出す。客は主に払う
+        const have = (kh && kh !== hh ? (kh.stock?.ale || 0) : 0) + Math.floor(m.stock.ale || 0);
+        const served = Math.min(qty, Math.floor(have));
+        const cost = served * (m.price.ale * 1.5 + 0.5);
+        if (served >= 1 && spendable(this, p) > cost) {
+          if (kh && kh !== hh) {
+            pay(this, p, cost); kh.money += cost;
+            flow(this, '酒場の客', '宿屋の主人', cost, '麦酒');
+            const own = Math.min(served, kh.stock?.ale || 0); if (own > 0) kh.stock.ale -= own;
+            if (served - own > 0) marketBuy(this, p.s, 'ale', served - own, kh, { force: true });
+          } else if (hh) marketBuy(this, p.s, 'ale', served, hh, { whole: true });
           if (qty >= 3 && this.rng.chance(0.2 + p.pers.E * 0.2)) {
             const pred = this.rng.pick(['酒場で飲みすぎて大声で歌い出した', '酒場で酔っぱらってテーブルの上で踊った', '酒場で飲みすぎて椅子から転げ落ちた']);
             this.gossip(p, pred, -0.1, this.living().filter((q) => q.inside === p.inside && q.id !== p.id), { silent: true });
@@ -929,23 +939,25 @@ export class Sim {
     gearArrive(this, p);
     laborArrive(this, p);
     needsArrive(this, p, a);
+    marketArrive(this, p, a);   // 市場で品を売る・市の露店（market.js）
   }
 
   doShop(p) {
     const hh = this.hh(p), m = this.market(p.s);
     const want = hh.members.length * 4;
+    if (hh.stock && hh.house != null && hh.food < want) cookFromStock(this, hh, want - hh.food);
     let guard = 20;
     while (hh.food < want && guard-- > 0 && hh.house != null) {
       const opts = ['bread', 'fish', 'wheat', 'meat'].filter((g) => m.stock[g] >= 1 && hh.money >= m.price[g]);
       if (!opts.length) break;
       const g = opts.sort((a, b) => m.price[a] / GOODS[a].meals - m.price[b] / GOODS[b].meals)[0];
       if (!this.buy(p, g, 1)) break;
-      hh.food += GOODS[g].meals;
+      hh.food += GOODS[g].meals; meal(this, 'bought', GOODS[g].meals);
       if (g === 'meat') p.needs.pleasure = Math.min(100, p.needs.pleasure + 8);
     }
     if (hh.house == null && p.needs.hunger < 60) {
       const g = ['bread', 'fish', 'wheat'].find((x) => m.stock[x] >= 1 && hh.money >= m.price[x]);
-      if (g && this.buy(p, g, 1)) p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
+      if (g && this.buy(p, g, 1)) { p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals); meal(this, 'bought', GOODS[g].meals); }
     }
     if (isAdventurer(p) || JOBS[p.job]?.combat) {
       while (countItem(p, 'potion') < 2 && m.stock.medicine >= 1 && hh.money > m.price.medicine + 15 && this.buy(p, 'medicine', 1)) addItem(p, makeItem('potion'));
@@ -963,14 +975,13 @@ export class Sim {
     if (!tr) return;
     const hh = this.hh(p);
     const from = this.market(p.s), to = this.market(tr.dest);
-    // 出発地で仕入れ済みとみなし、到着地で売る
-    const qty = Math.min(10, Math.floor(from.stock[tr.good] / 2), Math.floor(hh.money / from.price[tr.good]));
+    // 出発地の市場で品の持ち主から買い、行き先の市場の商人に売る（商人が買わなければ店先に預ける）
+    const price0 = from.price[tr.good];
+    const qty = marketBuy(this, p.s, tr.good, Math.min(10, Math.floor(from.stock[tr.good] / 2)), hh, { whole: true });
     if (qty <= 0) return;
-    from.stock[tr.good] -= qty; hh.money -= qty * from.price[tr.good];
-    const earn = qty * to.price[tr.good] * 0.92;
-    const tm = this.mcash(tr.dest ?? to.id ?? p.s); const earn2 = Math.max(0, Math.min(earn, tm.cash)); tm.cash -= earn2;
-    to.stock[tr.good] += qty; hh.money += earn2;
-    const profit = earn - qty * from.price[tr.good];
+    const r = marketDeliver(this, tr.dest, tr.good, qty, hh, { consign: true });
+    const profit = r.got - qty * price0;
+    void to;
     this.remember(p, `${this.town(tr.dest).name}で${GOODS[tr.good].name}を売って${Math.round(profit)}銅貨もうけた`, { emo: profit > 0 ? 0.5 : -0.4, imp: 0.45, k: 'trade' });
     p.needs.esteem = Math.min(100, p.needs.esteem + (profit > 0 ? 15 : -5));
     // 帰りは家へ
@@ -998,11 +1009,13 @@ export class Sim {
     if (tribeWork(this, p, dt, eff)) return; // 民族の里：とれた物は家の蔵と里の蓄えへ（売らない・お金は動かない）
     switch (p.job) {
       case 'farmer': {
-        const q = fieldShare(this, p, 1.1 * sm * this.S.harvest * eff);
-        if (hh.food < hh.members.length * 3) hh.food += q; else this.sell(p, 'wheat', q);
+        // 収穫した麦は家の蔵へ（小作は地主に麦で納める）。家の食べ物が足りなければ、そのまま自炊にまわす
+        // 農夫ひとりは一家の畑を受け持つ。町の食べ物は湧かなくなったので、畑の実りで町まで養えるだけ採れる
+        const q = fieldShare(this, p, 3.0 * sm * this.S.harvest * eff);
+        if (hh.food < hh.members.length * 3) { const q2 = millToll(this, p.s, q, hh); hh.food += q2; meal(this, 'self', q2); } else stash(this, p, 'wheat', q);
         break;
       }
-      case 'rancher': this.sell(p, 'meat', 0.35 * eff); break;
+      case 'rancher': stash(this, p, 'meat', 0.6 * eff); break;
       case 'hunter': {
         if (!p.fight && this.rng.chance(0.05 * dt)) {
           let prey = null, bd = 9;
@@ -1013,14 +1026,15 @@ export class Sim {
           }
           if (prey) startFight(this, p, prey);
         }
+        stash(this, p, 'meat', 0.12 * eff);   // 罠にかかった兎や鳥（小さな獲物）
         break;
       }
-      case 'fisher': case 'sailor': this.sell(p, 'fish', 0.75 * (si === 3 ? 0.5 : 1) * (this.hasTech(p, 'navigation') ? 1.3 : 1) * eff); break;
-      case 'woodcutter': this.sell(p, 'wood', 1.6 * eff); break;
+      case 'fisher': case 'sailor': stash(this, p, 'fish', 1.0 * (si === 3 ? 0.5 : 1) * (this.hasTech(p, 'navigation') ? 1.3 : 1) * eff); break;
+      case 'woodcutter': stash(this, p, 'wood', 1.6 * eff); break;
       case 'miner': {
-        this.sell(p, 'ore', 0.9 * eff);
+        stash(this, p, 'ore', 0.9 * eff);
         if (this.rng.chance(0.0015 * dt)) {
-          this.sell(p, 'gem', 1);
+          stash(this, p, 'gem', 1);
           this.remember(p, '鉱山の奥で宝石を掘り当てた', { emo: 0.9, imp: 0.8 });
           this.gossip(p, '鉱山で宝石を掘り当てた', 0.6, this.living().filter((q) => q.s === p.s), { congrat: '宝石を掘り当てたんだってね' });
           p.needs.esteem = 100;
@@ -1028,32 +1042,28 @@ export class Sim {
         break;
       }
       case 'baker': {
+        // 小麦を市場で買い（代金は麦の持ち主へ）、焼いたパンは店の蔵へ。売れ残りが多ければ焼かない
         const need = 1 * eff;
-        if (m.stock.wheat >= need && m.stock.bread < GOODS.bread.target * 1.6) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; this.mcash(p.s).cash += need * m.price.wheat * 0.9; this.sell(p, 'bread', need * 1.8); }
+        if (m.stock.bread < GOODS.bread.target * 1.6 && (hh.stock?.bread || 0) < 12) { const got = marketBuy(this, p.s, 'wheat', need, hh); if (got > 0) stash(this, p, 'bread', millToll(this, p.s, got, hh) * 1.8); }   // 麦は水車でひく（16分の1は粉ひき代）
         break;
       }
       case 'smith': { this.forge(p, dt, eff); break; }
       case 'carpenter': {
+        // 材木を買って家具を作り、蔵に置く（売れたときに収入）
         const need = 1 * eff;
-        if (m.stock.wood >= need && m.stock.furniture < GOODS.furniture.target * 2) { m.stock.wood -= need; hh.money -= need * m.price.wood * 0.9; this.mcash(p.s).cash += need * m.price.wood * 0.9; this.sell(p, 'furniture', need * 0.1); }
-        { const town = this.S.towns[p.s]; const f = Math.min(1.5 * hr, (town.fund || 0) * 0.01); town.fund -= f; hh.money += f; } // 町の家々の修繕の手間賃（町の蓄えから）
+        if (m.stock.furniture < GOODS.furniture.target * 2 && (hh.stock?.furniture || 0) < 3) { const got = marketBuy(this, p.s, 'wood', need, hh); if (got > 0) stash(this, p, 'furniture', got * 0.1); }
         break;
       }
-      case 'tailor': this.sell(p, 'cloth', 0.25 * eff); break;
+      case 'tailor': { const w = (hh.stock?.cloth || 0) < 8 ? marketBuy(this, p.s, 'wool', 0.3 * eff, hh) : 0; if ((hh.stock?.cloth || 0) < 8) stash(this, p, 'cloth', 0.25 * eff * (w > 0 ? 1 : 0.4)); break; }
       case 'innkeeper': {
+        // 小麦を買って麦酒を仕込む。麦酒は宿の蔵に置き、酒場の客に出す
         const need = 0.8 * eff;
-        if (m.stock.wheat >= need && m.stock.ale < GOODS.ale.target * 1.5) { m.stock.wheat -= need; hh.money -= need * m.price.wheat * 0.9; this.mcash(p.s).cash += need * m.price.wheat * 0.9; m.stock.ale += need * 3; }
+        if ((hh.stock?.ale || 0) < GOODS.ale.target) { const got = marketBuy(this, p.s, 'wheat', need, hh); if (got > 0) { stash(this, p, 'ale', got * 3); hh.brewDay = this.today; } }
         break;
       }
-      case 'merchant': {
-        hh.money += m.commission; m.commission = 0;
-        for (const [k, g] of Object.entries(GOODS)) if (m.stock[k] < g.target * 0.2) m.stock[k] += g.target * 0.1 * hr;
-        break;
-      }
+      case 'merchant': break;   // 店番：お金は、買い取った品が売れたときと、預かり品の手間賃だけ（market.js）
       case 'priest': case 'elder': case 'jailer': case 'servant': case 'guard': case 'soldier': case 'knight': {
-        const k = this.kingdomOf(p);
-        const pay = ({ knight: 1.4, soldier: 1, guard: 1, jailer: 0.9, servant: 0.8, priest: 1, elder: 0.7 }[p.job]) * hr;
-        if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else { const town = this.S.towns[p.s]; const f = Math.min(pay * 0.5, town.fund || 0); town.fund -= f; hh.money += f; }
+        accrueWage(this, p, hr);   // 給金は給料日に、国庫・町の蓄え・教会からまとめて（payday.js）
         if (['soldier', 'knight'].includes(p.job)) { p.xp = (p.xp || 0) + 0.3 * hr; this.levelCheck(p); }
         break;
       }
@@ -1061,7 +1071,7 @@ export class Sim {
         const k = this.kingdomOf(p);
         const pts = 0.3 * (JOBS[p.job].research || 1) * (0.5 + skill) * (this.hasTech(p, 'printing') ? 1.4 : 1) * hr;
         if (k) { k.research += pts; k.contrib[p.id] = (k.contrib[p.id] || 0) + pts; }
-        { const k2 = this.kingdomOf(p); const st = 2.5 * hr; if (k2 && k2.treasury > st) { k2.treasury -= st; hh.money += st; } } // 研究の俸禄（国庫から）
+        accrueWage(this, p, hr);   // 研究の俸禄は給料日に国庫から
         break;
       }
       case 'king': case 'royal': case 'noble': {
@@ -1078,15 +1088,21 @@ export class Sim {
     const J = JOBS[p.job], hh = this.hh(p), m = this.market(p.s), hr = dt / 60, R = this.rng, S = this.S;
     if (!J) return;
     const k = this.kingdomOf(p);
-    if (J.pay) { const pay = J.pay * hr; if (k && k.treasury > pay) { k.treasury -= pay; hh.money += pay; } else { const town = S.towns[p.s]; const f = Math.min(pay * 0.5, town.fund || 0); town.fund -= f; hh.money += f; } }
+    if (J.pay) accrueWage(this, p, hr);   // 給金は給料日に雇い主から（payday.js）
     if (J.research && k) { const pts = 0.3 * J.research * (0.5 + (p.skill[p.job] || 0.3)) * hr; k.research += pts; k.contrib[p.id] = (k.contrib[p.id] || 0) + pts; }
     if (J.combat && !J.pay) { p.xp = (p.xp || 0) + 0.2 * hr; this.levelCheck(p); }
     if (J.goods) {
       const rate = { medicine: 0.12, jewelry: 0.03, gem: 0.02, shoes: 0.15, pottery: 0.3, cloth: 0.25, wool: 0.4, honey: 0.35, herbs: 0.6, stone: 0.8, meat: 0.3, ale: 0.8, wood: 1.2, fish: 0.6, furniture: 0.08 }[J.goods] ?? 0.3;
-      if (J.goods === 'medicine' && m.stock.herbs >= 1) m.stock.herbs -= 0.5 * eff;
-      if (J.goods === 'jewelry' && m.stock.gem >= 0.1) m.stock.gem -= 0.03 * eff;
-      if (J.goods === 'cloth' && m.stock.wool >= 0.5) m.stock.wool -= 0.3 * eff;
-      if (m.stock[J.goods] < (GOODS[J.goods]?.target || 10) * 2) this.sell(p, J.goods, rate * eff);
+      // 材料は市場で買う（代金は材料の持ち主へ）。作った品は蔵へ。売れ残りが多ければ作らない
+      const G = J.goods, tgt = GOODS[G]?.target || 10;
+      if (hh && m.stock[G] < tgt * 2 && (hh.stock?.[G] || 0) < tgt) {
+        const IN = { medicine: ['herbs', 0.5], jewelry: ['gem', 0.03], cloth: ['wool', 0.3], furniture: ['wood', 0.3] }[G];
+        let f = 1;
+        if (IN) { const want = IN[1] * eff; f = want > 0 ? marketBuy(this, p.s, IN[0], want, hh) / want : 0; if (G === 'cloth' && f < 1) f = Math.max(f, 0.4); }
+        if (G === 'ale') { const w = marketBuy(this, p.s, 'wheat', 0.3 * eff, hh); f = w / Math.max(1e-6, 0.3 * eff); if (w > 0) hh.brewDay = this.today; }
+        if (f > 0) stash(this, p, G, rate * eff * f);
+      }
+      if (p.job === 'gatherer' && hh) { const f = 0.3 * eff; hh.food += f; meal(this, 'self', f); }   // 森で木の実やきのこも採って食べる
     }
     const near = (r) => (p.inside != null ? peopleInside(this, p.inside, p) : peopleNear(this, p.pos.x, p.pos.z, r, p));
     switch (J.svc) {
@@ -1098,7 +1114,7 @@ export class Sim {
         const aud = near(4);
         for (const q of aud) {
           q.needs.pleasure = Math.min(100, q.needs.pleasure + 10 * hr);
-          if (R.chance(0.1 * hr) && this.householdMoney(q) > 20) { const tip = R.int(1, 3); this.hh(q).money -= tip; hh.money += tip; }
+          if (R.chance(0.1 * hr) && this.householdMoney(q) > 20) { const tip = R.int(1, 3); this.hh(q).money -= tip; hh.money += tip; flow(this, '町の人', J.name, tip, '心付け'); }
         }
         p.needs.esteem = Math.min(100, p.needs.esteem + aud.length * 3 * hr);
         break;
@@ -1115,10 +1131,10 @@ export class Sim {
         p.needs.esteem = Math.min(100, p.needs.esteem + kids.length * 2 * hr);
         break;
       }
-      case 'bank': { const fee = Math.min(2 * hr, S.towns[p.s].fund * 0.001); S.towns[p.s].fund -= fee; hh.money += fee; break; }
-      case 'mill': if (m.stock.wheat > 4) { this.mcash(p.s); m.stock.wheat -= 1.2 * hr; m.stock.bread += 1.5 * hr; const f = Math.min(1.5 * hr, m.cash); m.cash -= f; hh.money += f; } break;
+      case 'bank': break;   // 両替商の稼ぎは、両替商の館（bank.js）の手数料から
+      case 'mill': break;   // 粉屋は水車で麦をひくだけ。稼ぎは麦の16分の1の粉ひき代（shops.js の millToll）
       case 'childcare': for (const id of (this.hh(p)?.members || [])) { const q = S.people[id]; if (q && q.deathYear == null && q.hh === p.hh && this.ageOf(q) < 10) q.needs.pleasure = Math.min(100, q.needs.pleasure + 8 * hr); } break;
-      case 'trade': for (const g of ['cloth', 'jewelry', 'pottery', 'honey']) if (m.stock[g] < GOODS[g].target * 0.5) m.stock[g] += 0.1 * hr; { this.mcash(p.s); const f = Math.min(2 * hr, m.cash * 0.01); m.cash -= f; hh.money += f; } break;
+      case 'trade': break;   // 船長の稼ぎは定期船の商い（logistics.js）、密輸人は闇の稼業（underworld.js）
       case 'quests': {
         if (R.chance(0.02 * dt)) {
           const s = this.townOf(p);
@@ -1136,13 +1152,11 @@ export class Sim {
         // 仕える家（王家・貴族）の暮らしが整う
         const lord = lordHouseholds(this).find((h) => h.s === p.s && (h.royal || h.members.some((id) => S.people[id]?.rank === 'noble')) && h.id !== p.hh);
         if (lord) { lord.comfort = Math.min(10, (lord.comfort || 0) + 0.05 * hr); lord.laundry = Math.max(0, (lord.laundry || 0) - 0.5 * hr); lord.water = Math.min(10, (lord.water ?? 5) + 0.5 * hr); }
-        if (p.job === 'gardener' && R.chance(0.02 * hr)) m.stock.herbs = (m.stock.herbs || 0) + 0.5;
+        if (p.job === 'gardener' && R.chance(0.02 * hr)) stash(this, p, 'herbs', 0.5);
         break;
       }
       case 'gravedigger': {
-        // 墓の手入れと弔いの手伝い。町の蓄えから手間賃
-        const recent = S.graves.slice(-20).map((id) => S.people[id]).filter((d) => d && d.s === p.s && this.today - (d.deathDay || 0) <= 1).length;
-        if (recent && S.towns[p.s].fund > 5) { const fee = Math.min(4, S.towns[p.s].fund * 0.02) * hr; S.towns[p.s].fund -= fee; hh.money += fee; }
+        // 墓の手入れと弔いの手伝い（給金は給料日に町から）
         for (const q of near(4)) if (q.action?.type === 'funeral' || q.action?.type === 'grave') q.mood = Math.min(100, (q.mood || 50) + 2 * hr);
         break;
       }
@@ -1206,7 +1220,7 @@ export class Sim {
   forge(p, dt, eff) {
     const hh = this.hh(p), m = this.market(p.s), R = this.rng, town = this.S.towns[p.s];
     town.mats = town.mats || {}; town.shop = town.shop || [];
-    if (m.stock.ore >= 1 && (town.mats.iron || 0) < 12) { m.stock.ore -= 0.8 * eff; hh.money -= 0.8 * eff * m.price.ore * 0.9; this.mcash(p.s).cash += 0.8 * eff * m.price.ore * 0.9; town.mats.iron = (town.mats.iron || 0) + 0.4 * eff; }
+    if (m.stock.ore >= 1 && (town.mats.iron || 0) < 12) { const got = marketBuy(this, p.s, 'ore', 0.8 * eff, hh); town.mats.iron = (town.mats.iron || 0) + 0.5 * got; }   // 鉱石は持ち主（鉱夫・商人）から買う
     p.forgeT = (p.forgeT || 0) + dt;
     if (p.forgeT < 90 || town.shop.length >= 14) return;
     p.forgeT = 0;
@@ -1215,7 +1229,7 @@ export class Sim {
     const recipes = Object.entries(ITEMS).filter(([id, d]) => d.mat && ['weapon', 'armor', 'shield', 'tool'].includes(d.type) && !d.rare && Object.entries(d.mat).every(([k, n]) => k === 'wood' ? m.stock.wood >= n : k === 'cloth' ? m.stock.cloth >= n : (town.mats[k] || 0) >= n) && (wantTools ? d.type === 'tool' : true) && (d.value < 120 || skill > 0.6));
     if (!recipes.length) return;
     const [id, d] = R.pick(recipes);
-    for (const [k, n] of Object.entries(d.mat)) { if (k === 'wood') m.stock.wood -= n; else if (k === 'cloth') m.stock.cloth -= n; else town.mats[k] -= n; }
+    for (const [k, n] of Object.entries(d.mat)) { if (k === 'wood' || k === 'cloth') marketBuy(this, p.s, k, n, hh, { force: true }); else town.mats[k] -= n; }
     // 名工でも普段は上等どまり。伝説級は、腕の立つ者にごくまれに訪れる会心の一打
     let q = Math.max(0.5, Math.min(1.5, 0.55 + skill * 0.7 + R.gauss(0, 0.1) + (this.hasTech(p, 'steel') ? 0.08 : 0)));
     if (d.type !== 'tool' && skill > 0.7 && R.chance(0.004 * skill)) q = R.range(1.56, 1.8);
@@ -1261,7 +1275,7 @@ export class Sim {
     // 古い装備は下取りに出す
     const old = p.eq?.[ITEMS[it.id].type];
     addItem(p, it); autoEquip(p);
-    if (old && old !== p.eq[ITEMS[it.id].type]) { p.inv.splice(p.inv.indexOf(old), 1); p.purse = (p.purse || 0) + Math.round(itemValue(old) * 0.4); }
+    if (old && old !== p.eq[ITEMS[it.id].type]) { p.inv.splice(p.inv.indexOf(old), 1); const sh = smith && smith.deathYear == null ? this.hh(smith) : null; const back = Math.round(itemValue(old) * 0.4); const from = sh || { get money() { return town.fund; }, set money(v) { town.fund = v; } }; const x = Math.max(0, Math.min(back, from.money)); from.money -= x; p.purse = (p.purse || 0) + x; }   // 下取りの代金は鍛冶屋が払う
     Object.assign(p, humanStats(this, p));
     this.remember(p, `鍛冶場で${itemName(it)}を${price}銅貨で買った`, { emo: 0.5, imp: 0.4, k: 'gear' });
     p.needs.esteem = Math.min(100, p.needs.esteem + 10);
@@ -1486,8 +1500,10 @@ export class Sim {
         const win = R.chance(clamp(power / (power + danger * (1 + this.dayIndex / 400)), 0.1, 0.92));
         if (win) {
           p.xp = (p.xp || 0) + danger * 3; this.levelCheck(p);
-          const gold = R.int(5, 25) * (b.type === 'pyramid' ? 3 : 1);
-          this.hh(p).money += gold;
+          let gold = R.int(5, 25) * (b.type === 'pyramid' ? 3 : 1);
+          if (b.type === 'hideout') { const band = Object.values(this.S.households).find((h) => h.bandits && h.house === b.id); gold = band ? Math.max(0, Math.min(gold, band.money)) : 0; if (band) band.money -= gold; }
+          else moneyIn(this, gold, 'ダンジョンの宝箱');
+          if (this.hh(p)) this.hh(p).money += gold; else p.purse = (p.purse || 0) + gold;
           p.needs.esteem = Math.min(100, p.needs.esteem + 30);
           let txt = `${b.name}を探索して${gold}銅貨ぶんの戦利品を持ち帰った`;
           if (b.type !== 'hideout') { for (let i = 0; i < R.int(0, 2); i++) addItem(p, makeItem(R.pick(['magicstone', 'bone', 'iron', 'silk']))); gearDungeonLoot(this, p, b); autoEquip(p); Object.assign(p, humanStats(this, p)); }
@@ -1711,7 +1727,9 @@ export class Sim {
     }
     const hhA = this.hh(a), hhB = this.hh(b);
     const id = this.S.nextHh++;
-    this.S.households[id] = { id, members: [], house: null, s: dest.id, money: Math.min(40, hhA.money * 0.2) + Math.min(40, hhB.money * 0.2), food: 2, comfort: 0, name: `${a.family}家`, wander: true };
+    const takeA = Math.max(0, Math.min(40, hhA.money * 0.2)), takeB = hhB === hhA ? 0 : Math.max(0, Math.min(40, hhB.money * 0.2));
+    hhA.money -= takeA; hhB.money -= takeB;   // 家から持ち出したお金
+    this.S.households[id] = { id, members: [], house: null, s: dest.id, money: takeA + takeB, food: 2, comfort: 0, name: `${a.family}家`, wander: true };
     for (const x of [a, b]) this.moveTo(x, this.S.households[id]);
     a.s = b.s = dest.id;
     this.marry(a, b, true);
@@ -1792,6 +1810,7 @@ export class Sim {
     faunaHourly(this);
     rescueHourly(this);
     financeHourly(this);
+    marketHourly(this);   // 終わった市の露店を片づける
     divineHourly(this);
   }
 
@@ -1902,6 +1921,9 @@ export class Sim {
     elderDaily(this);
     financeDaily(this);
     bankDaily(this, GOODS);
+    marketDaily(this);
+    shopsDaily(this);   // 店の借り賃・差し押さえ・酒を売る許し・町の負担
+    paydayDaily(this);
     creatureDaily(this);
     faunaDaily(this);
     rescueDaily(this);
@@ -1921,9 +1943,9 @@ export class Sim {
       if ((st.tribal || st.indep) && st.annexed == null) continue;
       const t = this.S.towns[st.id], k = this.S.kingdoms[st.kingdom];
       if (!t || t.occupied) continue;
-      if ((t.cash || 0) > 1000) { const x = (t.cash - 1000) * 0.08; t.cash -= x; t.fund += x; }
       if (k && (t.fund || 0) > 350) { const x = (t.fund - 350) * 0.12; t.fund -= x; k.treasury += x; if (k.fisc?.cur) { k.fisc.cur.crown = (k.fisc.cur.crown || 0) + x; k.fisc.dayIn = (k.fisc.dayIn || 0) + x; } }
     }
+    ledgerDaily(this);   // 世界じゅうのお金を数え、外との出入りを除いたずれを記録する
     for (const p of this.living()) this.trimMemories(p);
     this.save();
   }
@@ -1965,6 +1987,7 @@ export class Sim {
         this.remember(p, `${origin}から${s.name}に移り住んできた`, { emo: 0.4, imp: 0.95, k: 'arrival' });
         p.deeds.push(`${origin}から${s.name}にやってきた`);
       }
+      newcomerMoney(this, S.households[hhId], members);   // 移り住んできた人の持ち金は外から入ったお金
       this.dirty();
       this.gossip(a, `${origin}から越してきたらしい`, 0.2, this.living().filter((q) => q.s === s.id && R.chance(0.4)), { silent: true });
       this.pushLog(`${this.fullName(a)}${members.length > 1 ? 'の夫婦' : ''}が${origin}から${s.name}に移り住んできた。`, 'event', [a.id], a.pos);
@@ -1994,6 +2017,7 @@ export class Sim {
     p.pos = { ...inn.door }; p.inside = null; p.path = []; p.action = null;
     this.remember(p, `名を上げようと、${origin}から${s.name}の冒険者ギルドへやって来た`, { emo: 0.6, imp: 0.95, k: 'arrival' });
     p.deeds.push(`${origin}から冒険者として${s.name}にやってきた`);
+    newcomerMoney(this, S.households[hhId], [p], '流れの冒険者の持ち金');
     this.dirty();
     this.pushLog(`${origin}から、${JOBS[p.job].name}の${this.fullName(p)}が${s.name}にやって来た。宿屋に部屋を取ったらしい。`, 'event', [p.id], p.pos);
     return p;
@@ -2015,8 +2039,8 @@ export class Sim {
     const S = this.S, age = this.ageOf(p);
     p.deathYear = this.year(); p.deathCause = cause; p.deathDay = this.today;
     // 亡くなった人の財布と、夢のための貯えは家族（家がなければ町の蓄え）へ残る（お金は消えない）
-    { const left = Math.max(0, p.purse || 0) + Math.max(0, p.plan?.saved || 0); p.purse = 0; if (p.plan) p.plan.saved = 0;
-      if (left > 0) { const hh = this.hh(p); if (hh) hh.money += left; else if (S.towns[p.s]) S.towns[p.s].fund += left; } }
+    { const left = (p.purse || 0) + (p.plan?.saved || 0) + (p.nestEgg || 0); p.purse = 0; if (p.plan) p.plan.saved = 0; p.nestEgg = 0;
+      if (left !== 0) { const hh = this.hh(p); if (hh) hh.money += left; else if (S.towns[p.s]) S.towns[p.s].fund += left; } }   // 端数も借りも、そのまま家族へ
     p.lastWords = p.thought;
     p.killedBy = killer ? (typeof killer.id === 'number' ? killer.id : killer.name) : null;
     p.diedWhile = p.action?.type || null;

@@ -36,6 +36,7 @@
 import { T, W, H, MinHeap, walkable, MOVE_COST } from './world.js';
 import { GOODS, JOBS, KINGDOMS } from './data.js';
 import { exchangeRate } from './bank.js';
+import { marketBuy, ownStock } from './market.js';
 import { landRoute } from './logistics.js';
 import { threatsNear } from './expansion.js';
 import * as POL from './politics.js';
@@ -625,10 +626,10 @@ function layTile(sim, road, kid, i, t, changed) {
   const m = near ? S.towns[near.id] : null;
   if (t === T.RIVER) {
     // 橋：材木を市場から買う（国庫 → 市場の金庫）。在庫がなければ細い橋で済ませる
-    if (m && m.cash != null && m.stock.wood >= BRIDGE_WOOD) {
+    if (m && m.stock.wood >= BRIDGE_WOOD) {
       const KK = K(sim, kid);
       const cost = BRIDGE_WOOD * m.price.wood;
-      if (KK.treasury > cost) { KK.treasury -= cost; m.cash += cost; m.stock.wood -= BRIDGE_WOOD; road.spent[kid] = (road.spent[kid] || 0) + cost; }
+      if (KK.treasury > cost) { marketBuy(sim, near.id, 'wood', BRIDGE_WOOD, 'k' + kid, { force: true }); road.spent[kid] = (road.spent[kid] || 0) + cost; }   // 材木は持ち主（木こり・商人）から国庫で買う
     }
     w.tiles[i] = T.BRIDGE; road.bridged.push(i); D.stats.bridges++;
   } else {
@@ -785,7 +786,7 @@ function personAcct(sim, p) {
   return { get money() { return (p.purse || 0) + Math.max(0, (hh?.money || 0) - 20); }, set money(v) { const cur = (p.purse || 0) + Math.max(0, (hh?.money || 0) - 20); let d = cur - v; const a = Math.min(d, p.purse || 0); p.purse = (p.purse || 0) - a; d -= a; if (d > 0 && hh) hh.money -= d; } };
 }
 function convoyAcct(sim, c) {
-  if (c.diplo) { const dl = sim.S.diplo.deals.find((d) => d.id === c.diplo); const k = dl && typeof dl.buyer === 'number' ? K(sim, dl.buyer) : null; if (k) return { get money() { return k.treasury; }, set money(v) { k.treasury = v; } }; const m = dl ? sim.S.towns[+String(dl.buyer).slice(1)] : null; return m ? { get money() { return m.cash || 0; }, set money(v) { m.cash = v; } } : null; }
+  if (c.diplo) { const dl = sim.S.diplo.deals.find((d) => d.id === c.diplo); const k = dl && typeof dl.buyer === 'number' ? K(sim, dl.buyer) : null; if (k) return { get money() { return k.treasury; }, set money(v) { k.treasury = v; } }; const m = dl ? sim.S.towns[+String(dl.buyer).slice(1)] : null; return m ? { get money() { return m.fund || 0; }, set money(v) { m.fund = v; } } : null; }
   if (c.fund != null) { const t = sim.S.towns[c.fund]; return t ? { get money() { return t.fund || 0; }, set money(v) { t.fund = v; } } : null; }
   return sim.S.households[c.hh] || null;
 }
@@ -922,27 +923,23 @@ function caravanArrivals(sim) {
 }
 function acctOfParty(sim, party) {
   if (typeof party === 'number') { const k = K(sim, party); return k ? { get money() { return k.treasury; }, set money(v) { const d = v - k.treasury; k.treasury = v; if (d > 0 && k.fisc) k.fisc.dayIn += d; } } : null; }
-  // 市場の金庫がまだ開かれていない村（m.cash がない）とは取引しない（sim.mcash は最初に800を置くので、ここでは呼ばない）
+  // 村の取り引きは、村の蓄え（町の蓄え）で払い、受け取る
   const sid = +String(party).slice(1); const m = sim.S.towns[sid];
-  return m && m.cash != null ? { get money() { return m.cash || 0; }, set money(v) { m.cash = v; } } : null;
+  return m ? { get money() { return m.fund || 0; }, set money(v) { m.fund = v; } } : null;
 }
 function deliver(sim, dl, c) {
   const S = sim.S, D = S.diplo;
   if (!dl) return;
   const got = c.goods[dl.good] || 0;
   const m = S.towns[dl.to];
-  if (m) m.stock[dl.good] = (m.stock[dl.good] || 0) + got;
+  if (m && got > 0) ownStock(sim, dl.to, dl.good, typeof dl.buyer === 'number' ? 'k' + dl.buyer : 't' + dl.to, got);   // 届いた品は買い手（国・村）の品として市場に並び、売れたときに代金が買い手へ
   // 残りの代金は、着いた分だけ（買い手 → 売り手）
   const buyer = acctOfParty(sim, dl.buyer), seller = acctOfParty(sim, dl.seller);
   const rest = Math.max(0, dl.pay * (got / dl.qty) - dl.paid);
   const x = buyer ? take(buyer, rest) : 0;
   if (seller) seller.money += x;
   dl.paid += x;
-  // 買い手の国は、届いた品を自国の市場に卸す（市場の金庫 → 国庫）
-  if (typeof dl.buyer === 'number' && m && m.cash != null) {
-    const sale = Math.min((m.cash || 0) * 0.5, got * m.price[dl.good] * 0.9);
-    m.cash -= sale; toTreasury(K(sim, dl.buyer), sale); dl.resold = sale;
-  }
+  dl.resold = 0;
   dl.state = got < dl.qty ? 'partial' : 'done'; dl.arrived = sim.today; dl.got = got;
   D.stats.deals++; D.stats.dealValue += dl.paid;
   const ks = [dl.seller, dl.buyer].filter((x2) => typeof x2 === 'number');
@@ -1043,12 +1040,10 @@ function startDeal(sim, o) {
     || sim.living().find((q) => q.s === o.from && (!q.job || ['beggar', 'stablehand', 'woodcutter'].includes(q.job)) && q.jail == null && !q.fight && !q.mission && q.action?.convoy == null && sim.isAdult(q) && sim.ageOf(q) < 60);
   // 仕入れ：売り手の国庫 → 売り手の町の市場の金庫（村なら市場の品をそのまま出す）
   const buyCost = o.pS * o.qty;
-  if (typeof o.seller === 'number') {
-    const Ks = K(sim, o.seller);
-    if (Ks.treasury < buyCost + 150 || ms.cash == null) return false;
-    Ks.treasury -= buyCost; ms.cash = (ms.cash || 0) + buyCost;
-  }
-  ms.stock[o.good] -= o.qty;
+  // 売り手（国・村）は、出す品を市場の持ち主から買い集める（代金は商人・作り手へ）
+  { const payer = typeof o.seller === 'number' ? 'k' + o.seller : 't' + o.from;
+    if (typeof o.seller === 'number' && K(sim, o.seller).treasury < buyCost + 150) return false;
+    if (marketBuy(sim, o.from, o.good, o.qty, payer, { price: o.pS }) < o.qty - 1e-6) return false; }
   const dl = { id: D.seq++, d: sim.today, seller: o.seller, buyer: o.buyer, good: o.good, qty: o.qty, unit: o.unit, pay: o.pay, paid: 0, from: o.from, to: o.to, state: 'shipping', road: o.road, pact: o.pact, toll: 0, driver: driver?.id ?? null };
   D.deals.push(dl);
   if (D.deals.length > 120) D.deals.splice(0, D.deals.length - 120);

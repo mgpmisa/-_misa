@@ -12,6 +12,8 @@ import { JOBS } from './data.js';
 import { T } from './world.js';
 import { markWanted, arrest, startFight } from './society.js';
 import { pay, earn, spendable } from './property.js';
+import { stash, ownStock } from './market.js';
+import { moneyIn, moneyOut } from './ledger.js';
 
 const LAWFUL = new Set(['guard', 'knight', 'soldier', 'jailer', 'watchman', 'royalguard', 'general', 'paladin']);
 const HEALERS = { nun: '修道女', priest: '司祭', herbalist: '薬師', doctor: '医者', cleric: '僧侶' };
@@ -310,7 +312,8 @@ function exile(sim, p) {
   if (!dest) return;
   const inn = sim.townBuilding(dest, 'tavern');
   const hhId = S.nextHh++;
-  S.households[hhId] = { id: hhId, members: [], house: inn.id, inn: true, s: dest.id, money: 5, food: 0, comfort: 0, name: `${p.family}（宿住まい）` };
+  S.households[hhId] = { id: hhId, members: [], house: inn.id, inn: true, s: dest.id, money: 0, food: 0, comfort: 0, name: `${p.family}（宿住まい）` };
+  { const oh = sim.hh(p); const x = oh ? Math.max(0, Math.min(5, oh.money)) : 0; if (oh) oh.money -= x; S.households[hhId].money = x; }
   const from = sim.townOf(p).name;
   sim.moveTo(p, S.households[hhId]);
   p.s = dest.id; p.pos = { ...inn.door }; p.inside = null; p.action = null; p.path = [];
@@ -351,7 +354,7 @@ function drugsDaily(sim) {
     const k = sim.townOf(p).kingdom;
     const got = 1 + (p.uwGrewToday === sim.today - 1 || p.uwGrewToday === sim.today ? 3 : 0);
     uw.stock[k] = Math.min(40, (uw.stock[k] || 0) + got);
-    earn(sim, p, got * 2, 0.5);
+    { const dl = sim.living().find((q) => q.uwRole === 'dealer' && q !== p && sim.townOf(q).kingdom === k && free(q) && spendable(sim, q) > got * 2 + 5); if (dl) { pay(sim, dl, got * 2); earn(sim, p, got * 2, 0.5); } }   // 売人が買い取る
     // 見回りに見つかる
     if (R.chance(0.012 * rate)) {
       wanted(sim, p, '禁制の草の栽培');
@@ -721,7 +724,7 @@ function arsonDaily(sim) {
   uw.lastArson = sim.today;
   record(sim, '放火', p, tgt);
   const lost = Math.round(Math.max(0, hh.money) * 0.3);
-  hh.money -= lost; hh.food = 0;
+  hh.money -= lost; hh.food = 0; moneyOut(sim, lost, '火事で焼けた銅貨');
   if (b.value) b.value = Math.round(b.value * 0.7);
   b.burnt = sim.today;
   for (const id of hh.members) { const q = S.people[id]; if (q && sim.ageOf(q) >= 6) sim.remember(q, `夜中に家が燃えた。蓄えの多くを失ったが、家族は無事だった`, { emo: -0.9, imp: 0.95, k: 'fire' }); }
@@ -897,12 +900,12 @@ function counterfeitDaily(sim) {
     if (p.uwRole !== 'counterfeiter' || !free(p) || S.wanted[p.id]) continue;
     if (!R.chance(0.5)) continue;
     const made = R.int(6, 14);
-    earn(sim, p, made, 0.5);
+    earn(sim, p, made, 0.5); moneyIn(sim, made, '偽金');
     uw.fake[p.s] = (uw.fake[p.s] || 0) + 1;
     record(sim, '偽金づくり', p, null, { amt: made });
     // 偽金をつかまされた商人が損をする
     const vic = sim.living().find((q) => ['merchant', 'baker', 'innkeeper', 'butcher'].includes(q.job) && q.s === p.s && sim.householdMoney(q) > 10 && R.chance(0.3));
-    if (vic) { sim.hh(vic).money -= made * 0.5; if (R.chance(0.3)) sim.remember(vic, '売り上げの中に偽の銅貨が混じっていた', { emo: -0.6, imp: 0.5, k: 'theft' }); }
+    if (vic) { sim.hh(vic).money -= made * 0.5; moneyOut(sim, made * 0.5, 'つかまされた偽金（使えなくなった）'); if (R.chance(0.3)) sim.remember(vic, '売り上げの中に偽の銅貨が混じっていた', { emo: -0.6, imp: 0.5, k: 'theft' }); }
     // 両替商が見抜く
     const changer = sim.living().find((q) => q.job === 'changer' && q.s === p.s && q.jail == null);
     const ch = (changer ? 0.03 : 0.012) * (uw.fake[p.s] || 0) * rate;
@@ -922,13 +925,14 @@ function fenceDaily(sim) {
     if (f.uwRole !== 'fence' || !free(f) || S.wanted[f.id]) continue;
     const sellers = sim.living().filter((q) => q !== f && q.s === f.s && free(q) && q.memories?.some((m) => (m.k === 'crime' || m.k === 'uwcrime') && m.t >= sim.today - 1 && /盗ん|巻き上げ|墓/.test(m.txt)));
     for (const q of sellers.slice(0, 3)) {
-      const amt = R.int(4, 12);
-      earn(sim, q, amt, 0.8); earn(sim, f, amt * 0.6, 0.4);
+      const amt = Math.min(R.int(4, 12), Math.max(0, spendable(sim, f) - 5));
+      if (amt <= 0) continue;
+      pay(sim, f, amt); earn(sim, q, amt, 0.8);   // 故買屋が盗品を買い叩く
       record(sim, '故買', f, q, { amt });
       if (R.chance(0.4)) sim.remember(q, `故買屋の${f.given}に盗品を買い叩かれた`, { emo: 0, imp: 0.3, about: [f.id], k: 'uwcrime' });
     }
     // 闇市：安い盗品を目当てに客が来る
-    if (R.chance(0.3)) { earn(sim, f, R.int(3, 8), 0.5); uw.stats['闇市の商い'] = (uw.stats['闇市の商い'] || 0) + 1; }
+    if (R.chance(0.3)) { const buyer = R.pick(sim.living().filter((q) => q.s === f.s && q !== f && free(q) && spendable(sim, q) > 30).slice(0, 40)); const x = R.int(3, 8) * 1.6; if (buyer) { pay(sim, buyer, x); earn(sim, f, x, 0.5); } uw.stats['闇市の商い'] = (uw.stats['闇市の商い'] || 0) + 1; }
     if (R.chance(0.006 * rate * (1 + sellers.length))) {
       wanted(sim, f, '故買');
       sim.pushLog(`衛兵が闇市の故買屋${sim.fullName(f)}の店を突き止めた。`, 'event', [f.id], f.pos);
@@ -943,9 +947,8 @@ function smuggleDaily(sim) {
     if (p.job !== 'smuggler' || !free(p) || S.wanted[p.id] || sim.ageOf(p) < 16 || !R.chance(0.35)) continue;
     const k = sim.townOf(p).kingdom;
     const gain = R.int(8, 20);
-    earn(sim, p, gain, 0.6);
     const m = sim.market(p.s);
-    for (const g of ['jewelry', 'cloth']) if (m.stock[g] != null) m.stock[g] += 0.5;
+    if (m) for (const g of ['jewelry', 'cloth']) ownStock(sim, p.s, g, p.hh, 0.5);   // 抜け荷は密輸人の品として店先へ
     if (mature(sim)) uw.stock[k] = Math.min(40, (uw.stock[k] || 0) + 2);
     record(sim, '密輸', p, null, { amt: gain });
     if (R.chance(0.05 * rate)) {
@@ -1037,8 +1040,9 @@ function graveRob(sim, p) {
   p.uwLastJob = sim.today;
   const graves = S.graves.map((id) => S.people[id]).filter((d) => d && d.s === p.s && d.id !== p.id);
   const d = graves.length ? R.pick(graves.slice(-30)) : null;
-  const loot = R.int(8, 30);
-  earn(sim, p, loot, 0.7);
+  const tw = S.towns[p.s];
+  const loot = Math.max(0, Math.min(R.int(8, 30), tw?.alms || 0));
+  if (loot > 0) { tw.alms -= loot; earn(sim, p, loot, 0.7); }   // 墓前の供え物と献金箱から盗む
   record(sim, '墓荒らし', p, d, { amt: loot });
   sim.remember(p, `夜の墓地で${d ? `${d.given}の` : ''}墓を暴き、副葬品を盗んだ`, { emo: 0.1, imp: 0.6, k: 'uwcrime' });
   const wit = sim.living().filter((q) => q !== p && q.action?.type !== 'sleep' && dist(q, p) < 6 && (q.inside == null || q.inside === p.inside));
@@ -1058,8 +1062,7 @@ function poach(sim, p) {
   const R = sim.rng;
   p.uwLastJob = sim.today;
   const gain = R.int(8, 20);
-  earn(sim, p, gain, 0.6);
-  const m = sim.market(p.s); if (m?.stock?.meat != null) m.stock.meat += 1;
+  stash(sim, p, 'meat', 2);   // 鹿の肉は蔵へ（市場で売ったときにお金）
   record(sim, '密猟', p, null, { amt: gain });
   sim.remember(p, '王家の森で鹿を仕留め、こっそり肉を売りさばいた', { emo: 0.3, imp: 0.4, k: 'uwcrime' });
   const wit = sim.living().filter((q) => q !== p && LAWFUL.has(q.job) && dist(q, p) < 10 && q.action?.type !== 'sleep');

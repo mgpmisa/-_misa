@@ -30,6 +30,8 @@ import { speechStyle } from './speech.js';
 import { houseValue, transferEstate } from './property.js';
 import { isAdventurer } from './guild.js';
 import { clamp } from './rng.js';
+import { marketBuy } from './market.js';
+import { newcomerMoney } from './ledger.js';
 import {
   TRIBES, TRIBE_NAMES, TRIBE_SPEECH, GUARDIANS, NEW_SPECIES, LEGENDS, STORY_ARCS, LORE_TIMELINE,
   offeringDue, tribeName, loreText, guardianOfTribe, tribeById, legendById, arcById,
@@ -285,7 +287,7 @@ function buildVillage(sim, t, site, changed) {
     stock[k] = G.target * (mine ? 1.2 : k === 'wheat' || k === 'fish' || k === 'meat' ? 0.5 : 0.15);
     price[k] = G.base;
   }
-  S.towns[sid] = { stock, price, commission: 0, fund: 40, history: [], occupied: false, damage: 0, unrest: 0, alms: 0, mats: {} };
+  S.towns[sid] = { stock, price, fund: 40, history: [], occupied: false, damage: 0, unrest: 0, alms: 0, mats: {} };
   S.culture = S.culture || {};
   S.culture[sid] = (TRIBE_SPEECH[t.id]?.sayings || []).map((text) => ({ text, w: 2, origin: '祖先から' }));
   if (S.expansion) { S.expansion.sk[sid] = faces; (S.expansion.origK = S.expansion.origK || {})[sid] = faces; }
@@ -742,7 +744,7 @@ function fixVillagers(sim, V, s) {
     }
     const age = sim.ageOf(p);
     if (p.job && !TRIBAL_JOBS.has(p.job) && !isAdventurer(p) && age >= 14 && age < 68) {
-      p.job = R.pick(liv); p.rank = JOBS[p.job].rank; p.skill[p.job] = Math.max(p.skill[p.job] || 0, 0.3); p.plan = null; p.shop = null;
+      p.job = R.pick(liv); p.rank = JOBS[p.job].rank; p.skill[p.job] = Math.max(p.skill[p.job] || 0, 0.3); if (p.plan?.saved > 0) p.purse = (p.purse || 0) + p.plan.saved; p.plan = null; p.shop = null;
     }
   }
   if (!elder || elder.deathYear != null || elder.s !== V.sid) {
@@ -859,6 +861,7 @@ function kinArrive(sim, V, s) {
   else hh.street = true;
   const liv = (t.livelihood || ['hunt']).map((l) => LIVE_JOB[l] || 'gatherer').filter((j) => JOBS[j]);
   for (const p of mem) { p.hh = hid; initTribal(sim, p, R.pick(liv), b0 ? b0.door : { x: s.x, z: s.z }); sim.remember(p, `奥の集落から、親戚を頼って${V.name}へ移ってきた`, { emo: 0.4, imp: 0.9, k: 'arrival' }); }
+  newcomerMoney(sim, hh, mem, '奥の集落から来た親戚の持ち金');   // 外から来た人の持ち金
   sim.dirty(); sim._kin.clear();
   const locals = sim.living().filter((q) => q.s === V.sid);
   for (const p of mem) for (const q of locals) if (p !== q) linkPeople(sim, p, q);
@@ -1046,7 +1049,7 @@ function comeBack(sim, p, V, g, why = 'return') {
   if (!hh) hh = [S.people[p.fatherId], S.people[p.motherId]].map((q) => q && q.deathYear == null && q.s === V.sid ? sim.hh(q) : null).find(Boolean);
   if (!hh) {
     const hid = S.nextHh++;
-    hh = S.households[hid] = { id: hid, members: [], house: null, s: V.sid, money: 20, food: 4, comfort: 0, name: `${p.family}の家`, land: 3, tribal: true };
+    hh = S.households[hid] = { id: hid, members: [], house: null, s: V.sid, money: 0, food: 4, comfort: 0, name: `${p.family}の家`, land: 3, tribal: true };
     const b = s.buildings.map((id) => sim.building(id)).find((q) => q.type === 'house' && q.hh == null) || placeHouseIn(sim, s, tribeOfV(V), hh.name);
     if (b) { hh.house = b.id; b.hh = hid; b.owner = hid; b.name = hh.name; } else hh.street = true;
   }
@@ -1131,7 +1134,7 @@ function kingdomRelations(sim, V) {
     if (V.att[k] >= 45 && sim.today - V.lastGift >= 20 && R.chance(0.06)) {
       V.lastGift = sim.today;
       const gift = t.special?.[0] || '特産の品';
-      K.treasury += 25; K.fame = (K.fame || 50) + 1;
+      { const vf = S.towns[V.sid]; const x = Math.max(0, Math.min(25, vf?.fund || 0)); if (vf) vf.fund -= x; K.treasury += x; } K.fame = (K.fame || 50) + 1;   // 贈り物の値打ちは村の蓄えから
       TS(sim).stats.gifts++;
       const king = S.people[K.kingId];
       if (king && king.deathYear == null) sim.remember(king, `${t.name}から「${gift}」が贈られてきた`, { emo: 0.5, imp: 0.6, k: 'politics' });
@@ -1167,11 +1170,11 @@ function tradeExchange(sim, V, k, town) {
   const S = sim.S, t = tribeOfV(V), vm = S.towns[V.sid], tm = S.towns[town.id];
   let moved = 0;
   for (const g of t.goods || []) { const n = Math.min(4, (vm.stock[g] || 0) * 0.3); if (n > 0.5) { vm.stock[g] -= n; tm.stock[g] = (tm.stock[g] || 0) + n; moved += n * GOODS[g].base; } }
-  for (const g of t.wants || []) { if (!GOODS[g]) continue; const n = Math.min(3, (tm.stock[g] || 0) * 0.2); if (n > 0.3) { tm.stock[g] -= n; vm.stock[g] = (vm.stock[g] || 0) + n; } }
+  for (const g of t.wants || []) { if (!GOODS[g]) continue; const n = Math.min(3, (tm.stock[g] || 0) * 0.2); if (n > 0.3) { const got = marketBuy(sim, town.id, g, n, 't' + V.sid); if (got > 0) vm.stock[g] = (vm.stock[g] || 0) + got; } }   // 里が町の品を買う（里の蓄え → 品の持ち主）
   // 里の蓄えの食べ物が乏しければ、品と引き換えに町の小麦を持ち帰る（物々交換。持ち帰った分は代金から差し引く）
   { const pop = sim.living().filter((p) => p.s === V.sid).length, have = FOODS.reduce((a, g) => a + (vm.stock[g] || 0) * (GOODS[g]?.meals || 0), 0), spare = (tm.stock.wheat || 0) - GOODS.wheat.target * 0.5;
-    if (have < pop * 3 && spare > 1 && moved > 0) { const n = Math.min(12, spare * 0.3, moved / GOODS.wheat.base); tm.stock.wheat -= n; vm.stock.wheat = (vm.stock.wheat || 0) + n; moved -= n * GOODS.wheat.base; } }
-  { const mc = sim.mcash(town.id); const pay = Math.max(0, Math.min(moved * 0.2, mc.cash)); mc.cash -= pay; vm.fund += pay; }   // 里の品の代金は、町の市場の金庫から里の蓄えへ
+    if (have < pop * 3 && spare > 1 && moved > 0) { const n = Math.min(12, spare * 0.3, moved / GOODS.wheat.base); const got = marketBuy(sim, town.id, 'wheat', n, 't' + town.id, { force: true }); vm.stock.wheat = (vm.stock.wheat || 0) + got; moved -= got * GOODS.wheat.base; } }   // 物々交換の麦は、町の蓄えで麦の持ち主から買って渡す
+  { const pay = Math.max(0, Math.min(moved * 0.2, tm.fund || 0)); tm.fund -= pay; vm.fund += pay; }   // 里の品の代金は、町の蓄えから里の蓄えへ（品は町の品として市場に並ぶ）
   V.att[k] = Math.min(100, V.att[k] + 0.6);
   TS(sim).stats.trades++;
 }
@@ -1568,7 +1571,7 @@ const ACT = {
     arrive(sim, st, V) { return { delay: 1 }; },
     barter(sim, st, V) {
       const m = person(sim, st.cast.merchant), vm = sim.S.towns[V.sid];
-      if (m) { const hh = sim.hh(m); if (hh) hh.money += 15; }
+      if (m) { const hh = sim.hh(m); const x = Math.max(0, Math.min(15, vm.fund || 0)); if (hh && x) { vm.fund -= x; hh.money += x; } }   // 物々交換の差額は里の蓄えから
       vm.stock.tools = (vm.stock.tools || 0) + 2; vm.stock.stone = (vm.stock.stone || 0) + 2;
       return { delay: 1 };
     },
@@ -1838,10 +1841,10 @@ function endHook(sim, st, V, endId) {
     case 'seal_broken:end_resealed': { V.lamps = 7; if (gOfV(V)?.sealed) V.gstate = 'sealed'; const gc = guardianC(sim, V); if (gc) { gc.dormant = true; gc.calm = Infinity; } break; }
     case 'seal_broken:end_ashland': { V.block = sim.today + 800; break; }
     case 'sent_ones_island:end_together': case 'sent_ones_island:end_lost': { const k = P('kin'); if (k) goAway(sim, k, V, null, g?.id); break; }
-    case 'first_trade:end_greed': { const m = P('merchant'); if (m) { const hh = sim.hh(m); if (hh) hh.money += 60; m.treasures = m.treasures || []; m.treasures.push(`${t.name}の聖なる品`); } break; }
+    case 'first_trade:end_greed': { const m = P('merchant'); if (m) { const hh = sim.hh(m); const vf = S.towns[V.sid]; const x = Math.max(0, Math.min(60, vf?.fund || 0)); if (hh && x) { vf.fund -= x; hh.money += x; } m.treasures = m.treasures || []; m.treasures.push(`${t.name}の聖なる品`); } break; }
     case 'faith_schism:end_break': breakPromise(sim, V, '村が約束を破ると決めた'); break;
     case 'lean_year:end_aid': {
-      const K = S.kingdoms[st.k]; if (K) K.treasury -= 60;
+      const K = S.kingdoms[st.k]; if (K) { K.treasury -= 60; S.towns[V.sid].fund = (S.towns[V.sid].fund || 0) + 60; }   // 王の援助は村の蓄えへ
       const m = S.towns[V.sid]; for (const [k, n] of Object.entries(g.offering.major.goods || {})) m.stock[k] = Math.max(m.stock[k] || 0, n);
       V.pendingMajor = true;
       break;
@@ -1958,7 +1961,8 @@ function moveToTown(sim, p, dest, opt = {}) {
   let house = null;
   if (opt.tribalHouse && dest.tribal) house = dest.buildings.map((id) => sim.building(id)).find((q) => q.type === 'house' && q.hh == null) || placeHouseIn(sim, dest, tribeById(dest.tribe), `${p.family}の家`);
   const inn = !house ? sim.townBuilding(dest, 'tavern') : null;
-  S.households[hid] = { id: hid, members: [p.id], house: house ? house.id : inn ? inn.id : null, inn: !house && !!inn, s: dest.id, money: R.int(15, 40), food: 2, comfort: 0, name: house ? `${p.family}の家` : `${p.family}（宿住まい）`, street: !house && !inn, tribal: !!dest.tribal };
+  S.households[hid] = { id: hid, members: [p.id], house: house ? house.id : inn ? inn.id : null, inn: !house && !!inn, s: dest.id, money: 0, food: 2, comfort: 0, name: house ? `${p.family}の家` : `${p.family}（宿住まい）`, street: !house && !inn, tribal: !!dest.tribal };
+  { const src = old && S.households[old.id]; const x = src ? Math.max(0, Math.min(R.int(15, 40), src.money * 0.3)) : 0; if (x) { src.money -= x; S.households[hid].money += x; } }   // 持たせ金は元の家から
   if (house) { house.hh = hid; house.owner = hid; house.name = `${p.family}の家`; }
   p.hh = hid; p.s = dest.id; p.action = null; p.mission = null;
   if (opt.job && JOBS[opt.job]) { p.formerJob = p.job; p.job = opt.job; p.rank = JOBS[opt.job].rank; p.skill[opt.job] = Math.max(p.skill[opt.job] || 0, 0.25); }

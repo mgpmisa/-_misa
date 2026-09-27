@@ -18,6 +18,7 @@
 // }
 // 世界の状態 S.elder = { v, funds: { key: { key, cat, sid, k, bal, in, out } }, alms: { sid: { hh, bal, cap, name, admitted } }, stats, today, graveIdx }
 import { JOBS, KINGDOMS, DAYS_PER_YEAR } from './data.js';
+import { marketBuy } from './market.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -426,14 +427,13 @@ function seller(sim, sid) {
 // 救貧院がパンを買う（お金は町のパン屋・商人へ）
 function buyBread(sim, a, sid, qty) {
   const st = E(sim), price = sim.price('bread', sid), m = sim.market(sid);
-  const pay = Math.min(a.bal, qty * price);
-  if (pay <= 0) return 0;
-  const got = pay / price;
-  a.bal -= pay;
-  const sl = seller(sim, sid);
-  if (sl) sim.hh(sl).money += pay; else st.today.market += pay;
-  if (m?.stock?.bread != null) m.stock.bread = Math.max(0, m.stock.bread - got);
-  st.today.almsFood += pay;
+  if (!m || a.bal <= 0) return 0;
+  const box = { get money() { return a.bal; }, set money(v) { a.bal = v; } };
+  let got = marketBuy(sim, sid, 'bread', qty, box);   // 代金はパンの持ち主（パン屋・商人）へ
+  // 市場にパンがなければ、パン屋に焼いてもらう（パン屋の蔵から）
+  const sl = seller(sim, sid), sh = sl && sim.hh(sl);
+  if (got < qty && sh && (sh.stock?.bread || 0) >= 1) { const n = Math.min(qty - got, sh.stock.bread, a.bal / price); if (n > 0) { sh.stock.bread -= n; a.bal -= n * price; sh.money += n * price; got += n; } }
+  st.today.market += got * price; st.today.almsFood += got * price;
   return got;
 }
 // 寄進された家と畑を手放す（最後の入居者が亡くなったときに、身内へ流れないように）

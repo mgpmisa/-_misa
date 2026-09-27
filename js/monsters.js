@@ -1130,7 +1130,7 @@ export function onMonsterKilled(sim, c, killer) {
   if (!SPECIES[c.sp]?.monster) return;
   initMonsters(sim);
   // ドラゴンの宝：倒した者の取り分に足す
-  if (c.hoard && killer && typeof killer.id === 'number') { c.bounty = (c.bounty || 0) + Math.round(c.hoard); c.hoard = 0; }
+  if (c.hoard && killer && typeof killer.id === 'number') { c.treasure = (c.treasure || 0) + Math.round(c.hoard); c.hoard = 0; }
   if (!killer || typeof killer.id !== 'number') return;
   const band = c.band && S.bands[c.band];
   const g = band ? (band.grudge = band.grudge || { sid: null, pids: [], count: 0, since: sim.today }) : null;
