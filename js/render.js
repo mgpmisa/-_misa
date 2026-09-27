@@ -11,6 +11,7 @@ import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration 
 import { PartyRings } from './partyring.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家と里
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物
+import * as FG from './foodgfx.js'; // 保存食の工房と屋台・料理屋（看板・煙・吊るした燻製・チーズ棚）
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import * as LG from './leisuregfx.js'; // 歓楽の館の外観（大人向けの設定のときだけ。まとめ描きには入れない）
 import { ConstructGfx } from './constructgfx.js'; // 普請場（縄張り・土台・骨組み・足場・資材の山・荷運び）（開発部）
@@ -450,6 +451,7 @@ export class Renderer {
     const kcol = KINGDOMS[b.kingdom]?.color || '#c93a32';
     if (b.tribe && b.style && TH.tribalParts(this, b, add, M, W_, D_, face, door)) return parts; // 民族の家（js/tribehome.js）
     if (BG.styledParts(this, b, { add, M, W_, D_, face, south, kcol, door, windows, gable, flat, banner })) return parts; // 看板と種類ごとの形（js/bldgfx.js）
+    if (FG.FOOD_TYPES.has(b.type)) { FG.foodBldParts(this, b, add, M, W_, D_, face, door, { houseLike, gable, windows, banner, flat, south, kcol }); return parts; } // 保存食の工房と屋台・料理屋（js/foodgfx.js）
     if (BN.NEW_TYPES.has(b.type)) { BN.newBldParts(this, b, add, M, W_, D_, face, door, { houseLike, gable, windows, banner, flat, south, kcol }); return parts; } // 町の暮らしの建物（js/bldnew.js）
     switch (b.type) {
       case 'house': houseLike(1.15, M.timber, b.roof === 'tile' ? M.tileRoof : M.thatch); break;

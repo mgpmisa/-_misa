@@ -15,6 +15,7 @@ import * as SPR from './sprites.js';
 import { makeRng } from './rng.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家の内装
 import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮らしの建物の内装
+import './foodgfx.js'; // 保存食の工房と屋台・料理屋の内装・在庫の3D・職人と客の動き
 import * as CI from './castleint.js'; // 王城の中（いくつもの部屋・身分ごとの寝台）
 import * as SG from './shelfgfx.js'; // 職場の蔵の中身に合わせて、棚・台・かご・たるに品物を並べる（経済部）
 import * as MG from './mintgfx.js'; // 造幣所の中（炉・鋳型・金床・在庫）と、王城の宝物庫の国庫の硬貨
@@ -1806,7 +1807,7 @@ export class InteriorView {
     const a = e.action?.type;
     switch (a) {
       case 'sleep': return 'bed';
-      case 'eat': return 'eat';
+      case 'eat': case 'dine': return 'eat';
       case 'tavern': return 'seat';
       case 'pray': return 'pew';
       case 'school': case 'academy': return 'desk';

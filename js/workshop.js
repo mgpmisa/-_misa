@@ -82,6 +82,14 @@ const TAKEOVER = new Set(['baker', 'carpenter', 'tailor', 'innkeeper', 'smith'])
 // 店先の棚に並べられる数
 const SHELF_CAP = { bread: 24, ale: 16, flour_wheat: 20, medicine: 6, furniture: 3, cloth: 8, shoes: 6, pottery: 8, jewelry: 3 };
 function shelfCap(g) { if (SHELF_CAP[g] != null) return SHELF_CAP[g]; const G = gd(g); return G ? Math.max(2, Math.min(10, Math.round((G.target || 6) * 0.5))) : 2; }
+// 登録口：ほかのモジュールが職場の種類と作り方を足す（foodshop.js の乳酪小屋・燻製小屋・屋台など）
+//   wp：WP と同じ形（io：{ inp:[材料], out:[できる品] } を足せる）　prod：{ 職業: PROD と同じ形（alt(sim,p,b,hh) で品を選べる） }
+export function wsRegister(type, wp, prod = {}, shelf = {}) {
+  WP[type] = wp; WS_TYPES.add(type);
+  for (const [j, x] of Object.entries(prod)) { PROD[j] = x; PROD_OUT.add(x.out); for (const g of wp.io?.out || []) PROD_OUT.add(g); }
+  Object.assign(SHELF_CAP, shelf);
+  ioCache.clear();
+}
 // 物の名前（今の20品・物の一覧・鍛冶の材料）
 const MAT_NAME = { iron: '鉄の延べ棒', leather: '革', silk: '絹糸', scale: '竜の鱗', magicstone: '魔石', gem: '宝石', cloth: '布', wood: '材木' };
 export function goodName(g) { return gd(g)?.name || MAT_NAME[g] || ITEMS[g]?.name || g; }
@@ -203,6 +211,8 @@ function ioOf(type) {
   if (type === 'mill') inp.add('wheat');
   if (type === 'tavern' || type === 'inn') { for (const g of ['bread', 'meat', 'fish']) inp.add(g); }
   if (type === 'mine') { out.add('ore'); out.add('gem'); }
+  for (const g of WP[type]?.io?.inp || []) inp.add(g);   // 登録口で足した職場（wsRegister）
+  for (const g of WP[type]?.io?.out || []) out.add(g);
   x = { inp, out };
   ioCache.set(type, x);
   return x;
@@ -461,7 +471,9 @@ function flourFor(sim, b, hh, sid, need, batch, p) {
   }
 }
 function produce(sim, p, b, hh, eff, dt) {
-  const R = PROD[p.job]; if (!R) return;
+  let R = PROD[p.job];
+  if (R && R.alt) R = R.alt(sim, p, b, hh);   // その時どきに作る品を選ぶ（乳酪小屋のチーズとバターなど。null なら作らない）
+  if (!R) return;
   const sid = p.s, m = sim.S.towns[sid], st = storeOf(b, hh.id);
   const G = gd(R.out); if (!G) return;
   const onShelf = shelfQty(sim, b, R.out, hh.id);

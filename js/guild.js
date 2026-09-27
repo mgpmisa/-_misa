@@ -426,7 +426,7 @@ export function splitCoins(sim, p, amt) {
   const k = sim.kingdomOf?.(p); const town = sim.S.towns[p.s];
   let paid = 0;
   if (k && k.treasury > 200) { paid = Math.min(amt, (k.treasury - 200) * 0.1); k.treasury -= paid; }
-  if (paid < amt && town) { const f = Math.min(amt - paid, (town.fund || 0) * 0.2); town.fund -= f; paid += f; }
+  if (paid < amt && town) { const f = Math.min(amt - paid, Math.max(0, town.fund || 0) * 0.2); town.fund -= f; paid += f; }
   amt = paid;
   if (amt <= 0) return;
   const pt = partyOf(sim, p);

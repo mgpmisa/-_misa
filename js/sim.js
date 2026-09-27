@@ -69,6 +69,7 @@ import { combatStep, combatDaily } from './combat.js';
 import { ensureShops, shopsDaily, millToll } from './shops.js';
 import { ensureMatter, matterDaily, matterWork, matterHunt, matterLoot, matterCandidates, matterArrive, matterGood } from './matter.js';
 import { ensureWorkshop, workshopWork, wsOwnsWork, workshopHourly, workshopDaily, wsHave, wsTake, wsGearSold } from './workshop.js';   // 職場の蔵：仕入れ → 作る → 売る（経済部）
+import { ensureFoodshop, foodshopDaily } from './foodshop.js';   // 保存食の工房（乳酪・燻製・塩漬け・塩焼き）と屋台・料理屋（開発部）
 import { housingDaily } from './housing.js';   // 手狭な家の建て増し・引っ越し・独り立ち
 import { discoveryHourly } from './discovery.js';   // 新しく見つかった物のお知らせ
 import { ensureLeisure, leisureDecide, leisureArrive, leisureDo, leisureHourly, leisureDaily } from './leisure.js';   // 酒場の踊り・恋歌・祭りの踊り・逢い引き・仲人、大人向けの館（設定が有効なときだけ）
@@ -129,6 +130,7 @@ export class Sim {
     initVillages(this);
     initFarmsteads(this); // 首都の城壁の外に、畑つきの農家（farmstead.js）
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
+    ensureFoodshop(this, true); // 保存食の工房と屋台・料理屋（foodshop.js）
     ensureHerbGardens(this); // 町の薬草園と園丁（herbgarden.js）
     ensureArtisans(this); // 王都の職人・炭焼き窯・らくだとなかい（artisans.js）
     ensureLeisure(this, true); // 恋と楽しみの場（leisure.js）。大人向けの館は設定が有効なときだけ
@@ -163,6 +165,7 @@ export class Sim {
     ensureTribes(this);
     ensureVillages(this);
     ensureBuildings(this); // 古いセーブ：足りない建物をここで建てる
+    ensureFoodshop(this); // 古いセーブ：保存食の工房と屋台・料理屋を建てる（foodshop.js）
     ensureHerbGardens(this); // 古いセーブ：町の薬草園と園丁
     ensureArtisans(this); // 古いセーブ：王都の職人・炭焼き窯・らくだとなかい
     ensureLeisure(this); // 古いセーブ：設定に合わせて館を建てる／消す
@@ -2021,6 +2024,7 @@ export class Sim {
     foodflowDaily(this);
     matterDaily(this);   // 世界の物（matter.js）
     housingDaily(this);   // 手狭な家の建て増し・引っ越し・独り立ち（housing.js）
+    foodshopDaily(this);   // 保存食の工房と屋台・料理屋の働き手の補充・外食の記録（foodshop.js）
     shopsDaily(this);   // 店の借り賃・差し押さえ・酒を売る許し・町の負担
     workshopDaily(this);   // 職場の蔵：記録を昨日へ・傷む品・店をやめた人の品を家へ
     paydayDaily(this);

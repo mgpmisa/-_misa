@@ -26,6 +26,8 @@ import { drawPersonAnim, personAnimState, animFrameAt } from './anim_people.js';
 import './wsanim.js';   // 職場の人の動き（運び込む・棚に並べる・作る・運び出す）を anim_people.js に足す
 
 const TYPES = new Set(['bakery', 'smithy', 'genstore', 'tailorshop', 'apothecary', 'tavern', 'inn', 'mill', 'workshop', 'market']);
+// 足し口（foodgfx.js など）：layout[建物の種類](K, d, list, 道具) … 棚の並べ方　shape[形](lib, 色) … 品の形　kind[品] … [形, 色]
+export const SHELF_EXT = { layout: {}, shape: {}, kind: {} };
 const hashS = (s) => { s = String(s); let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
 const px = (g, x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
 const rect = (g, x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
@@ -129,7 +131,7 @@ function shape(kind, color) {
     case 'wool': return [[sph(0.1), M.tint(color || '#f0ece0'), 0, 0.09, 0]];
     case 'scroll': return [[cyl(0.035, 0.26, 0.035, 6), M.tint(color || '#e8d8a8'), 0, 0.035, 0, 0, HALF]];
     case 'shelf2': return [[box(0.45, 0.06, 4.6), M.wood, 0, 0.55, 0], [box(0.45, 0.06, 4.6), M.wood, 0, 1.05, 0], [box(0.45, 1.1, 0.06), M.darkWood, 0, 0.55, -2.27], [box(0.45, 1.1, 0.06), M.darkWood, 0, 0.55, 2.27], [box(0.05, 1.1, 4.6), M.darkWood, 0.2, 0.55, 0]];
-    default: return [[box(0.2, 0.16, 0.2), M.tint(c), 0, 0.08, 0]];
+    default: if (SHELF_EXT.shape[kind]) return SHELF_EXT.shape[kind](lib(), color); return [[box(0.2, 0.16, 0.2), M.tint(c), 0, 0.08, 0]];
   }
 }
 
@@ -149,6 +151,7 @@ const SUB_KIND = {
 };
 const PALETTE = ['#c05a4a', '#4a7ac0', '#5aa05a', '#d0a040', '#8a5ab0', '#e08a50', '#a0a0a0', '#e0d0a0', '#50a0a0', '#b04070'];
 function kindOf(g) {
+  if (SHELF_EXT.kind[g]) return SHELF_EXT.kind[g];
   if (GOOD_KIND[g]) return GOOD_KIND[g];
   if (ITEMS[g]) {
     const t = ITEMS[g].type;
@@ -379,7 +382,7 @@ const LAYOUT = {
 // ================================================================ 作る・毎フレーム・閉じる
 function build(view, b, d) {
   const K = view.K, list = [];
-  (LAYOUT[b.type] || (() => {}))(K, d, list);
+  (LAYOUT[b.type] || SHELF_EXT.layout[b.type] || (() => {}))(K, d, list, { fillShelf, sacks, woodPile, sortGoods, kindOf });
   const { box, M } = lib();
   const bins = new Map();
   const mtx = new THREE.Matrix4(), part = new THREE.Matrix4(), rot = new THREE.Matrix4(), sc = new THREE.Matrix4();
@@ -417,7 +420,7 @@ function signature(d) {
 }
 export function shelfAttach(view, b) {
   shelfDetach(view);
-  if (!b || !TYPES.has(b.type) || !view.scene || !view.K) return;
+  if (!b || !(TYPES.has(b.type) || SHELF_EXT.layout[b.type]) || !view.scene || !view.K) return;
   if (b.tribe && b.style) return;   // 奥地の民族の家は別の内装
   const d = wsDisplay(view.sim, b);
   if (!d) return;

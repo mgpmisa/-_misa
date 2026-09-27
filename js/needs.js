@@ -36,6 +36,7 @@ import { tooDangerous } from './danger.js';
 import { GOODS, JOBS } from './data.js';
 import { marketBuy, personPayer } from './market.js';
 import { wsTake } from './workshop.js';
+import { dineCands, dineArrive, DINE_LABEL, DINE_GO, DINE_PREF } from './foodshop.js';   // 屋台・料理屋で外食する
 
 // 試験用のお金の見張り：sim._nAudit に総額を数える関数を入れると、この仕組みの中で増えた・減ったお金を sim._nLeak に記録する
 const audited = (name, fn) => function (sim, ...a) {
@@ -269,6 +270,8 @@ const HOMEBOUND = new Set(['sleep', 'eat', 'shop', 'rest', 'home', 'beg', 'askfo
 export const needsCands = audited('needsCands', needsCandsImpl);
 function needsCandsImpl(sim, p, cands) {
   if (!cands.length || !p.needs || p.jail != null) return;
+  // 空腹のとき、財布と相談して屋台・料理屋で食べることもある（foodshop.js）
+  dineCands(sim, p, cands);
   // 寝不足だと判断が鈍る：いちばん良い行動を選びそこねる
   const ss = p.nd ? sleepStage(p.nd) : 0;
   if (ss) { for (const c of cands) c.score += sim.rng.range(-1.6, 1.6) * ss; NX(sim).stats.daze++; }
@@ -298,6 +301,7 @@ export const needsArrive = audited('needsArrive', needsArriveImpl);
 function needsArriveImpl(sim, p, a) {
   if (!a) return;
   if (a.type === 'wayeat') { arriveEat(sim, p, a); return; }
+  if (a.type === 'dine') { dineArrive(sim, p, a); return; }   // 屋台・料理屋の食事（客 → 店の主）
   if (a.type === 'forage') { arriveForage(sim, p, a); return; }
   if (a.type === 'sleep' && (a.food === 'way' || a.food === 'camp')) arriveSleep(sim, p, a);
 }
@@ -605,7 +609,7 @@ export function needsLabel(p) {
   if ((p?.ration || 0) >= 1) out.push(`弁当${Math.floor(p.ration)}食分を持っている`);
   return out.join('・');
 }
-export const NEEDS_LABEL = { wayeat: '旅先で食事をしている', forage: '野で食べ物を探している' };
-export const NEEDS_GO = { wayeat: '近くで食事をとろうとしている', forage: '食べ物を探しに野へ向かっている' };
-export const NEEDS_PREF = { wayeat: '旅先の食事', forage: '野の食べ物探し' };
+export const NEEDS_LABEL = { wayeat: '旅先で食事をしている', forage: '野で食べ物を探している', ...DINE_LABEL };
+export const NEEDS_GO = { wayeat: '近くで食事をとろうとしている', forage: '食べ物を探しに野へ向かっている', ...DINE_GO };
+export const NEEDS_PREF = { wayeat: '旅先の食事', forage: '野の食べ物探し', ...DINE_PREF };
 export function needsSummary(sim) { return { ...(sim.S.needsX?.stats || {}) }; }
