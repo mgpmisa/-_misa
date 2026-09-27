@@ -1011,7 +1011,8 @@ function doBarter(sim, t, p) {
   if (!from || !to) return;
   const V = XV(sim).list[sim.town(p.s)?.vid];
   const goods = t.data.goods || {};
-  sim.mcash(t.to);
+  if (typeof sim.mcash === 'function') sim.mcash(t.to);
+  if (to.cash == null) to.cash = 0;   // 市場の金庫がない本体でも止まらない（経済部の新しい決まりに合わせる直しは別に行う）
   let got = 0;
   for (const [g, n] of Object.entries(goods)) {
     to.stock[g] = (to.stock[g] || 0) + n;
