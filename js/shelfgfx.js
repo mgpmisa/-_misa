@@ -93,15 +93,15 @@ function shape(kind, color) {
     case 'log': return [[cyl(0.065, 0.55, 0.065, 6), M.bark, 0, 0.065, 0, 0, HALF]];
     case 'ingot': return [[box(0.3, 0.07, 0.11), M.iron, 0, 0.035, 0], [box(0.24, 0.012, 0.07), M.ironTop, 0, 0.076, 0]];
     case 'ore': return [[box(0.15, 0.12, 0.13), M.ore, 0, 0.06, 0, 0.3, 0.2]];
-    case 'sword': return [[box(0.05, 0.78, 0.015), M.blade, 0, 0.62, 0], [box(0.19, 0.035, 0.05), M.brass, 0, 0.22, 0], [box(0.035, 0.16, 0.035), M.darkWood, 0, 0.13, 0], [box(0.055, 0.05, 0.05), M.brass, 0, 0.03, 0]];
-    case 'longsword': return [[box(0.055, 1.0, 0.015), M.blade, 0, 0.73, 0], [box(0.22, 0.035, 0.05), M.brass, 0, 0.22, 0], [box(0.035, 0.2, 0.035), M.darkWood, 0, 0.11, 0]];
-    case 'dagger': return [[box(0.045, 0.34, 0.015), M.blade, 0, 0.5, 0], [box(0.13, 0.03, 0.04), M.brass, 0, 0.32, 0], [box(0.03, 0.12, 0.03), M.darkWood, 0, 0.25, 0]];
-    case 'axe': return [[box(0.04, 1.05, 0.04), M.wood, 0, 0.53, 0], [box(0.2, 0.17, 0.03), M.iron, 0.08, 0.98, 0], [box(0.03, 0.15, 0.035), M.steel, 0.18, 0.98, 0]];
-    case 'spear': return [[box(0.035, 1.7, 0.035), M.wood, 0, 0.85, 0], [box(0.05, 0.22, 0.02), M.blade, 0, 1.8, 0]];
-    case 'mace': return [[box(0.04, 0.7, 0.04), M.darkWood, 0, 0.35, 0], [box(0.13, 0.15, 0.13), M.iron, 0, 0.75, 0]];
+    case 'sword': return [[box(0.09, 0.78, 0.03), M.blade, 0, 0.62, 0], [box(0.19, 0.035, 0.05), M.brass, 0, 0.22, 0], [box(0.035, 0.16, 0.035), M.darkWood, 0, 0.13, 0], [box(0.055, 0.05, 0.05), M.brass, 0, 0.03, 0]];
+    case 'longsword': return [[box(0.1, 1.0, 0.03), M.blade, 0, 0.73, 0], [box(0.22, 0.035, 0.05), M.brass, 0, 0.22, 0], [box(0.035, 0.2, 0.035), M.darkWood, 0, 0.11, 0]];
+    case 'dagger': return [[box(0.08, 0.34, 0.03), M.blade, 0, 0.5, 0], [box(0.13, 0.03, 0.04), M.brass, 0, 0.32, 0], [box(0.03, 0.12, 0.03), M.darkWood, 0, 0.25, 0]];
+    case 'axe': return [[box(0.04, 1.05, 0.04), M.wood, 0, 0.53, 0], [box(0.24, 0.2, 0.05), M.iron, 0.1, 0.98, 0], [box(0.04, 0.2, 0.055), M.steel, 0.23, 0.98, 0]];
+    case 'spear': return [[box(0.035, 1.7, 0.035), M.wood, 0, 0.85, 0], [box(0.08, 0.26, 0.03), M.blade, 0, 1.82, 0]];
+    case 'mace': return [[box(0.04, 0.7, 0.04), M.darkWood, 0, 0.35, 0], [box(0.17, 0.18, 0.17), M.iron, 0, 0.75, 0]];
     case 'bow': return [[box(0.035, 1.1, 0.03), M.wood, 0, 0.6, 0], [box(0.006, 1.02, 0.006), M.white, 0.07, 0.6, 0]];
     case 'staff': return [[box(0.04, 1.3, 0.04), M.wood, 0, 0.65, 0], [sph(0.07), M.glass('#8a60e0'), 0, 1.34, 0]];
-    case 'tool': return [[box(0.035, 0.5, 0.035), M.wood, 0, 0.25, 0], [box(0.16, 0.07, 0.07), M.iron, 0, 0.5, 0]];
+    case 'tool': return [[box(0.05, 0.55, 0.05), M.wood, 0, 0.28, 0], [box(0.22, 0.1, 0.1), M.steel, 0, 0.56, 0]];
     case 'armor': return [[box(0.46, 0.1, 0.46), M.darkWood, 0, 0.05, 0], [box(0.05, 0.6, 0.05), M.darkWood, 0, 0.4, 0], [box(0.42, 0.48, 0.26), M.tint(c), 0, 0.88, 0], [box(0.5, 0.1, 0.28), M.tint(c), 0, 1.1, 0], [box(0.2, 0.22, 0.2), M.tint(c), 0, 1.3, 0]];
     case 'shieldHang': return [[box(0.05, 0.46, 0.4), color === 'wood' ? M.woodShield : M.shield, 0, 0, 0]];
     case 'barrel': return [[cyl(0.3, 0.8, 0.3, 8), M.wood, 0, 0.4, 0], [cyl(0.315, 0.05, 0.315, 8), M.iron, 0, 0.16, 0], [cyl(0.315, 0.05, 0.315, 8), M.iron, 0, 0.64, 0], [cyl(0.22, 0.01, 0.22, 8), M.darkWood, 0, 0.805, 0]];
@@ -191,7 +191,7 @@ function fillShelf(list, shelf, goods, opt = {}) {
       for (let i = 0; i < k; i++) {
         const a = 0.12 + (col + i) * 0.42 + 0.16, b = 0.24;
         const [x, z] = shelf.side === 'N' ? [shelf.x + a, shelf.z + b] : [shelf.x + b, shelf.z + a];
-        list.push({ kind, color, x, y, z, ry: shelf.side === 'N' ? 0 : HALF });
+        list.push({ kind, color, x, y, z, ry: (shelf.side === 'N' ? 0 : HALF) + (kind === 'roll' ? HALF : 0) });   // 布の巻きは切り口を手前に
       }
     });
     col += w;

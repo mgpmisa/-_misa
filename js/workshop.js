@@ -237,7 +237,7 @@ function catOfPayer(sim, payer, name) {
   if (hid != null) {
     if (CTX.b && CTX.hh && CTX.hh.id === hid) return WP[CTX.b.type]?.label || '職場';
     const b = shopOfHh(sim, hid);
-    if (b && WP[b.type]?.merchant) return WP[b.type].label;
+    if (b && WP[b.type]?.merchant && /買い付け/.test(name || '')) return WP[b.type].label;
     if (b && (b.type === 'tavern' || b.type === 'inn')) return WP[b.type].label;
     const hh = sim.S.households[hid];
     if (hh && hh.members.some((id) => sim.S.people[id]?.job === 'merchant')) return '市場の商人';
@@ -253,7 +253,7 @@ function onBuy(sim, sid, g, parts, payer, payerName) {
   // 買い手の職場（仕入れ）
   let bb = null;
   if (payer && typeof payer === 'object' && payer.__b) bb = payer.__b;
-  else { const hid = payerHhId(payer); if (hid != null) { if (CTX.b && CTX.hh?.id === hid) bb = CTX.b; else { const b = shopOfHh(sim, hid); if (b && (WP[b.type]?.merchant || ((b.type === 'tavern' || b.type === 'inn') && ioOf(b.type).inp.has(g)))) bb = b; } } }
+  else { const hid = payerHhId(payer); if (hid != null) { if (CTX.b && CTX.hh?.id === hid) bb = CTX.b; else { const b = shopOfHh(sim, hid); if (b && ((WP[b.type]?.merchant && /買い付け/.test(payerName || '')) || ((b.type === 'tavern' || b.type === 'inn') && ioOf(b.type).inp.has(g)))) bb = b; } } }
   for (const [o, n, c, cls] of parts) {
     const sellerCat = catOfOwner(sim, o, g);
     tally(sim, sid, g, sellerCat, buyerCat, n);
@@ -460,7 +460,8 @@ function produce(sim, p, b, hh, eff, dt) {
     if ((st[k] || 0) < need) {
       const batch = Math.max(need, u * R.rate * perHr * 2);
       if (p.job === 'baker' && k === 'flour_wheat') flourFor(sim, b, hh, sid, need, batch);
-      else if (!R.fromStore || (m.stock[k] || 0) > (gd(k)?.target || 20)) buyInto(sim, b, hh, sid, k, batch - (st[k] || 0));   // 粉屋は、麦のあまっているときだけ買う
+      else if (!R.fromStore) buyInto(sim, b, hh, sid, k, batch - (st[k] || 0));
+      else if ((m.stock[k] || 0) > (gd(k)?.target || 20) * 2) buyInto(sim, b, hh, sid, k, Math.min(10, batch - (st[k] || 0)));   // 粉屋は、町の麦がたっぷりあまっているときだけ少し買う（麦は食べ物なので取り上げすぎない）
     }
     f = Math.min(f, (st[k] || 0) / need);
   }
