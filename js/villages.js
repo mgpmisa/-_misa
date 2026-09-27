@@ -38,7 +38,7 @@ import { clamp } from './rng.js';
 const NEW_JOBS = {
   vchief: { name: '村の長', place: 'hall', rank: 'commoner' },
   vguard: { name: '村の守り手', place: 'gate', rank: 'commoner', combat: 2 },
-  mercenary: { name: '傭兵', place: 'barracks', rank: 'commoner', combat: 3, goods: 'meat' },
+  mercenary: { name: '傭兵', place: 'barracks', rank: 'commoner', combat: 3 },
   hermit: { name: '修道士', place: 'church', rank: 'commoner', svc: 'heal' },
 };
 for (const [k, v] of Object.entries(NEW_JOBS)) if (!JOBS[k]) JOBS[k] = v;
@@ -1096,8 +1096,13 @@ function upkeep(sim, V, s) {
   const t = S.towns[V.sid];
   // 週に一度、暮らしに余裕のある家が村の蓄えに積み立てる（出どころ：家計 → 行き先：村の蓄え）
   if (sim.today % 7 === 3) for (const hh of Object.values(S.households)) if (hh.s === V.sid && hh.money > 40 && !hh.bandits) { const x = (hh.money - 40) * 0.06; hh.money -= x; t.fund += x; }
-  // 村の守り手への手当て（村の蓄え → 家計）。蓄えに余裕があるときだけ
-  if (sim.today % 3 === 0 && t.fund > 60) for (const p of here) if (p.job === 'vguard') xfer(acct(sim, 's' + V.sid), hhAcct(sim.hh(p)), 1.5);
+  // 給料日（7日ごと）：村が雇っている守り手・傭兵に、村の蓄えから決まった額を払う（働いた時間では増えない）
+  if (sim.today % 7 === 0) for (const p of here) {
+    const wage = p.job === 'vguard' ? 6 : p.job === 'mercenary' ? 8 : 0;
+    if (!wage || t.fund < wage + 20) continue;
+    const paid = xfer(acct(sim, 's' + V.sid), hhAcct(sim.hh(p)), wage);
+    if (paid) { stat(sim, 'payday', paid); if (sim.rng.chance(0.3)) sim.remember(p, `給料日に、村の蓄えから${r0(paid)}銅貨を受け取った`, { emo: 0.3, imp: 0.3, k: 'money' }); }
+  }
   // 村の暮らし：畑・森・川の恵みが村の蓄え（品物）にたまり、食べ物に困った家に分ける
   const workers = here.filter((p) => sim.ageOf(p) >= 14 && sim.ageOf(p) < 68 && p.job && p.jail == null).length;
   const sm = [0.8, 1, 1.3, 0.5][sim.seasonIdx()];
