@@ -10,6 +10,7 @@ import { laborThought, laborTopic } from './labor.js';
 import { financeThoughts, financeTopic, financeTopicWeight } from './finance.js';
 import { calendarTopicWeight, calendarTopic, calendarReact, calendarThought } from './calendar.js';
 import { JOBS, GOODS, TECHS, RANKS } from './data.js';
+import { tribeVoice, tribeFirstPerson, tribeTail, tribeGreeting, tribeTopic, tribeThoughts } from './tribes.js';
 
 // ---- 話し方 ----
 export function speechStyle(p, age) {
@@ -63,9 +64,12 @@ export class Voice {
     this.style = style;
     this.me = firstPerson(p, style === 'polite' && p.style !== 'polite' ? (p.sex === 'm' ? 'polite' : 'polite') : style);
     this.rng = api.rng;
+    // 奥地の民：一人称と語尾を民族の話し方に
+    this.tv = tribeVoice(p);
+    if (this.tv) { const fp = tribeFirstPerson(p, this.age); if (fp) this.me = fp; }
   }
   get key() { return GENDERED.has(this.style) ? `${this.style}_${this.p.sex}` : this.style; }
-  tail(kind) { return this.rng.pick(TAILS[kind][this.key] || TAILS[kind].plain_m); }
+  tail(kind) { if (this.tv && this.age >= 13) { const t = tribeTail(this.p, kind, this.rng); if (t) return t; } return this.rng.pick(TAILS[kind][this.key] || TAILS[kind].plain_m); }
   s(body, kind = 'n') {
     body = this.fill(body);
     if (kind === 'raw') return body;
@@ -123,6 +127,7 @@ export function address(api, a, b, style) {
 }
 
 function greeting(v, hour, B) {
+  const tg = tribeGreeting(v.api, v.p, B); if (tg) return tg;
   if (B.rank === 'king' && v.p.rank !== 'king' && !v.api.kinTerm(v.p, B)) return v.r({ child: '王さま、こんにちは！', rough: '……陛下。', default: '陛下、ご機嫌うるわしゅう。', plain: '陛下、ご機嫌うるわしゅうございます。', polite: '陛下、ご機嫌うるわしゅうございます。' });
   if (v.style === 'royal') return v.r({ royal: ['うむ、{you}か。', 'よく来た、{you}。'] });
   if (hour < 10) return v.r({ polite: 'おはようございます、{you}。', elder: 'おはよう、{you}。', rough: ['よう、{you}。', 'おう、{you}。早いな。'], child: 'おはよう、{you}！', plain: ['おはよう、{you}。', 'あ、{you}。おはよう。'], noble_f: 'ごきげんよう、{you}。', noble_m: 'おはよう、{you}。', knight: 'おはようございます、{you}！', sage: 'おお、{you}か。おはよう。' });
@@ -144,6 +149,7 @@ function topics(api, A, B) {
   add(elderTopicWeight(api, A, B), (a1, a2, a3, v) => elderTopic(a1, a2, a3, v));
   const ut = underworldTopic(api, A, B); if (ut) add(ut.w, ut.fn);
   const ht = healthTopic(api, A, B); if (ht) add(ht.w, ht.fn);
+  const tt = tribeTopic(api, A, B); if (tt) add(tt.w, tt.fn);
   const lbt = laborTopic(api, A, B); if (lbt) add(lbt.w, lbt.fn);
   add(A.job && age >= 14 ? 1.2 : 0, topicWork);
   add(age >= 14 ? 0.4 + Math.abs(api.priceRatio('bread', A.s) - 1) * 3 + (api.householdMoney(A) < 20 ? 1.2 : 0) : 0, topicEconomy);
@@ -769,6 +775,7 @@ export function innerThought(api, p) {
   const eth = elderThought(api, p); if (eth) opts.push(eth);
   opts.push(...underworldThoughts(api, p));
   opts.push(...healthThoughts(api, p));
+  opts.push(...tribeThoughts(api, p));
   const lt = laborThought(api, p); if (lt) opts.push(lt);
   const needTxt = { hunger: 'お腹すいたな……', sleep: '眠い……今日は早く寝よう。', survival: '怖い。どこか安全な場所へ……', lust: '誰かのぬくもりが恋しい。', sloth: 'ああ、何もしたくない。', pleasure: 'たまには何か楽しいことがしたい。', esteem: '誰か、{me}のことを認めてくれないかな。' };
   if (low[1] < 30) opts.push(needTxt[low[0]]);

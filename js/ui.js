@@ -24,6 +24,7 @@ import { convoyOf, convoyLabel } from './logistics.js';
 import { taxNationHTML } from './taxes.js';
 import { expansionNationHTML, drawTerritory } from './expansion.js';
 import { diplomacyNationHTML } from './diplomacy.js';
+import { tribesNationHTML, tribeLabel } from './tribes.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
@@ -443,6 +444,7 @@ export class UI {
       <dt>占領中</dt><dd>${S.world.settlements.filter((s) => S.towns[s.id].occupied).map((s) => esc(s.name)).join('、') || 'なし'}</dd></dl></div>`;
     const parties = S.parties.filter((p) => !p.done);
     if (parties.length) h += `<div class="nation"><div class="nname">魔王討伐隊</div>${parties.map((p) => p.members.map((id) => S.people[id]).filter((x) => x && x.deathYear == null).map((x) => `<span class="link" data-pid="${x.id}">${esc(x.given)}</span>（Lv${x.lv}・${JOBS[x.job]?.name}）`).join('、')).join('<br>')}</div>`;
+    h += tribesNationHTML(this.sim, esc) || '';
     const wanted = Object.entries(S.wanted).map(([id, w]) => ({ p: S.people[id], w })).filter((x) => x.p && x.p.deathYear == null);
     if (wanted.length) h += `<div class="nation"><div class="nname">お尋ね者</div>${wanted.map(({ p, w }) => `<span class="link" data-pid="${p.id}">${esc(p.given)}</span>（${esc(w.crime)}・賞金${w.bounty}）`).join('<br>')}</div>`;
     $('nations').innerHTML = h;
@@ -627,7 +629,7 @@ export class UI {
     const town = sim.townOf(p);
     let h = `<canvas id="portrait" class="portrait" width="64" height="80"></canvas>`;
     h += `<div class="pname">${p.heroTitle ? '勇者 ' : ''}${esc(p.given)}・${esc(p.family)}</div>`;
-    h += `<div class="psub">${dead ? `${p.birthYear}年〜${p.deathYear}年（${age}歳・${esc(DEATH_CAUSES[p.deathCause] || p.deathCause)}）` : `${age}歳　${job}　<span class="rank">${RANKS[p.rank]?.name || ''}</span>`}${p.birthFamily !== p.family ? `<br>旧姓 ${esc(p.birthFamily)}` : ''}${p.origin ? `<br>${esc(p.origin)}の出` : ''}<br>${esc(town.name)}（${esc(KINGDOMS[town.kingdom]?.name || '')}）${hh && hh.house != null ? `・<span class="link" data-bid="${hh.house}">${esc(hh.name)}</span>` : hh?.street ? '・住む家がない' : hh?.wander ? '・旅暮らし' : ''}</div>`;
+    h += `<div class="psub">${dead ? `${p.birthYear}年〜${p.deathYear}年（${age}歳・${esc(DEATH_CAUSES[p.deathCause] || p.deathCause)}）` : `${age}歳　${job}　<span class="rank">${RANKS[p.rank]?.name || ''}</span>`}${p.birthFamily !== p.family ? `<br>旧姓 ${esc(p.birthFamily)}` : ''}${p.origin ? `<br>${esc(p.origin)}の出` : ''}<br>${esc(town.name)}（${esc(tribeLabel(this.sim, p) || KINGDOMS[town.kingdom]?.name || '')}）${hh && hh.house != null ? `・<span class="link" data-bid="${hh.house}">${esc(hh.name)}</span>` : hh?.street ? '・住む家がない' : hh?.wander ? '・旅暮らし' : ''}</div>`;
     if (dead) {
       if (p.lastWords) h += `<div class="thought"><b>最期に思っていたこと</b>${esc(p.lastWords)}</div>`;
     } else {

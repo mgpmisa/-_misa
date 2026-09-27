@@ -158,7 +158,7 @@ function matchesTown(ev, s) {
 export function calendarToday(sim, sid) {
   const S = sim.S;
   const s = sim.town(sid);
-  if (!s || !S.kingdoms) return [];
+  if (!s || !S.kingdoms || (s.tribal && s.annexed == null)) return [];
   const cal = ensure(sim);
   const k = S.kingdoms[s.kingdom];
   if (!k) return [];
@@ -172,7 +172,7 @@ export function calendarToday(sim, sid) {
 // 次の行事（n日以内）。会話の「もうすぐ○○だね」用
 export function calendarUpcoming(sim, sid, within = 3) {
   const s = sim.town(sid);
-  if (!s || !sim.S.kingdoms) return null;
+  if (!s || !sim.S.kingdoms || (s.tribal && s.annexed == null)) return null;
   const cal = ensure(sim);
   const doy = sim.dayOfYear();
   let best = null;

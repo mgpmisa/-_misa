@@ -1253,7 +1253,7 @@ function seasons(sim, animals, si, dos) {
   }
   if (si === 0 && dos === 1) {
     let n = 0;
-    for (const c of animals) if (c.mig && c.sp !== 'goose') { c.home = c.mig.from; c.mig = { from: null, arrived: false, back: true }; c.path = null; n++; }
+    for (const c of animals) if (c.mig && c.sp !== 'goose') { c.home = c.mig.from || c.home; c.mig = { from: null, arrived: false, back: true }; c.path = null; n++; }
     if (n) log(sim, '雪がとけ、冬を森で越したトナカイたちが雪原へ帰っていく。', [], null);
   }
   for (const c of animals) if (c.mig?.back && c.mig.arrived) c.mig = null;

@@ -1782,7 +1782,7 @@ function endHook(sim, st, V, endId) {
     }
     case 'youth_to_capital:end_return': { const y = P('youth'); if (y) moveHome(sim, y, V, true); break; }
     case 'seal_broken:end_slain': { const hero = P('hero'), gc = guardianC(sim, V); if (gc) killCreature(sim, gc, hero || null); V.gstate = 'slain'; if (hero) hero.fame += 60; break; }
-    case 'seal_broken:end_resealed': { V.lamps = 7; V.gstate = 'sealed'; const gc = guardianC(sim, V); if (gc) { gc.dormant = true; gc.calm = Infinity; } break; }
+    case 'seal_broken:end_resealed': { V.lamps = 7; if (gOfV(V)?.sealed) V.gstate = 'sealed'; const gc = guardianC(sim, V); if (gc) { gc.dormant = true; gc.calm = Infinity; } break; }
     case 'seal_broken:end_ashland': { V.block = sim.today + 800; break; }
     case 'sent_ones_island:end_together': case 'sent_ones_island:end_lost': { const k = P('kin'); if (k) goAway(sim, k, V, null, g?.id); break; }
     case 'first_trade:end_greed': { const m = P('merchant'); if (m) { const hh = sim.hh(m); if (hh) hh.money += 60; m.treasures = m.treasures || []; m.treasures.push(`${t.name}の聖なる品`); } break; }
@@ -2001,7 +2001,7 @@ function legendsDaily(sim) {
     q.prized = true;
     const L = legendById(q.legend);
     const who = (q.takenBy || []).map((id) => S.people[id]).find((p) => p && p.deathYear == null);
-    if (who && L?.prize && !X.arcs.some((a) => a.arc === 'relic_hunt' && a.data.quest === q.id && !a.done)) {
+    if (who && L?.prize && !X.arcs.some((a) => a.arc === 'relic_hunt' && a.data.quest === q.id)) {
       who.treasures = who.treasures || []; if (!who.treasures.includes(L.prize)) who.treasures.push(L.prize);
       who.fame += 20;
       sim.chron(`冒険者${sim.fullName(who)}が「${L.name}」から「${L.prize}」を持ち帰った`, sim.townOf(who).kingdom);

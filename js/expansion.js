@@ -697,7 +697,7 @@ function stepRecruit(sim, pr, k) {
   const scored = [];
   for (const p of L) {
     const s = sim.town(p.s);
-    if (!s || s.kingdom !== pr.k || s.abandoned || !sim.isAdult(p) || sim.ageOf(p) > 45 || p.jail != null || p.mission || p.expProj != null || p.quest || p.crusade) continue;
+    if (!s || (s.tribal && s.annexed == null) || s.kingdom !== pr.k || s.abandoned || !sim.isAdult(p) || sim.ageOf(p) > 45 || p.jail != null || p.mission || p.expProj != null || p.quest || p.crusade) continue;
     if (NO_SETTLER.has(p.job) || SENIOR_JOBS.has(p.job) || ['king', 'royal', 'noble', 'knight', 'prisoner', 'outlaw'].includes(p.rank)) continue;
     const hh = sim.hh(p);
     if (!hh || hh.royal || hh.bandits || hh.wander || hh.expProj != null) continue;

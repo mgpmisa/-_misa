@@ -79,6 +79,7 @@ export function assess(sim, k, hh, owns = null) {
   const out = { poll: 0, land: 0, sales: 0, war: 0, tithe: 0, debt: 0, total: 0, why: null };
   if (hh.royal) { out.why = '王家は免税'; return out; }
   if (hh.bandits) { out.why = '盗賊の一味には届かない'; return out; }
+  { const ts = sim.town(hh.s); if (ts?.tribal && ts.annexed == null) { out.why = '民族の村には王国の税が届かない'; return out; } }
   if (hh.street || hh.wander) { out.why = '宿なしで取り立てられない'; return out; }
   const relief = inRelief(sim, k, hh.s);
   if (relief === '占領下で徴税できない') { out.why = relief; return out; }
@@ -746,7 +747,7 @@ export function taxesDaily(sim) {
     if (isTaxDay(sim, k) && king && S.tax.rebellion?.k !== k.id) {
       k.fisc.last = { ...k.fisc.cur, day: sim.today };
       k.fisc.cur = blank();
-      for (const s of towns) if (!S.towns[s.id].occupied) openRound(sim, k, s);
+      for (const s of towns) if (!S.towns[s.id].occupied && !(s.tribal && s.annexed == null)) openRound(sim, k, s);
       for (const p of sim.living()) if (sim.town(p.s).kingdom === k.id && p.job === 'treasurer') sim.remember(p, '今日は徴税日。役人たちに帳簿を持たせて町へ送り出した', { emo: 0.1, imp: 0.2, k: 'tax' });
     } else if (isTaxDay(sim, k) && S.tax.rebellion?.k === k.id) {
       k.fisc.last = { ...k.fisc.cur, day: sim.today }; k.fisc.cur = blank();

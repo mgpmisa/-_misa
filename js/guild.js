@@ -335,7 +335,7 @@ export function partiesDaily(sim) {
     const openQ = (S.quests || []).filter((q) => q.s === cap.id && q.state === 'open').length;
     if (advs.length < 6 + Math.min(6, openQ / 2) && R.chance(0.3)) sim.adventurerArrives(cap);
     if (R.chance(0.08)) {
-      const kingdomTowns = S.world.settlements.filter((s) => s.kingdom === cap.kingdom).map((s) => s.id);
+      const kingdomTowns = S.world.settlements.filter((s) => s.kingdom === cap.kingdom && !(s.tribal && s.annexed == null)).map((s) => s.id);
       const y = sim.living().find((p) => kingdomTowns.includes(p.s) && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 24 && p.spouseId == null && p.values.courage > 0.6 && p.values.ambition > 0.55 && !['king', 'royal', 'noble'].includes(p.rank) && !isAdventurer(p) && !JOBS[p.job]?.guardTown && R.chance(0.3));
       if (y) {
         const from = sim.town(y.s);

@@ -40,6 +40,7 @@ import { laborDaily, laborRestDay, restDayFor, laborWork, laborWorkMul, laborCan
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
 import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
+import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth } from './tribes.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 
 const MORT_Y = [[0, 0.04], [4, 0.008], [14, 0.002], [39, 0.003], [54, 0.007], [64, 0.02], [74, 0.05], [84, 0.12], [999, 0.28]];
@@ -89,6 +90,7 @@ export class Sim {
     advClassDaily(this); // 冒険者の職業（剣士・魔法使い など）
     this.slimDead();
     ensureExpansion(this);
+    initTribes(this);
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
     return this;
@@ -112,6 +114,7 @@ export class Sim {
     advClassDaily(this); // 古いセーブ：冒険者の職業をここで決める
     if (!data.gatesOpened) { openGates(data.world); data.gatesOpened = true; }
     ensureExpansion(this);
+    ensureTribes(this);
     computeDanger(this);
     return true;
   }
@@ -480,6 +483,7 @@ export class Sim {
   }
   placeFor(p, kind) {
     const ex = expansionPlace(this, p, kind); if (ex) return ex;
+    const tp = tribesPlace(this, p, kind); if (tp) return tp;
     const R = this.rng, s = this.townOf(p), w = this.S.world;
     const cp = civicPlace(this, p, kind); if (cp) return cp;
     switch (kind) {
@@ -1685,6 +1689,7 @@ export class Sim {
     politicsHourly(this);
     taxesHourly(this);
     expansionHourly(this);
+    tribesHourly(this);
     diplomacyHourly(this);
     demonHourly(this);
     monstersHourly(this);
@@ -1734,13 +1739,13 @@ export class Sim {
     }
     // 豊かな町から、同じ国の貧しい村へ援助
     for (const k of S.kingdoms) {
-      const ts = S.world.settlements.filter((s) => s.kingdom === k.id && !S.towns[s.id].occupied);
+      const ts = S.world.settlements.filter((s) => s.kingdom === k.id && !S.towns[s.id].occupied && !(s.tribal && s.annexed == null));
       const rich = ts.slice().sort((a, b) => S.towns[b.id].fund - S.towns[a.id].fund)[0], poor = ts.slice().sort((a, b) => S.towns[a.id].fund - S.towns[b.id].fund)[0];
       if (rich && poor && rich !== poor && S.towns[rich.id].fund > 600 && S.towns[poor.id].fund < 80) { const x = 120; S.towns[rich.id].fund -= x; S.towns[poor.id].fund += x; }
     }
     if (this.isFestival()) {
       const from = this.dayIndex * 1440 + 16 * 60;
-      for (const s of S.world.settlements) if (!S.towns[s.id].occupied) S.gatherings.push({ type: 'festival', place: 'plaza', from, to: from + 7 * 60, s: s.id, label: '収穫祭' });
+      for (const s of S.world.settlements) if (!S.towns[s.id].occupied && !(s.tribal && s.annexed == null)) S.gatherings.push({ type: 'festival', place: 'plaza', from, to: from + 7 * 60, s: s.id, label: '収穫祭' });
       this.news('今日は収穫祭。夕方から各地の広場でかがり火が焚かれる', 1);
     }
     calendarDaily(this);
@@ -1814,6 +1819,7 @@ export class Sim {
     taxesDaily(this);
     gearDaily(this);
     expansionDaily(this);
+    tribesDaily(this);
     diplomacyDaily(this);
     for (const p of this.living()) this.trimMemories(p);
     this.save();
@@ -2017,6 +2023,7 @@ export class Sim {
     const namesake = grand.length && R.chance(0.35) ? R.pick(grand) : null;
     const c = make({ sex, family: w.family, birthYear: this.year(), birthDay: this.dayOfYear(), father: h, mother: w, given: namesake?.given, s: w.s });
     delete c.notes; delete c.anc2;
+    tribeBirth(this, c, w, h);
     c.needs = { survival: 90, sleep: 80, hunger: 80, lust: 100, sloth: 80, pleasure: 80, esteem: 80 };
     c.mood = 70; c.memories = []; c.rel = {}; c.gk = {}; c.talkedToday = {}; c.recent = []; c.tool = 0; c.workedToday = 0; c.pregnant = 0; c.cooldown = 0; c.q = {}; c.skill = {}; c.danger = {}; c.fame = 0; c.lv = 1;
     c.style = 'child'; c.traits = traitLabels(c); c.inv = []; c.eq = {}; c.purse = 0;

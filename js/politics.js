@@ -521,7 +521,7 @@ function succession(sim, k) {
     heir = sim.living().filter((p) => p.rank === 'noble' && sim.town(p.s).kingdom === k.id && sim.ageOf(p) >= 20).sort((a, b) => b.values.ambition - a.values.ambition)[0];
     newDynasty = true;
   }
-  if (!heir) heir = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && sim.ageOf(p) >= 25).sort((a, b) => b.fame - a.fame)[0];
+  if (!heir) heir = sim.living().filter((p) => sim.town(p.s).kingdom === k.id && !sim.town(p.s).tribal && sim.ageOf(p) >= 25).sort((a, b) => b.fame - a.fame)[0];
   if (!heir) return;
   k.kingId = heir.id; heir.rank = 'king'; heir.job = 'king'; k.monarchs.push(heir.id);
   Object.assign(heir, humanStats(sim, heir));
