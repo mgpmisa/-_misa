@@ -291,7 +291,7 @@ function planPath(sim, k, fromSid, toSid, avoid = null) {
     if (NOBUILD.has(t)) return null;
     if (mask[j]) return null;
     const x = j % W, z = (j / W) | 0;
-    let c = t === T.RIVER ? 9 : (MOVE_COST[t] || 2) + Math.abs((hgt[j] || 0) - (hgt[i] || 0)) * 2;
+    let c = t === T.RIVER ? 9 + (tiles[i] === T.RIVER || tiles[i] === T.BRIDGE ? 10 : 0) : (MOVE_COST[t] || 2) + Math.abs((hgt[j] || 0) - (hgt[i] || 0)) * 2;
     if (t === T.WASTE) c += 6;
     c += (dm[dangerIdx(x, z)] || 0) * 0.5;
     const o = ko[j];

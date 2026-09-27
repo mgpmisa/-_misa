@@ -229,6 +229,7 @@ export function territorySize(sim, k) { const tr = sim.S.territory; return tr ? 
 export function expansionHourly(sim) {
   const S = sim.S;
   if (!S.expansion) return;
+  if ((S.world.bridgeFixV || 0) < 2) repairBridgesOnce(sim);   // 新しい世界：民族の里・独立の村ができたあと、最初の1時間で橋を直す
   troopsHourly(sim);
   const ex = S.explored, w = S.world;
   for (const p of sim.living()) {
@@ -287,7 +288,7 @@ export function expansionPlace(sim, p, kind) {
 }
 
 // 橋の手直し（world.js の fixBridges）。両岸の道につながらない橋に道を敷き、川に沿って伸びた橋や川の中で途切れた橋を直す。
-// 古いセーブは読み込んだとき、新しい世界は最初の日（民族の里・独立の村ができたあと）に、1回だけ行う。
+// 古いセーブは読み込んだとき、新しい世界は最初の1時間（民族の里・独立の村ができたあと）に、1回だけ行う。
 // 普請の途中の道すじ（街道・国の普請・開拓村への道）の橋は川に戻さない。お金は動かない（見直しだけ）
 export function repairBridgesOnce(sim) {
   const S = sim.S, w = S.world;
@@ -1345,14 +1346,14 @@ function roadPath(sim, s) {
     const i = hp.pop(); if (done[i]) continue; done[i] = 1;
     const x = i % W, z = (i / W) | 0;
     const t = tiles[i];
-    if ((t === T.ROAD || t === T.BRIDGE || t === T.PLAZA) && cheb(x, z, s.x, s.z) > FR + 2 && cost[i] > 0) { goal = i; break; }
+    if ((t === T.ROAD || t === T.PLAZA) && cheb(x, z, s.x, s.z) > FR + 2 && cost[i] > 0) { goal = i; break; }   // 橋の横腹にはつながない（橋のたもとの道へ）
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = x + dx, nz = z + dz; if (!inb(nx, nz)) continue;
       const j = nz * W + nx, tt = tiles[j];
       if (cheb(nx, nz, s.x, s.z) <= FR) continue;
       let c;
       if (tt === T.ROAD || tt === T.BRIDGE || tt === T.PLAZA) c = 0.5;
-      else if (tt === T.RIVER) c = 9;
+      else if (tt === T.RIVER) c = 9 + (t === T.RIVER || t === T.BRIDGE ? 10 : 0);   // 川に沿って水の上を進む橋は高くつく
       else if (tt === T.SEA || tt === T.DEEP || tt === T.PEAK || tt === T.BLD || tt === T.LAVA || tt === T.WALL || tt === T.FENCE || tt === T.FIELD || tt === T.PASTURE || tt === T.DOCK) continue;
       else c = (MOVE_COST[tt] || 2);
       if (cost[i] + c < cost[j]) { cost[j] = cost[i] + c; came[j] = i; hp.push(cost[j], j); }

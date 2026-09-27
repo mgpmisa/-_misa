@@ -525,7 +525,7 @@ function pathToNet(sim, sx, sz, net, maxLen = 60) {
       const j = nz * W + nx, t = tiles[j];
       let c;
       if (t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK) c = 0.5;
-      else if (t === T.RIVER) c = 9;
+      else if (t === T.RIVER) c = 9 + (tiles[i] === T.RIVER || tiles[i] === T.BRIDGE ? 10 : 0);   // 川に沿って水の上を進む橋は高くつく
       else if (t === T.SEA || t === T.DEEP || t === T.PEAK || t === T.BLD || t === T.LAVA || t === T.WALL || t === T.FENCE || t === T.FIELD || t === T.PASTURE) continue;
       else c = (MOVE_COST[t] || 2) + Math.abs(hgt[j] - hgt[i]) * 2;
       if (cost[i] + c < cost[j]) { cost[j] = cost[i] + c; came[j] = i; hp.push(cost[j], j); }
