@@ -13,6 +13,7 @@ import { TEX, buildTextures, canvasTex, noiseTex, personTexture } from './textur
 import { SPECIES, KINGDOMS } from './data.js';
 import * as SPR from './sprites.js';
 import { makeRng } from './rng.js';
+import * as TH from './tribehome.js'; // 奥地の民族の家の内装
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const DUNGEONS = new Set(['cave', 'pyramid', 'demoncastle']);
@@ -1622,7 +1623,7 @@ export class InteriorView {
       const [W, D] = sizeOf(b);
       K = new Kit(W, D, seed, M);
       const ctx = { b, sim, hh: b.hh != null ? sim.S.households[b.hh] : null };
-      (BUILD[type] || BUILD.house)(K, ctx);
+      if (!(b.tribe && b.style && TH.tribalInterior(K, ctx, F))) (BUILD[type] || BUILD.house)(K, ctx);
     }
     K.finish();
     this.K = K; this.G = G;
@@ -1673,7 +1674,7 @@ export class InteriorView {
     // 題名
     const hh = b.hh != null ? sim.S.households[b.hh] : null;
     const town = b.settlement != null ? sim.town(b.settlement) : null;
-    let sub = LABEL[type] || type;
+    let sub = (b.tribe && b.style && TH.tribalLabel(b)) || LABEL[type] || type;
     if (type === 'house' && hh) {
       const m = hh.money || 0;
       sub += `・${hh.name || ''}（${m > 260 ? '裕福' : m < 45 ? '質素' : 'ふつう'}な暮らし）`;

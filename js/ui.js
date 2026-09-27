@@ -41,7 +41,7 @@ const ACTION_LABEL = {
   guild: 'ギルドで依頼を探している', report: 'ギルドに依頼の報告をしている', buygear: '鍛冶場で装備を選んでいる', gather: '素材を集めている', hunt: '賞金首を追っている', quest: '冒険している', school: '学校で学んでいる', storytell: '子どもたちに昔話を聞かせている', deliver: '知らせを届けている', perform: '歌っている', jail: '牢につながれている', steal: '盗みを働いている', rob: '旅人を襲っている', revenge: '恨みを晴らそうとしている',
   march: '前線で戦っている', crusade: '魔王討伐の旅をしている', defend: '町を守っている', flee: '逃げている', court: '想い人に会いに来ている', trade: '商いをしている', travel: '旅をしている', visit: '知り合いの家を訪ねている',
 };
-const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle', 'guardpost', 'academy', 'dojo', 'fort', 'camp']);
+const INTERIOR_TYPES = new Set(['house', 'castle', 'church', 'tavern', 'bakery', 'smithy', 'workshop', 'market', 'guild', 'barracks', 'prison', 'magictower', 'mansion', 'clinic', 'school', 'stable', 'mill', 'lighthouse', 'observatory', 'mine', 'hideout', 'ruins', 'well', 'cave', 'pyramid', 'demoncastle', 'guardpost', 'academy', 'dojo', 'fort', 'camp', 'shrine']);
 const ACTION_GO = {
   sleep: '寝床へ向かっている', eat: '食事をしに家へ向かっている', shop: '市場へ向かっている', tavern: '酒場へ向かっている', plaza: '広場へ向かっている',
   stroll: 'ぶらぶら歩いている', pray: '祈りに向かっている', play: '遊びに出かけるところ', rest: '家へ帰るところ', home: '家へ帰るところ', festival: '祭りの広場へ向かっている',

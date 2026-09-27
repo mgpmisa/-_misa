@@ -9,6 +9,7 @@ import * as SPR from './sprites.js';
 import { TerrainChunks } from './terrain_chunks.js';
 import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
 import { PartyRings } from './partyring.js';
+import * as TH from './tribehome.js'; // 奥地の民族の家と里
 import { convoyViews } from './logistics.js';
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
 
@@ -52,6 +53,7 @@ export class Renderer {
     this.buildTerrain();
     this.buildStructures();
     this.buildBuildings();
+    TH.tribalExtras(this, wx, wz, topY); // 民族の里の柵・焚き火・守り柱
     this.buildMills();
     this.buildWeather();
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
@@ -385,6 +387,7 @@ export class Renderer {
     };
     const banner = (x, z, y, color) => { add(this.box(0.06, 1.4, 0.06), M.wood, x, y + 0.7, z); add(new THREE.PlaneGeometry(0.5, 0.35), this.mats['banner' + color] || M.red, x + 0.28, y + 1.2, z); };
     const kcol = KINGDOMS[b.kingdom]?.color || '#c93a32';
+    if (b.tribe && b.style && TH.tribalParts(this, b, add, M, W_, D_, face, door)) return parts; // 民族の家（js/tribehome.js）
     switch (b.type) {
       case 'house': houseLike(1.15, M.timber, b.roof === 'tile' ? M.tileRoof : M.thatch); break;
       case 'bakery': houseLike(1.2, M.timber, M.thatch); break;

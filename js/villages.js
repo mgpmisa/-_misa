@@ -1877,7 +1877,6 @@ function resolveRaid(sim, r, men, tgt) {
     // 食べ物
     const tm = tgt.id != null ? S.towns[tgt.id] : null, fm = P(sim, r.from)?.c === 's' ? S.towns[P(sim, r.from).sid] : null;
     if (tm) for (const g of ['wheat', 'meat', 'fish', 'bread']) { const n = (tm.stock[g] || 0) * (r.kind === 'hunger' ? 0.6 : 0.35); tm.stock[g] -= n; took += n; if (fm) fm.stock[g] = (fm.stock[g] || 0) + n; else { const share = n / Math.max(1, att.length); for (const p of att) { const h = sim.hh(p); if (h) h.food += share; } } }
-    if (r.kind === 'punitive') submitAfterDefeat(sim, r);
   }
   r.res = win ? 'win' : 'lose';
   r.dead = { a: deadA.length, d: deadD.length }; r.loot = r0(loot); r.burned = burned;
@@ -1885,6 +1884,7 @@ function resolveRaid(sim, r, men, tgt) {
     ? `${fromN}の${RAID_LABEL[r.kind]}で${toN}が破れた（${toN}の死者${deadD.length}人・${fromN}の死者${deadA.length}人${loot ? `・奪われた銅貨${r0(loot)}` : ''}${burned ? `・焼かれた家${burned}軒` : ''}）`
     : `${toN}の人々が${fromN}の${RAID_LABEL[r.kind]}を退けた（${fromN}の死者${deadA.length}人・${toN}の死者${deadD.length}人）`;
   note(sim, [r.from, r.toKey], txt, 3, tgt, P(sim, r.from)?.kind === 'kingdom' ? P(sim, r.from).k : undefined);
+  if (win && r.kind === 'punitive') submitAfterDefeat(sim, r);
   for (const p of att) if (alive(p)) sim.remember(p, win ? `${toN}を打ち負かした` : `${toN}で手ひどく追い返された`, { emo: win ? 0.3 : -0.7, imp: 0.9, k: 'feud' });
   for (const p of sim.living()) if (tgt.id != null && p.s === tgt.id && sim.ageOf(p) >= 8) sim.remember(p, win ? `${fromN}の者たちに村を荒らされた` : `みんなで${fromN}の者たちを追い払った`, { emo: win ? -0.9 : 0.5, imp: 0.95, k: 'feud' });
   // 恨み：襲われた側 → 襲った側

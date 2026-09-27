@@ -10,6 +10,7 @@
 // すべての個体は id から決まるシード乱数で特徴を組み合わせる（同じ個体は毎回同じ見た目）。
 // 光は画面の左上から。輪郭は本体色を暗くした1ピクセル、接地面の輪郭は描かない。
 
+import * as TG from './tribegfx.js'; // 奥地の民族の装い
 export const PIXEL_SCALE = 0.0432; // 大人の人（足元〜髪の上 約22px）≒ 0.95
 
 // ================================================================ 乱数
@@ -248,6 +249,7 @@ const ADV_LOOK = { swordsman: 'adv_swordsman', hero: 'adv_hero', monk: 'adv_monk
 function outfitOf(p, stage) {
   const rank = p.rank;
   if (rank === 'prisoner') return 'prisoner';
+  if (TG.isTribalDress(p)) return stage === 'baby' ? 'kid' : 'tribal';
   if (stage === 'baby' || stage === 'child') {
     if (rank === 'king' || rank === 'royal') return 'royalkid';
     if (rank === 'noble') return 'noblekid';
@@ -447,6 +449,7 @@ export function drawPerson(p, opts = {}) {
     case 'adv_wizard': top = rich(pickBy(['#6a2a8a', '#3a3a9a', '#8a2a3a', '#2a5a6a'], o1)); long = top; hat = 'wizard'; hatC = dk(top, 0.1); item = 'staff'; overlay = 'stars'; break;
     case 'adv_sorcerer': top = rich(pickBy(['#1e2a5a', '#3a2a5a', '#1e4a4a', '#1e1e4a'], o1)); long = top; hood = rich(pickBy(['#2a3a7a', '#4a3a7a', '#2a5a5a', '#2a2a5a'], o1)); overlay = 'sorcerer'; item = 'tome'; hat = null; capeC = null; break;
     case 'adv_priest': top = '#f4f2ea'; long = top; overlay = 'stole'; hat = 'miter'; hatC = '#f4f2ea'; item = 'holystaff'; accentOverride = GOLD; break;
+    case 'tribal': ({ top, bottom, long, sleeve, hat, hatC, item, overlay, capeC, hood, mask, barefoot, skirt, build, accent, scarf, stripes, apron, handWrap, hair } = TG.tribeDress({ p, age, skin, top, bottom, long, sleeve, hat, hatC, item, overlay, capeC, hood, mask, barefoot, skirt, build, accent, scarf, stripes, apron, handWrap, hair })); break; // 奥地の民族（js/tribegfx.js）
     case 'kid': hat = o1 < 0.12 ? (o2 < 0.5 ? 'cap' : 'knit') : null; break;
     default: break;
   }
@@ -640,6 +643,7 @@ export function drawPerson(p, opts = {}) {
         if (!B) for (let x = tx0; x <= tx1; x += 2) P.px(x, torsoBot + 1, GOLD);
         break;
       case 'nunbib': if (!B) P.rect(S ? sx0 : 5, nk, S ? 3 : 6, 2, '#f4f4f4'); break;
+      case 'tribal': TG.tribeBody(P, { p, age, F, S, B, t, headH, tT, nk, torsoH, torsoBot, legTop, legH, FEET, bx0, bx1, tx0, tx1, sx0, sx1, sw, tw, armL, armR, skin, hair, long, hid, fr }); break;
       case 'gi': // 道着：胸元を V に開け、黒帯を締める
         if (F) { P.px(7, nk, skin); P.px(8, nk, skin); P.px(7, nk + 1, skin); P.px(8, nk + 1, dk(top, 0.12)); }
         if (S) P.px(sx0, nk, skin);
@@ -914,6 +918,7 @@ export function drawPerson(p, opts = {}) {
       case 'beekeeper': HT(2, t - 1, 12, 1, '#e8e0c8'); HT(5, t - 3, 6, 2, '#e8e0c8'); if (!B) for (let y = t; y < t + headH; y++) for (let x = 4; x <= 11; x++) if ((x + y) & 1) P.px(x, y, '#6a6a6a'); if (B) HT(4, t, 8, headH, '#8a8a8a'); break;
       case 'tricorne': HT(3, t - 1, 10, 2, '#1a1a22'); HT(5, t - 2, 6, 1, '#1a1a22'); HT(3, t - 1, 10, 1, '#2a2a34'); P.px(3, t - 2, GOLD); P.px(12, t - 2, GOLD); if (F) P.px(8, t - 1, '#f0f0f0'); break;
       case 'tophat': HT(5, t - 5, 6, 5, '#1a1a1e'); HT(3, t, 10, 1, '#1a1a1e'); HT(5, t - 1, 6, 1, accent); break;
+      case 'tribal': TG.tribeHead(P, { p, age, F, S, B, t, headH, eyY, mouthY, tT, nk, torsoH, torsoBot, legTop, legH, FEET, bx0, bx1, tx0, tx1, sx0, sx1, sw, tw, armL, armR, skin, hair, long, hid, fr }); break;
       case 'veil': HT(4, t - 1, 8, 2); if (F) { HT(4, t + 1, 1, 6); HT(11, t + 1, 1, 6); HT(3, t + 4, 1, 4); HT(12, t + 4, 1, 4); } if (S) { HT(8, t + 1, 4, 5); HT(10, t + 6, 3, 3); } if (B) { HT(4, t + 1, 8, 6); HT(3, t + 4, 10, 4); } P.rect(6, t - 1, 2, 1, lt(hatC, 0.12)); break;
     }
 
