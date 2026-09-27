@@ -8,7 +8,7 @@
 //   civicDaily(sim)               … newDay で1日1回（勤務の割り当て・砦の駐屯・普請の計画・旅芸人の巡業）
 //   civicFirstJob(sim, p)         … 14歳の誕生日の職選び
 //   musterOnAlarm(sim, q, s)      … 警鐘のとき、戦える者は逃げずに門と城壁を固める（true なら逃がさない）
-import { T, W, H, walkable, isWater, MOVE_COST, MinHeap, tileAt } from './world.js';
+import { T, W, H, walkable, isWater, MOVE_COST, MinHeap, tileAt, bridgeComponents, bridgeReport, landSteps } from './world.js';
 import { restDayFor } from './labor.js';
 import { JOBS, GOODS, KINGDOMS } from './data.js';
 import { chooseYouthJob } from './history.js';
@@ -499,8 +499,9 @@ function roadNet(sim) {
   if (c.net) return c.net;
   const net = new Uint8Array(W * H);
   const ok = (t) => t === T.ROAD || t === T.BRIDGE || t === T.PLAZA || t === T.DOCK;
-  const cap = w.settlements.find((s) => s.type === 'capital');
-  const st = [cap.z * W + cap.x]; net[st[0]] = 1;
+  // どの国の網も数える（王都ひとつだけから数えると、ほかの国の道がすべて「網の外」になり、橋のたもとに道が敷けなかった）
+  const st = [];
+  for (const s of w.settlements) { if (s.abandoned) continue; const i = s.z * W + s.x; if (!net[i] && ok(w.tiles[i])) { net[i] = 1; st.push(i); } }
   while (st.length) {
     const i = st.pop(), x = i % W, z = (i / W) | 0;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue; const j = nz * W + nx; if (!net[j] && ok(w.tiles[j])) { net[j] = 1; st.push(j); } }
@@ -555,7 +556,7 @@ function planWork(sim, k) {
   }
   // 2) 町の近くの川に橋を架ける（両岸が歩けて、近くに橋がない所）
   for (const s of w.settlements.filter((q) => q.kingdom === k && !((q.tribal || q.indep) && q.annexed == null))) {
-    let best = null;
+    const cands = [];
     for (let z = s.z - s.r - 8; z <= s.z + s.r + 8; z++) for (let x = s.x - s.r - 8; x <= s.x + s.r + 8; x++) {
       if (tileAt(w, x, z) !== T.RIVER) continue;
       for (const [dx, dz] of [[1, 0], [0, 1]]) {
@@ -567,18 +568,43 @@ function planWork(sim, k) {
         let bridged = false;
         for (let r = -7; r <= 7 && !bridged; r++) for (let q = -7; q <= 7; q++) if (tileAt(w, x + r, z + q) === T.BRIDGE) { bridged = true; break; }
         if (bridged) continue;
-        const d = Math.hypot(x - s.x, z - s.z);
-        if (!best || d < best.d) best = { x, z, dx, dz, len, d };
+        // 陸を少し回れば渡れる所（川の端など）には架けない
+        if (landSteps(w.tiles, (z - dz) * W + x - dx, (z + dz * len) * W + x + dx * len, len + 9) !== Infinity) continue;
+        cands.push({ x, z, dx, dz, len, d: Math.hypot(x - s.x, z - s.z) });
       }
     }
-    if (best) {
-      const tiles = [];
-      for (let j = 0; j < best.len; j++) tiles.push((best.z + best.dz * j) * W + best.x + best.dx * j);
-      // 橋のたもとから道の網までもつなぐ
+    for (const best of cands.sort((a, b) => a.d - b.d).slice(0, 6)) {
+      const span = [];
+      for (let j = 0; j < best.len; j++) span.push((best.z + best.dz * j) * W + best.x + best.dx * j);
+      // 橋のたもとから、両岸とも道の網までつなぐ。どちらかの岸がつながらない橋は架けない（ぽつんと橋を作らない）
+      // 敷く順：網 → 手前の岸のたもと → 橋 → 向こう岸のたもと → 網（網から続けて延びていくように）
       const ends = [[best.x - best.dx, best.z - best.dz], [best.x + best.dx * best.len, best.z + best.dz * best.len]];
-      for (const [ex, ez] of ends) { const p2 = pathToNet(sim, ex, ez, net, 8); if (p2) { const t0 = tileAt(w, ex, ez); if (t0 !== T.ROAD) tiles.push(ez * W + ex); tiles.push(...p2); } }
-      if (tiles.length > 16) continue;   // 大がかりすぎる橋は後回し
+      const legs = [];
+      for (const [ex, ez] of ends) {
+        const i = ez * W + ex, t0 = w.tiles[i];
+        if (net[i]) { legs.push([]); continue; }
+        const p2 = pathToNet(sim, ex, ez, net, 14);
+        if (!p2) break;
+        legs.push(t0 === T.ROAD || t0 === T.PLAZA ? p2 : [i, ...p2]);
+      }
+      if (legs.length < 2) continue;
+      const tiles = [...legs[0].slice().reverse(), ...span, ...legs[1]];
+      if (tiles.length > 24) continue;   // 大がかりすぎる橋は後回し
       const job = mk('bridge', `${s.name.replace(/^(王都|港町)/, '')}の${best.dx ? '東西' : '南北'}の渡しの橋`, [...new Set(tiles)], s);
+      if (job) return job;
+    }
+  }
+  // 2b) 岸の道につながっていない橋（たもとの先が草地や森のまま）に、道の網までの道を敷く
+  for (const comp of bridgeComponents(w)) {
+    const i0 = comp[0];
+    if (w.kingdomOf?.[i0] !== k || comp.some((i) => busy.has(i))) continue;
+    const R0 = bridgeReport(w, comp);
+    for (const e of R0.needRoad) {
+      const ex = e % W, ez = (e / W) | 0;
+      const p2 = pathToNet(sim, ex, ez, net, 40);
+      if (!p2) continue;
+      const near = w.settlements.filter((q) => q.kingdom === k && !q.abandoned).sort((a, b) => Math.hypot(a.x - ex, a.z - ez) - Math.hypot(b.x - ex, b.z - ez))[0] || base;
+      const job = mk('road', `${sim.placeName(ex, ez)}の橋のたもとの道`, [...new Set([e, ...p2].reverse())], near);
       if (job) return job;
     }
   }

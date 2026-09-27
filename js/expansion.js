@@ -17,7 +17,7 @@
 //   S.territory = { cs:8, cw, ch, owner:[区画→国id/-1], kind:[0なし/1もとからの領土/2開拓地/3砦], home:[区画→町id/-1], init:[国ごとの最初の区画数] }
 //   S.explored  = [区画→ビット]。(1<<国id) がその国に知られている。128 は誰かが実際に歩いた。区画 i = cz*cw + cx（8×8マス）
 //   S.expansion = { projects, res, tension, pacts, wars, stats, hist, ... }
-import { T, W, H, walkable, isWater, tryPlace, MinHeap, MOVE_COST, TILE_NAME } from './world.js';
+import { T, W, H, walkable, isWater, tryPlace, MinHeap, MOVE_COST, TILE_NAME, fixBridges } from './world.js';
 import { KINGDOMS, JOBS, GOODS, SPECIES, traitLabels } from './data.js';
 import { createPersonFactory, SENIOR_JOBS } from './history.js';
 import { houseValue, earn } from './property.js';
@@ -67,6 +67,7 @@ const kshort = (k) => kname(k).replace('王国', '');
 // ---------- 状態の用意 ----------
 export function ensureExpansion(sim) {
   const S = sim.S;
+  if (S.world && S.world.bridgeFixV == null) repairBridgesOnce(sim);   // 古いセーブ：読み込んだときに1回だけ橋を直す
   if (S.expansion && S.territory && Array.isArray(S.explored) && S.territory.cw === CW && S.explored.length === NC) {
     if (!S.territory.tribe) S.territory.tribe = new Array(NC).fill(-1);
     return S.expansion;
@@ -285,10 +286,27 @@ export function expansionPlace(sim, p, kind) {
   return null;
 }
 
+// 橋の手直し（world.js の fixBridges）。両岸の道につながらない橋に道を敷き、川に沿って伸びた橋や川の中で途切れた橋を直す。
+// 古いセーブは読み込んだとき、新しい世界は最初の日（民族の里・独立の村ができたあと）に、1回だけ行う。
+// 普請の途中の道すじ（街道・国の普請・開拓村への道）の橋は川に戻さない。お金は動かない（見直しだけ）
+export function repairBridgesOnce(sim) {
+  const S = sim.S, w = S.world;
+  if (!w || (w.bridgeFixV || 0) >= 2) return null;
+  const keep = new Set();
+  for (const r of S.diplo?.roads || []) for (const i of r.path || []) keep.add(i);
+  for (const q of S.civic?.works || []) for (const i of q.tiles || []) keep.add(i);
+  for (const pr of S.expansion?.projects || []) for (const i of pr.road || []) keep.add(i);
+  const r = fixBridges(w, keep, 60);
+  w.bridgeFixV = 2;
+  if (r.changed.length) sim.events?.push({ type: 'tiles', list: r.changed });
+  return r;
+}
+
 // ---------- 1日ごと ----------
 export function expansionDaily(sim) {
   const S = sim.S, X = ensureExpansion(sim);
   if (!S.kingdoms) return;
+  if ((S.world.bridgeFixV || 0) < 2) repairBridgesOnce(sim);
   const pop = popBySid(sim);
   watchCessions(sim);
   watchWars(sim);

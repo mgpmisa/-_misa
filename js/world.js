@@ -881,8 +881,11 @@ export function generateWorld(rng, seed) {
     if (!connect(b.door.x, b.door.z)) unlinked.push(b.name);
   }
 
+  // 橋の手直し：両岸の道につながらない橋・川に沿って伸びた橋・川の中で途切れた橋を直す
+  fixBridges({ tiles, hgt }, null, 60);
+
   return {
-    W, H,
+    W, H, bridgeFixV: 1,
     // 国ごとのおおよその広がり（王都の位置と、町のいちばん外までの距離）
     realms: KINGDOMS.map((_, k) => { const ss = settlements.filter((q) => q.kingdom === k), c = ss.find((q) => q.type === 'capital'); return { k, x: c.x, z: c.z, r: Math.round(Math.max(...ss.map((q) => Math.hypot(q.x - c.x, q.z - c.z) + q.r)) + KREACH) }; }),
     settled: null,        // 開拓済みは四角ではなく kingdomOf（国の領土）で表す
@@ -1017,4 +1020,207 @@ export function openGates(world) {
     }
   }
   return n;
+}
+
+// ---------- 橋の点検と手直し ----------
+// 橋（つながった T.BRIDGE の塊）ごとに、たもと（橋から陸へ上がるマス）を調べる。
+//  ・「渡る意味のある」たもとどうし：陸を回り道すると、橋を渡るより 7 マス以上遠い（川で分けられた向こう岸）
+//  ・橋の向きのまま上がるたもとに道がなければ、いちばん近い道まで道を敷く（maxLen マスまで）
+//  ・道のあるたもとどうしを結ぶ最短の渡りだけを橋として残し、川に沿って伸びた余りや、川の中で途切れた橋は川に戻す
+// keep：普請の途中などで、川に戻してはいけないマス（Set）
+const B_ROADISH = (t) => t === T.ROAD || t === T.PLAZA || t === T.DOCK;
+const B_PAVE = (t) => walkable(t) && t !== T.BRIDGE && t !== T.FIELD && t !== T.PASTURE && t !== T.DOCK;
+const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DETOUR = 7;
+export function bridgeComponents(world) {
+  const tiles = world.tiles, seen = new Uint8Array(W * H), out = [];
+  for (let i = 0; i < W * H; i++) {
+    if (tiles[i] !== T.BRIDGE || seen[i]) continue;
+    const st = [i], c = []; seen[i] = 1;
+    while (st.length) {
+      const j = st.pop(); c.push(j); const x = j % W, z = (j / W) | 0;
+      for (const [dx, dz] of DIRS4) { const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue; const k = nz * W + nx; if (!seen[k] && tiles[k] === T.BRIDGE) { seen[k] = 1; st.push(k); } }
+    }
+    out.push(c);
+  }
+  return out;
+}
+// 陸だけを歩いて a から b まで何歩か（limit 歩を超えたら Infinity）
+export function landSteps(tiles, a, b, limit) {
+  if (a === b) return 0;
+  const dist = new Map([[a, 0]]), q = [a];
+  for (let h = 0; h < q.length; h++) {
+    const j = q[h], d = dist.get(j); if (d >= limit) continue;
+    const x = j % W, z = (j / W) | 0;
+    for (const [dx, dz] of DIRS4) {
+      const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+      const k = nz * W + nx; if (dist.has(k)) continue;
+      const t = tiles[k]; if (!walkable(t) || t === T.BRIDGE) continue;
+      if (k === b) return d + 1;
+      dist.set(k, d + 1); q.push(k);
+    }
+  }
+  return Infinity;
+}
+// 橋の中を幅優先でたどる（たもと e に接する橋のマスから）
+function bridgeBFS(set, e) {
+  const prev = new Map(), q = [];
+  const x = e % W, z = (e / W) | 0;
+  for (const [dx, dz] of DIRS4) { const k = (z + dz) * W + x + dx; if (set.has(k) && !prev.has(k)) { prev.set(k, -1); q.push(k); } }
+  for (let h = 0; h < q.length; h++) {
+    const j = q[h], jx = j % W, jz = (j / W) | 0;
+    for (const [dx, dz] of DIRS4) { const k = (jz + dz) * W + jx + dx; if (set.has(k) && !prev.has(k)) { prev.set(k, j); q.push(k); } }
+  }
+  return prev;
+}
+// たもと b まで：b に接する橋のマスのうち、いちばん早く着くもの → その道すじ（橋のマス）
+function bridgeRoute(prev, b) {
+  const x = b % W, z = (b / W) | 0;
+  let best = null, bl = Infinity;
+  for (const [dx, dz] of DIRS4) {
+    const k = (z + dz) * W + x + dx; if (!prev.has(k)) continue;
+    const r = []; for (let c = k; c !== -1; c = prev.get(c)) r.push(c);
+    if (r.length < bl) { bl = r.length; best = r; }
+  }
+  return best;
+}
+// 1つの橋の見立て：たもと（exits）、道のあるたもと（road）、道が要るたもと（needRoad）、渡る意味のある道どうしの組（pairs：{a, b, route}）
+export function bridgeReport(world, comp) {
+  const tiles = world.tiles, set = new Set(comp);
+  const exits = new Map();
+  for (const j of comp) {
+    const x = j % W, z = (j / W) | 0;
+    for (const [dx, dz] of DIRS4) {
+      const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+      const k = nz * W + nx, t = tiles[k];
+      if (set.has(k) || !walkable(t) || t === T.BRIDGE) continue;
+      const bx = x - dx, bz = z - dz, bt = bx < 0 || bz < 0 || bx >= W || bz >= H ? -1 : tiles[bz * W + bx];
+      const axis = comp.length === 1 || bt === T.BRIDGE || B_ROADISH(bt) ? 1 : 0;   // 橋の向きのまま上がる所
+      const e = exits.get(k);
+      if (!e) exits.set(k, { i: k, axis }); else if (axis > e.axis) e.axis = axis;
+    }
+  }
+  const ex = [...exits.values()];
+  const bfs = new Map();
+  const route = (a, b) => { if (!bfs.has(a)) bfs.set(a, bridgeBFS(set, a)); return bridgeRoute(bfs.get(a), b); };
+  const useful = (a, b) => { const r = route(a, b); if (!r) return null; return landSteps(tiles, a, b, r.length + 1 + DETOUR) === Infinity ? r : null; };
+  const road = ex.filter((e) => B_ROADISH(tiles[e.i])).map((e) => e.i);
+  const needRoad = [];
+  for (const e of ex) {
+    if (!e.axis || B_ROADISH(tiles[e.i])) continue;
+    if (ex.some((o) => o !== e && (o.axis || B_ROADISH(tiles[o.i])) && useful(o.i, e.i))) needRoad.push(e.i);
+  }
+  const pairs = [];
+  for (let a = 0; a < road.length; a++) for (let b = a + 1; b < road.length; b++) { const r = useful(road[a], road[b]); if (r) pairs.push({ a: road[a], b: road[b], route: r }); }
+  return { exits: ex, road, needRoad, pairs, useful };
+}
+// 岸のたもと s から、いちばん近い道（avoid のマスは除く）までの道すじ（s を含み、着いた道は含まない）。川は越えない
+export function pathToRoad(world, s, maxLen = 60, avoid = null) {
+  const tiles = world.tiles, hgt = world.hgt;
+  const cost = new Map(), came = new Map(), steps = new Map(), hp = new MinHeap();
+  cost.set(s, 0); steps.set(s, 0); hp.push(0, s);
+  let goal = -1, it = 0;
+  while (hp.size && it++ < 40000) {
+    const i = hp.pop(), ci = cost.get(i);
+    if (i !== s && B_ROADISH(tiles[i])) { goal = i; break; }
+    if (steps.get(i) >= maxLen) continue;
+    const x = i % W, z = (i / W) | 0;
+    for (const [dx, dz] of DIRS4) {
+      const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+      const j = nz * W + nx, t = tiles[j];
+      if (avoid && avoid.has(j)) continue;
+      let c;
+      if (B_ROADISH(t)) c = 0.5;
+      else if (B_PAVE(t)) c = (MOVE_COST[t] || 2) + Math.abs(hgt[j] - hgt[i]) * 2;
+      else continue;
+      const nc = ci + c;
+      if (nc < (cost.get(j) ?? Infinity)) { cost.set(j, nc); came.set(j, i); steps.set(j, steps.get(i) + 1); hp.push(nc, j); }
+    }
+  }
+  if (goal < 0) return null;
+  const path = [];
+  for (let c = came.get(goal); c != null; c = came.get(c)) path.push(c);
+  return path.reverse();
+}
+// たもと a から b へ、川を横切る向きの短い橋と岸の道で結ぶ道すじ（川のマスが n 未満のときだけ）。
+// comp（今の橋）のマスは川として数える。道すじは a と b を含まず、a の次から b の手前まで
+function crossingPath(world, a, b, comp, n) {
+  const tiles = world.tiles, hgt = world.hgt;
+  const bx = b % W, bz = (b / W) | 0, ax = a % W, az = (a / W) | 0;
+  const box = n + 12, lim = (Math.abs(ax - bx) + Math.abs(az - bz)) * 2 + 16;
+  const cost = new Map([[a, 0]]), came = new Map(), wet = new Map([[a, 0]]), hp = new MinHeap();
+  hp.push(0, a);
+  let it = 0, found = false;
+  while (hp.size && it++ < 20000) {
+    const i = hp.pop();
+    if (i === b) { found = true; break; }
+    const x = i % W, z = (i / W) | 0, ci = cost.get(i);
+    for (const [dx, dz] of DIRS4) {
+      const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+      if (Math.abs(nx - ax) > box && Math.abs(nx - bx) > box || Math.abs(nz - az) > box && Math.abs(nz - bz) > box) continue;
+      const j = nz * W + nx, t = tiles[j];
+      let c, w = 0;
+      if (comp.has(j) || t === T.RIVER) {
+        c = 9; w = 1;
+        // 川の中で曲がる橋は避ける（橋はまっすぐ川を横切る）
+        const p = came.get(i);
+        if (p != null && wet.get(i) > 0 && (i - p) !== (j - i)) c += 12;
+      }
+      else if (t === T.BRIDGE) c = 0.5;   // ほかの橋はそのまま使える
+      else if (B_ROADISH(t)) c = 0.5;
+      else if (B_PAVE(t)) c = (MOVE_COST[t] || 2) + Math.abs(hgt[j] - hgt[i]) * 2;
+      else continue;
+      const nc = ci + c;
+      if (nc < (cost.get(j) ?? Infinity)) { cost.set(j, nc); came.set(j, i); wet.set(j, wet.get(i) + w); hp.push(nc + (Math.abs(nx - bx) + Math.abs(nz - bz)) * 0.5, j); }
+    }
+  }
+  if (!found || wet.get(b) >= n - 1) return null;
+  const path = [];
+  for (let c = came.get(b); c != null && c !== a; c = came.get(c)) path.push(c);
+  if (path.length > lim) return null;
+  return path.reverse();
+}
+// 橋を手直しする。返り値：{ changed: 変わったマス, removed: 川に戻したマス, paved: 敷いた道のマス数, linked: 道をつないだたもとの数 }
+export function fixBridges(world, keep = null, maxLen = 60) {
+  const tiles = world.tiles;
+  const res = { changed: [], removed: [], paved: 0, linked: 0 };
+  for (const comp of bridgeComponents(world)) {
+    const set = new Set(comp);
+    // 1) 道が要るたもとに、いちばん近い道まで道を敷く
+    let R = bridgeReport(world, comp);
+    if (R.needRoad.length) {
+      for (const e of R.needRoad) {
+        if (B_ROADISH(tiles[e])) continue;
+        const p = pathToRoad(world, e, maxLen, set);
+        if (!p) continue;
+        for (const i of p) if (!B_ROADISH(tiles[i]) && B_PAVE(tiles[i])) { tiles[i] = T.ROAD; res.changed.push(i); res.paved++; }
+        res.linked++;
+      }
+      R = bridgeReport(world, comp);
+    }
+    // 2) 道のあるたもとどうしを結ぶ最短の渡りだけを残す。川に沿って長く伸びた橋（4マス以上）は、
+    //    川を横切る短い橋と岸の道で結び直せるなら、そちらに架け替える
+    const need = new Set();
+    for (const pr of R.pairs) {
+      if (pr.route.length >= 4) {
+        const alt = crossingPath(world, pr.a, pr.b, set, pr.route.length);
+        if (alt) {
+          for (const i of alt) {
+            const t = tiles[i];
+            if (set.has(i)) need.add(i);
+            else if (t === T.RIVER) { tiles[i] = T.BRIDGE; res.changed.push(i); }
+            else if (!B_ROADISH(t) && B_PAVE(t)) { tiles[i] = T.ROAD; res.changed.push(i); res.paved++; }
+          }
+          res.rerouted = (res.rerouted || 0) + 1;
+          continue;
+        }
+      }
+      for (const j of pr.route) need.add(j);
+    }
+    for (const j of comp) {
+      if (need.has(j) || (keep && keep.has(j))) continue;
+      tiles[j] = T.RIVER; res.changed.push(j); res.removed.push(j);
+    }
+  }
+  return res;
 }

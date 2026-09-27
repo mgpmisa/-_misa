@@ -278,12 +278,12 @@ export class Renderer {
     }
     for (const [mat, geos] of gateGeos) { const m = new THREE.Mesh(mergeGeometries(geos.map((g) => { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); return g; })), mat); m.castShadow = true; this.scene.add(m); }
     // 橋：川の上に板を渡し、両脇に欄干
-    this.bridgeDeck = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.1, 1), M.planks, 512);
-    this.bridgeRail = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.22, 0.08), M.wood, 1024);
-    this.bridgeDeck.count = 0; this.bridgeRail.count = 0;
-    this.bridgeDeck.castShadow = this.bridgeRail.castShadow = true; this.bridgeDeck.receiveShadow = true;
-    this.scene.add(this.bridgeDeck, this.bridgeRail);
-    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) if (w.tiles[z * W + x] === T.BRIDGE) this.addBridge(x, z);
+    //   橋は1つの InstancedMesh にまとめて描く。あとから架かった橋も同じ入れ物に足すので、
+    //   three.js の「見えない物は描かない」判定（最初に計った外枠の球）が古いままだと、見る角度によって橋が消えてしまう。
+    //   そこで frustumCulled を切り、作り直すたびに外枠も計り直す（rebuildBridges）
+    this.bridgeTiles = new Set();
+    for (let i = 0; i < W * H; i++) if (w.tiles[i] === T.BRIDGE) this.bridgeTiles.add(i);
+    this.rebuildBridges();
     // 桟橋
     const dock = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.12, 0.9), M.planks, Math.max(1, docks.length));
     docks.forEach(([x, z], i) => dock.setMatrixAt(i, m4.makeTranslation(wx(x), SEA_Y + 0.12, wz(z))));
@@ -315,30 +315,77 @@ export class Renderer {
     this.scene.add(pole, head);
   }
 
-  // 橋を1マス足す（生成時と、道普請で新しく架かったとき）
-  addBridge(x, z) {
-    const w = this.sim.S.world, m4 = new THREE.Matrix4();
-    if (!this.bridgeDeck || this.bridgeDeck.count >= 512) return;
-    const t = (a, b) => w.tiles[b * W + a];
-    const along = (tt) => tt === T.ROAD || tt === T.BRIDGE || tt === T.PLAZA;
-    const ew = along(t(x - 1, z)) || along(t(x + 1, z));
-    const ns = along(t(x, z - 1)) || along(t(x, z + 1));
-    const alongX = ew && !ns ? true : ns && !ew ? false : true;
-    const hs = [[x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]].filter(([a, b]) => { const q = t(a, b); return q !== T.RIVER && q !== T.SEA && q !== T.DEEP && q !== T.BRIDGE; }).map(([a, b]) => w.hgt[b * W + a]);
-    const h = hs.length ? Math.max(...hs) : w.hgt[z * W + x] + 1;
-    const y = topY(h) - 0.05;
-    this.bridgeDeck.setMatrixAt(this.bridgeDeck.count++, m4.makeTranslation(wx(x), y, wz(z)));
-    for (const k of [-1, 1]) {
-      if (this.bridgeRail.count >= 1024) break;
-      if (alongX) m4.makeTranslation(wx(x), y + 0.16, wz(z) + k * 0.46); else m4.makeRotationY(Math.PI / 2).setPosition(wx(x) + k * 0.46, y + 0.16, wz(z));
-      this.bridgeRail.setMatrixAt(this.bridgeRail.count++, m4);
+  // 橋を描き直す（生成時と、道普請・橋の手直しで橋のマスが変わったとき）
+  //  ・板の向き：橋が続く向き（なければ両岸の道の向き、なければ川を横切る向き）
+  //  ・板の高さ：つながった橋ごとに、両岸のうち高い方の地面にそろえる（長い橋の中ほどで段がつかないように）
+  //  ・欄干：両脇。となりも橋（幅2の橋）なら、その側には付けない
+  rebuildBridges() {
+    const w = this.sim.S.world, m4 = new THREE.Matrix4(), M = this.mats;
+    const list = [...this.bridgeTiles];
+    const need = Math.max(64, list.length);
+    if (!this.bridgeDeck || this.bridgeCap < need) {
+      if (this.bridgeDeck) { this.scene.remove(this.bridgeDeck, this.bridgeRail); this.bridgeDeck.dispose(); this.bridgeRail.dispose(); }
+      this.bridgeCap = Math.ceil(need * 1.5);
+      this.bridgeDeck = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.1, 1), M.planks, this.bridgeCap);
+      this.bridgeRail = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.22, 0.08), M.wood, this.bridgeCap * 2);
+      this.bridgeDeck.castShadow = this.bridgeRail.castShadow = true; this.bridgeDeck.receiveShadow = true;
+      this.bridgeDeck.frustumCulled = this.bridgeRail.frustumCulled = false;
+      this.scene.add(this.bridgeDeck, this.bridgeRail);
     }
+    const t = (a, b) => (a < 0 || b < 0 || a >= W || b >= H ? T.DEEP : w.tiles[b * W + a]);
+    const isB = (a, b) => t(a, b) === T.BRIDGE;
+    const road = (q) => q === T.ROAD || q === T.PLAZA || q === T.DOCK;
+    const land = (q) => q !== T.RIVER && q !== T.SEA && q !== T.DEEP && q !== T.BRIDGE;
+    // つながった橋ごとの板の高さ
+    const deckH = new Map();
+    for (const i0 of list) {
+      if (deckH.has(i0)) continue;
+      const comp = [i0], seen = new Set([i0]);
+      let h = -1;
+      for (let k = 0; k < comp.length; k++) {
+        const i = comp[k], x = i % W, z = (i / W) | 0;
+        for (const [a, b] of [[x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]]) {
+          const q = t(a, b), j = b * W + a;
+          if (q === T.BRIDGE) { if (!seen.has(j)) { seen.add(j); comp.push(j); } } else if (land(q) && q !== T.DEEP) h = Math.max(h, w.hgt[j]);
+        }
+      }
+      if (h < 0) h = Math.max(...comp.map((i) => w.hgt[i])) + 1;
+      for (const i of comp) deckH.set(i, h);
+    }
+    let nd = 0, nr = 0;
+    for (const i of list) {
+      const x = i % W, z = (i / W) | 0;
+      const bx = isB(x - 1, z) || isB(x + 1, z), bz = isB(x, z - 1) || isB(x, z + 1);
+      let alongX;
+      if (bx !== bz) alongX = bx;
+      else {
+        const rx = road(t(x - 1, z)) || road(t(x + 1, z)), rz = road(t(x, z - 1)) || road(t(x, z + 1));
+        if (rx !== rz) alongX = rx;
+        else { const wx2 = !land(t(x - 1, z)) && !land(t(x + 1, z)); alongX = !wx2; }   // 左右が水なら、川は東西に流れている → 橋は南北
+      }
+      const y = topY(deckH.get(i)) - 0.05;
+      this.bridgeDeck.setMatrixAt(nd++, m4.makeTranslation(wx(x), y, wz(z)));
+      for (const k of [-1, 1]) {
+        if (alongX ? isB(x, z + k) : isB(x + k, z)) continue;
+        if (alongX) m4.makeTranslation(wx(x), y + 0.16, wz(z) + k * 0.46); else m4.makeRotationY(Math.PI / 2).setPosition(wx(x) + k * 0.46, y + 0.16, wz(z));
+        this.bridgeRail.setMatrixAt(nr++, m4);
+      }
+    }
+    this.bridgeDeck.count = nd; this.bridgeRail.count = nr;
     this.bridgeDeck.instanceMatrix.needsUpdate = true; this.bridgeRail.instanceMatrix.needsUpdate = true;
+    this.bridgeDeck.computeBoundingSphere(); this.bridgeRail.computeBoundingSphere();
   }
   // 地形のマスが変わったとき（道普請・開拓・野火のあとなど）に、上から新しい地面を重ねて描き直す
   refreshTiles(list) {
-    const w = this.sim.S.world;
-    for (const i of list) if (w.tiles[i] === T.BRIDGE) this.addBridge(i % W, (i / W) | 0);
+    const w = this.sim.S.world, B = this.bridgeTiles;
+    let dirty = false;
+    for (const i of list) {
+      const isB = w.tiles[i] === T.BRIDGE;
+      if (isB !== B.has(i)) { if (isB) B.add(i); else B.delete(i); dirty = true; }
+      // となりが橋なら、板の向き・欄干・高さが変わるかもしれない
+      else if (!dirty && (B.has(i - 1) || B.has(i + 1) || B.has(i - W) || B.has(i + W))) dirty = true;
+    }
+    if (dirty) this.rebuildBridges();
     this.chunks.rebuildTiles(list);
   }
 

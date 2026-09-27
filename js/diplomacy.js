@@ -284,7 +284,7 @@ function planPath(sim, k, fromSid, toSid, avoid = null) {
   if (!sources.length) for (const g of from.gates || []) if (inb(g.x, g.z)) sources.push(g.z * W + g.x);
   if (!sources.length) sources.push(from.z * W + from.x);
   const dm = S.dangerMap || [];
-  const goal = (i) => { const L = net.lab[i]; if (L >= 0 && net.labGroup[L] === gT) return true; return cheb(i % W, (i / W) | 0, to.x, to.z) <= Math.max(2, (to.r || 5) - 1); };
+  const goal = (i) => { const L = net.lab[i]; if (L >= 0 && net.labGroup[L] === gT) return true; return tiles[i] !== T.RIVER && cheb(i % W, (i / W) | 0, to.x, to.z) <= Math.max(2, (to.r || 5) - 1); };   // 川の上で終わる街道（途切れた橋）にしない
   const cost = (j, i) => {
     const t = tiles[j];
     if (ROADLIKE(t)) return 0.3;
