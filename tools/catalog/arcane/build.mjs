@@ -1,0 +1,11 @@
+import { emit } from './h.mjs';
+import fs from 'fs';
+import { fix } from './fix.mjs';
+const P = async (n) => (await import(`./p${n}.mjs`)).default;
+const OUT = '/home/user/-_misa/js/catalog/';
+const H = (t) => `// 世界の物：魔法・宝・趣味（素材管理部 cat: 'arcane'）${t}\n// 書き方は docs/素材の決まり.md。処理は書かず、物の一覧だけを返す。\n// fx の言葉：hp 体力 / cure 治す病（health.js の AILS の id・poison 毒・curse 呪い・stone 石化・any どれか・all すべて）/ sev 病の重さを下げる量\n//   mood 気分 / mana 魔力 / faith 信仰 / fame 名声 / love 好意 / luck 運 / sleep 眠り / energy 疲れ / focus・research 研究 / ward 除ける物 / learn・lv 覚える魔法\n//   hook 依存（大人向けの品）/ sober 断薬の助け / beauty 見栄え / warmth・cool 暑さ寒さ / light 明かり / hours・days 効く長さ\n// mature: true の品は S.settings.matureCrimes が有効な時だけ出す。`;
+const a = fix([...await P(1), ...await P(2)]), b = fix([...await P(3), ...await P(4)]), c = fix([...await P(5), ...await P(6), ...await P(7)]);
+fs.writeFileSync(OUT + 'arcane.js', emit('', H('その1：薬・毒・錬金・魔法の品'), a));
+fs.writeFileSync(OUT + 'arcane2.js', emit('', H('その2：紙と書物・地図・宝と遺物・装身具・美術品'), b));
+fs.writeFileSync(OUT + 'arcane3.js', emit('', H('その3：楽器と遊び・収集品・儀式と信仰・大人向け'), c));
+console.log(a.length, b.length, c.length, a.length + b.length + c.length);
