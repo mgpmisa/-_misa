@@ -1240,7 +1240,7 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     // 盗み
     if (!iAmTown || tq.kind !== 'kingdom') {
       const wealth = (sim._vRich?.get(tsid) || 0) > 2 ? 0.3 : -1;
-      const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 3.0 + R.range(-0.3, 0.3);
+      const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 2.7 + R.range(-0.3, 0.3);
       out.push({ p, deed: 'steal', to: tsid, sc, why: need || starving ? 'need' : 'greed', spotFn: () => sim.randomNear(ts.x, ts.z, Math.max(2, ts.r - 2)) || { x: ts.x, z: ts.z } });
     }
     // 密猟（狩人・薬草摘み・飢えた村）
@@ -1252,7 +1252,7 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     if (tq.kind === 'tribal' || (tq.kind === 'kingdom' && !iAmTown)) {
       const shrine = tq.kind === 'tribal' ? sim.building(tq.TV?.shrine) : sim.townBuilding(ts, 'church');
       if (shrine) {
-        const sc = p.pers.O * 0.7 + (1 - p.values.faith) * 1.3 + bad * 0.6 + p.values.ambition * 0.3 + need * 0.5 - f / 60 - far - 3.0 + R.range(-0.3, 0.3);
+        const sc = p.pers.O * 0.7 + (1 - p.values.faith) * 1.3 + bad * 0.6 + p.values.ambition * 0.3 + need * 0.5 - f / 60 - far - 2.8 + R.range(-0.3, 0.3);
         out.push({ p, deed: 'sacrilege', to: tsid, sc, spot: { x: shrine.door.x, z: shrine.door.z }, data: { bid: shrine.id } });
       }
     }
@@ -1266,7 +1266,7 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     const ts = sim.town(tg.s);
     if (!ts || Math.hypot(ts.x - me.x, ts.z - me.z) > 300) continue;
     const hate = -(p.rel[tg.id]?.a ?? -60);
-    const sc = p.values.courage * 1.5 + (1 - p.pers.A) * 1.2 + hate / 60 + p.pers.N * 0.3 - 2.7 + R.range(-0.3, 0.3) - (hasLaw(sim, pk, 'no_blood') ? 3 : 0) + (hasLaw(sim, pk, 'eye_for_eye') ? 0.6 : 0);
+    const sc = p.values.courage * 1.5 + (1 - p.pers.A) * 1.2 + hate / 60 + p.pers.N * 0.3 - 2.4 + R.range(-0.3, 0.3) - (hasLaw(sim, pk, 'no_blood') ? 3 : 0) + (hasLaw(sim, pk, 'eye_for_eye') ? 0.6 : 0);
     out.push({ p, deed: 'avenge', to: tg.s, sc, spot: { x: Math.round(tg.pos.x), z: Math.round(tg.pos.z) }, data: { target: tg.id, why: p.vAvenge?.why || '身内の仇' } });
   }
   // 恋：よその者に心を寄せている

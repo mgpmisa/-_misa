@@ -58,7 +58,7 @@ function mats(R) {
   return m;
 }
 // 看板（グラフィック部の看板に絵がないときの代わり）：扉の脇の壁から腕木を出し、板を吊るす。板は通りと直角（通りの両側から読める）
-export function drawSign(R, add, face, W_, D_, y, icon, side = 1) {
+export function fallbackSign(R, add, face, W_, D_, y, icon, side = 1) {
   const m = mats(R), M = R.mats;
   const along = face[1] !== 0 ? [1, 0] : [0, 1];              // 壁に沿う向き
   const off = 0.55 * side;
@@ -77,7 +77,7 @@ export function newBldParts(R, b, add, M, W_, D_, face, door, H) {
   // 看板：グラフィック部の看板（js/bldgfx.js）にその絵があればそれを、なければこのファイルの絵を使う
   const sign = (kind, y, side = 1, w = W_, d = D_) => {
     if (BG.SIGN_KINDS?.includes(kind)) { const tmp = []; BG.drawSign(tmp, b, kind, { y, side }); for (const o of tmp) add(o.g, o.mat, 0, 0, 0); }
-    else drawSign(R, add, face, w, d, y, kind, side);
+    else fallbackSign(R, add, face, w, d, y, kind, side);
   };
   const box = (w, h, d) => R.box(w, h, d);
   switch (b.type) {
