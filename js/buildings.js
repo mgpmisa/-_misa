@@ -281,7 +281,9 @@ function staffTown(sim, s, maxHire = 1) {
       const pref = SPARE_FOR[st.job] || [];
       const cands = locals.filter((p) => {
         const a = sim.ageOf(p);
-        if (a < 18 || a > 60 || p.jail != null || S.wanted?.[p.id] || !OK_RANK.has(p.rank) || p.mission || p.party != null) return false;
+        // 院母・司書・倉番・墓守は、隠居した年寄りにも頼める
+        const gentle = ['matron', 'librarian', 'granarian', 'gravedigger'].includes(st.job) && !p.job && a <= 72;
+        if (a < 18 || (a > 60 && !gentle) || p.jail != null || S.wanted?.[p.id] || !OK_RANK.has(p.rank) || p.mission || p.party != null) return false;
         const h = sim.hh(p); if (!h || h.bandits || h.royal) return false;
         if (pref.includes(p.job)) return true;
         const keep = SPARE[p.job];

@@ -9,6 +9,7 @@ import { RESCUE_ACTION_LABEL, RESCUE_ACTION_GO, RESCUE_PREF_LABEL, rescueNote } 
 import { mindThought } from './talkmind.js';
 import { CHORE_LABEL, CHORE_GO, CHORE_PREF } from './chores.js';
 import { calendarLabel } from './calendar.js';
+import { bldTypeLabel } from './bldgfx.js';
 import { financeSummary } from './finance.js';
 import { faunaHtml } from './fauna.js';
 import { bankNationHTML, bankEconHTML, bankPersonHTML } from './bank.js';
@@ -763,7 +764,8 @@ export class UI {
 
   buildingHtml(b) {
     const sim = this.sim, S = sim.S;
-    const typeLabel = { mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    let typeLabel = { mint: '王立造幣所', bank: '両替商の館', guardpost: '門の詰所', drillyard: '練兵場', academy: '魔法学園', dojo: '剣術道場', fort: '国境の砦', camp: '開拓者の小屋', watchtower: '見張り櫓', clinic: '診療所', school: '学校', stable: '厩舎', mill: '風車小屋', house: '民家', castle: '王城', church: '聖堂', bakery: 'パン屋', tavern: '宿屋・酒場', smithy: '鍛冶場', workshop: '工房', market: '市場', well: '井戸', guild: '冒険者ギルド', barracks: '兵舎', prison: '牢獄', magictower: '研究の塔', mansion: '貴族の屋敷', lighthouse: '灯台', demoncastle: '魔王城', cave: 'ダンジョン', pyramid: 'ピラミッド', observatory: '展望台', hideout: '盗賊のアジト', mine: '鉱山', ruins: '遺跡' }[b.type] || '建物';
+    typeLabel = bldTypeLabel(b, typeLabel); // 民族の集会所・祠、村の寄り合い所などを正しい呼び名に
     let h = `<div class="pname">${esc(b.name)}</div><div class="psub">${typeLabel}${b.settlement != null ? `・${esc(sim.town(b.settlement).name)}` : ''}${b.bounty ? `<br><b class="up">懸賞金 ${b.bounty}銅貨</b>` : ''}</div>`;
     if (INTERIOR_TYPES.has(b.type)) h += `<div class="row-btns"><button id="enterBtn">${['cave', 'pyramid', 'demoncastle', 'ruins', 'mine'].includes(b.type) ? '奥へ踏み込んで見る' : '中に入って見る'}</button></div>`;
     if (b.type === 'house' || b.type === 'mansion') {

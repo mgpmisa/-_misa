@@ -280,7 +280,7 @@ export const NEW_INTERIOR = {
     for (let i = 0; i < 3; i++) {
       const z = 1.4 + i * 1.8;
       if (z > D - 3) break;
-      K.cyl(W - 1.3, 0, z, 0.62, 0.62, M.wood, { seg: 10 }); K.cyl(W - 1.3, 0.55, z, 0.54, 0.05, M.water, { seg: 10 });
+      K.cyl(W - 1.3, 0, z, 0.62, 0.62, M.wood, { seg: 10, openEnded: true }); K.cyl(W - 1.3, 0, z, 0.58, 0.06, M.wood, { seg: 10 }); K.cyl(W - 1.3, 0.5, z, 0.58, 0.04, M.water, { seg: 10 });
       K.cyl(W - 1.3, 0.2, z, 0.64, 0.05, M.iron, { seg: 10 });
       K.solid(W - 2, z - 0.7, 1.4, 1.4);
       K.slot('bath', W - 1.3, z, { y: 0.15, face: [-1, 0] });

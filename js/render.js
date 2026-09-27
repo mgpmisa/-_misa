@@ -10,6 +10,7 @@ import { TerrainChunks } from './terrain_chunks.js';
 import { drawPersonAnim, personAnimState, animFrameAt as pFrameAt, animDuration } from './anim_people.js';
 import { PartyRings } from './partyring.js';
 import * as TH from './tribehome.js'; // 奥地の民族の家と里
+import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import { convoyViews } from './logistics.js';
 import { ShadowPool, CrowdDots, dotColor } from './crowd.js';
 import { drawCreatureAnim, creatureAnimState, animFrameAt as cFrameAt, peekCreatureAnim } from './anim_creatures.js';
@@ -391,6 +392,7 @@ export class Renderer {
     const banner = (x, z, y, color) => { add(this.box(0.06, 1.4, 0.06), M.wood, x, y + 0.7, z); add(new THREE.PlaneGeometry(0.5, 0.35), this.mats['banner' + color] || M.red, x + 0.28, y + 1.2, z); };
     const kcol = KINGDOMS[b.kingdom]?.color || '#c93a32';
     if (b.tribe && b.style && TH.tribalParts(this, b, add, M, W_, D_, face, door)) return parts; // 民族の家（js/tribehome.js）
+    if (BG.styledParts(this, b, { add, M, W_, D_, face, south, kcol, door, windows, gable, flat, banner })) return parts; // 看板と種類ごとの形（js/bldgfx.js）
     switch (b.type) {
       case 'house': houseLike(1.15, M.timber, b.roof === 'tile' ? M.tileRoof : M.thatch); break;
       case 'bakery': houseLike(1.2, M.timber, M.thatch); break;
@@ -593,6 +595,7 @@ export class Renderer {
       }
       default: houseLike(1.15, M.timber, M.thatch);
     }
+    BG.extraSignParts(this, b, add); // 形はそのままで看板だけ足す建物（聖堂・魔法の塔など）
     return parts;
   }
 
@@ -948,6 +951,7 @@ export class Renderer {
     this.hemi.intensity = 0.5 + dayF * 0.9;
     this.hemi.color.set(dayF > 0.3 ? '#dff1ff' : '#5a6aa8');
     for (const m of this.nightMats) m.emissiveIntensity = (1 - dayF) * 1.6;
+    BG.bldFxUpdate(this, dayF, now, realDt); // 看板の夜の明るさと、煙突の煙
     this.waterTex.offset.x = (now * 0.02) % 1;
     for (const m of this.mills) m.rotation.z = now * 0.8 * (sim.S.weather === 'rain' ? 1.8 : 1);
     for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
