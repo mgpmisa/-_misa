@@ -207,6 +207,20 @@ const GATHER = {
   fisher: ['fish', 'gather'], sailor: ['fish'], captain: ['fish'], diver: ['fish', 'gather'],
   gatherer: ['gather', 'forage'], herbalist: ['gather'], shaman: ['gather', 'forage'], hunter: ['forage'], laundress: ['gather'],
 };
+// 町の中かどうかは herbgarden.js が MATTER_HOOK.urban に入れる。町の中（建物の中・通り・広場・町の囲いの内）では、野に自生する草・花・虫・小さな獣は摘まない・捕らない（社長の指示）。
+// 拾えるのは町に元からある物（井戸水・雨水・くず鉄・石ころ・ぼろ布など）だけ。畑の収穫は町の畑と庭（farm・town）だけ。
+// 薬師は店で薬を作る人なので、町の中では何も摘まない（薬草は薬草摘みと薬草園の園丁から買う）
+const WILD_HOW = new Set(['gather', 'forage']);
+const URBAN_ON = new Set(['town']), URBAN_HARVEST = new Set(['town', 'farm']);
+function urbanList(hows, ons, job) {
+  const keep = hows.filter((h) => !WILD_HOW.has(h) && h !== 'harvest');
+  const out = keep.length ? candidates(keep, ons).slice() : [];
+  if (hows.includes('harvest')) out.push(...candidates(['harvest'], new Set([...ons].filter((o) => URBAN_HARVEST.has(o)))));
+  if (job === 'herbalist') return out;
+  const wild = hows.filter((h) => WILD_HOW.has(h));
+  if (wild.length) for (const x of candidates(wild, URBAN_ON)) { const it = MAT.get(x.id); if (it && it.cat !== 'plant' && it.cat !== 'beast') out.push(x); }
+  return out;
+}
 const candCache = new Map();
 function candidates(hows, ons) {
   const key = hows.join(',') + '|' + [...ons].sort().join(',');
@@ -250,7 +264,7 @@ export function matterWork(sim, p, dt, eff) {
   if (hows && R.chance(0.55)) {
     const ons = onKeysAt(sim, p.pos.x, p.pos.z, p.job === 'fisher' || p.job === 'sailor' || p.job === 'diver' ? 3 : 2);
     if (p.inside != null) { const b = sim.building(p.inside); if (b?.type === 'mine') { ons.add('mine'); ons.add('cave'); ons.add('mountain'); } }
-    const list = candidates(hows, ons);
+    const list = MATTER_HOOK.urban?.(sim, p) ? urbanList(hows, ons, p.job) : candidates(hows, ons);
     const x = pickWeighted(R, list, (c) => (hh.stock?.[c.id] || 0) < 30);
     if (x) {
       const it = MAT.get(x.id);

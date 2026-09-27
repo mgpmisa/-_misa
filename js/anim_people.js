@@ -373,7 +373,7 @@ function makePainter(p, opts = {}) {
     case 'butler': top = '#f0f0f0'; overlay = 'butler'; bottom = '#2a2a30'; hat = null; if (f) { top = rich('#2a2a34'); long = top; apron = '#f4f4f4'; hat = 'katyusha'; overlay = null; } break;
     case 'maid': top = rich('#2a2a34'); long = f ? top : null; apron = '#f4f4f4'; hat = f ? 'katyusha' : null; break;
     case 'cook': top = '#f0ece0'; hat = 'chef'; apron = '#ffffff'; item = 'ladle'; break;
-    case 'gardener': top = rich('#5a7a3a'); apron = rich('#6a8a4a'); hat = o2 < 0.5 ? 'straw' : 'cap'; hatC = rich('#4a6a2a'); item = 'shears'; break;
+    case 'gardener': case 'herbgrower': top = rich('#5a7a3a'); apron = rich('#6a8a4a'); hat = o2 < 0.5 ? 'straw' : 'cap'; hatC = rich('#4a6a2a'); item = 'shears'; break;
     case 'jester': top = rich('#d03030'); overlay = 'split'; hat = 'jester'; hatC = rich('#e8c030'); break;
     // ---- 町
     case 'doctor': top = '#f0f0ec'; long = top; bottom = rich('#2a2a3a'); overlay = 'coat'; item = 'bag'; hat = null; break;
@@ -2002,7 +2002,7 @@ export const JOB_MOTION = {
   elder: 'lecture', wizard: 'cast', scholar: 'read', adventurer: 'train', sailor: 'rope', thief: 'sneak', wanderer: 'lookout',
   beggar: 'beg', bard: 'strum',
   chancellor: 'write', treasurer: 'coins', general: 'rule', royalguard: 'guard', courtmage: 'cast', butler: 'serve', maid: 'sweep',
-  cook: 'stir', gardener: 'snip', jester: 'juggle', gatekeeper: 'guard', militia: 'guard',
+  cook: 'stir', gardener: 'snip', herbgrower: 'snip', jester: 'juggle', gatekeeper: 'guard', militia: 'guard',
   doctor: 'heal', herbalist: 'grind', midwife: 'cradle', teacher: 'lecture', scribe: 'write', changer: 'coins', butcher: 'butcher',
   brewer: 'stir', cobbler: 'tap', potter: 'potter', weaver: 'sew', jeweler: 'coins', alchemist: 'flask', fortune: 'orb',
   painter: 'paint', musician: 'strum', dancer: 'dance', stablehand: 'pitch', messenger: 'scroll', watchman: 'lantern',

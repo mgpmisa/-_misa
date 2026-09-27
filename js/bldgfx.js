@@ -112,7 +112,7 @@ const CELL = 16, COLS = 8;
 // ================================================================ 材質（一度だけ作って使い回す）
 let MAT = null, BOUND = null;
 // 小物の色見本（1列に並べた色。形の UV をその色のマスの真ん中に向ける）
-const PAL_COLORS = { iron: '#2c2a2e', hay: '#d8b84a', plaster: '#f1ede2', herb: '#3f9a3a', herb2: '#6fbf4a', pot: '#a8583a', bread: '#c98a3e', flower: '#e0508a', flower2: '#f0d040', water: '#3a78b8', paper: '#f0e6c8' };
+const PAL_COLORS = { iron: '#2c2a2e', hay: '#d8b84a', plaster: '#f1ede2', herb: '#3f9a3a', herb2: '#6fbf4a', pot: '#a8583a', bread: '#c98a3e', flower: '#e0508a', flower2: '#f0d040', water: '#3a78b8', paper: '#f0e6c8', soil: '#5e4128', bloom: '#a070d0' };
 const PAL_NAMES = Object.keys(PAL_COLORS);
 function palTex() {
   const cv = document.createElement('canvas'); cv.width = 16; cv.height = 1;
@@ -464,6 +464,32 @@ export function styledParts(R, b, ctx) {
       sign('guild', { y: 1.1, side: doorSide, at: 0.55 });
       return true;
     }
+    case 'herbgarden': {
+      // 薬草園：低い木の柵で囲んだ畑。畝に薬草が並び、ところどころ紫や黄の花。奥に道具小屋と水桶
+      add(R.box(W_ + 0.2, 0.06, D_ + 0.2), G.soil, 0, 0.03, 0);
+      const s = F.side, h = F.half;
+      // 柵（正面の真ん中は入口）
+      const rail = (u0, u1, v) => { const L = u1 - u0; at((u0 + u1) / 2, v, R.box(L, 0.05, 0.05), M.wood, 0.32); at((u0 + u1) / 2, v, R.box(L, 0.05, 0.05), M.wood, 0.16); for (let u = u0; u <= u1 + 1e-6; u += 0.5) at(u, v, R.box(0.07, 0.42, 0.07), M.planks, 0.21); };
+      const railV = (u, v0, v1) => { const L = v1 - v0; at(u, (v0 + v1) / 2, R.box(0.05, 0.05, L), M.wood, 0.32); at(u, (v0 + v1) / 2, R.box(0.05, 0.05, L), M.wood, 0.16); for (let v = v0; v <= v1 + 1e-6; v += 0.5) at(u, v, R.box(0.07, 0.42, 0.07), M.planks, 0.21); };
+      rail(-s, -0.35, h); rail(0.35, s, h); rail(-s, s, -h); railV(-s, -h, h); railV(s, -h, h);
+      // 畝と薬草
+      let k = 0;
+      for (let v = -h + 0.9; v <= h - 0.45; v += 0.55) {
+        at(0, v, R.box(s * 2 - 0.5, 0.1, 0.3), G.soil, 0.1);
+        for (let u = -s + 0.4; u <= s - 0.35; u += 0.32) {
+          const r = hsh(b.x + k, b.z, 21);
+          const mat = r < 0.12 ? G.bloom : r < 0.2 ? G.flower2 : (k % 2 ? G.herb : G.herb2);
+          at(u, v, new THREE.DodecahedronGeometry(0.1 + r * 0.05, 0), mat, 0.22);
+          k++;
+        }
+      }
+      // 道具小屋と水桶（奥の隅）
+      at(-s + 0.45, -h + 0.4, R.box(0.6, 0.55, 0.5), M.planks, 0.28);
+      at(-s + 0.45, -h + 0.4, R.box(0.72, 0.08, 0.62), M.thatch, 0.6);
+      barrel(s - 0.35, -h + 0.35, 0.9);
+      potPlant(0.55, h + 0.12, true); potPlant(-0.55, h + 0.12, false);
+      return true;
+    }
     case 'clinic': {
       // 診療所：白い壁、瓦屋根、戸口の薬草の鉢、緑の十字の看板
       add(R.box(W_, 1.2, D_), south ? M.adobe : G.plaster, 0, 0.6, 0);
@@ -690,6 +716,7 @@ export function bldTypeLabel(b, base) {
   if (!b) return base;
   if (b.tribe && b.style) return tribalLabel(b);
   if (b.type === 'shrine') return '祠';
+  if (b.type === 'herbgarden') return '薬草園';
   if (b.hall) return b.type === 'church' ? '修道院（村の中心）' : '寄り合い所（村の集会所）';
   if (b.type === 'tavern') return /宿/.test(b.name || '') ? '宿屋・酒場' : '酒場';
   if (b.type === 'house' && (b.floors || 1) >= 2) return `${base}（二階建て）`;
