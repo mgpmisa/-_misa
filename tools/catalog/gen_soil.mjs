@@ -1,0 +1,78 @@
+import { A, S, U, M } from './gen_core.mjs';
+
+// ===== 土・砂 =====
+const N = 'none';
+A('soil', '土', 'soil', 5, 0.05, { limit: N, demand: 1, src: [S('dig', ['grass', 'forest', 'field', 'farm', 'savanna', 'hill', 'town'], 0.9)], use: [U('build', '盛り土・土塀・土台の突き固め'), U('craft', '練り土・日干し煉瓦の材料')], desc: 'どこを掘っても出てくる、ふつうの土。' });
+A('mud', '泥', 'soil', 6, 0.04, { limit: N, demand: 1, src: [S('dig', ['river', 'swamp', 'lake', 'beach', 'field'], 0.9)], use: [U('build', '泥壁・小屋のすき間埋め'), U('craft', '日干し煉瓦の材料')], desc: '水を含んだ土。乾かすと固まる。' });
+A('clay', '粘土', 'soil', 5, 0.3, { limit: N, demand: 2, src: [S('dig', ['river', 'lake', 'swamp', 'hill'], 0.5)], use: [U('craft', '陶器・壺・煉瓦・瓦の材料'), U('build', '壁の塗り土')], desc: '粘りのある土。焼けば器や煉瓦になる。' });
+A('fineclay', '水簸した粘土', 'soil', 4, 0.8, { demand: 1, make: M({ clay: 2, freshwater: 1 }, 'potter', 2), use: [U('craft', '上等な陶器・薄手の器の材料')], desc: '水にさらして砂を除いた、きめの細かい粘土。' });
+A('redclay', '赤粘土', 'soil', 5, 0.35, { limit: N, src: [S('dig', ['desert', 'savanna', 'hill'], 0.4)], use: [U('craft', '赤焼きの素焼き・赤煉瓦'), U('dye', '赤茶の土染め')], desc: '鉄を含んで赤い粘土。焼くと鮮やかな赤になる。' });
+A('whiteclay', '白陶土', 'soil', 5, 2, { limit: 'vein', rare: 1, src: [S('dig', ['mountain', 'hill'], 0.1), S('mine', ['mine'], 0.15)], use: [U('craft', '白磁・上等な器の材料'), U('trade')], desc: '真っ白な粘土。白い磁器はこれでしか作れない。' });
+A('fireclay', '耐火粘土', 'soil', 5, 0.9, { limit: 'vein', src: [S('mine', ['mine', 'cave'], 0.25)], use: [U('craft', '耐火煉瓦・るつぼ・炉の内張り')], desc: '石炭の層の下にある、火に強い粘土。' });
+A('blueclay', '青粘土', 'soil', 5, 0.4, { limit: N, src: [S('dig', ['lake', 'sea', 'beach'], 0.3)], use: [U('build', '水を通さない池の底塗り・井戸の目張り'), U('craft', '水がめ')], desc: '水の底にたまる青みがかった粘土。水を通しにくい。' });
+A('porcelainbody', '磁器土', 'soil', 4, 4, { demand: 0, make: M({ whiteclay: 2, feldspar: 1, quartzpowder: 1 }, 'potter', 3), use: [U('craft', '白磁の器の生地')], desc: '白陶土に長石と石英を混ぜて練った生地。' });
+A('sand', '砂', 'soil', 5, 0.05, { limit: N, demand: 1, src: [S('dig', ['beach', 'desert', 'river'], 0.9)], use: [U('craft', '硝子・鋳型・漆喰の材料'), U('build', '道の敷き砂')], desc: 'さらさらの砂。硝子や漆喰の材料になる。' });
+A('riversand', '川砂', 'soil', 5, 0.1, { limit: N, demand: 1, src: [S('dig', ['river'], 0.9)], use: [U('build', '目地練り・漆喰に混ぜる（塩気がなく建材によい）'), U('craft', '濾し砂')], desc: '川底の角の取れた砂。塩気がなく、建材にいちばん向く。' });
+A('seasand', '海砂', 'soil', 5, 0.04, { limit: N, src: [S('dig', ['beach', 'sea'], 0.9)], use: [U('craft', '硝子の材料'), U('build', '塩抜きしてから目地練りに')], desc: '浜の砂。塩気を含むので、そのままでは建材に向かない。' });
+A('volcanicsand', '火山砂', 'soil', 5, 0.15, { limit: N, src: [S('dig', ['volcano'], 0.9)], use: [U('craft', '磨き砂・鋳物の型砂'), U('build', '水はけのよい敷き砂')], desc: '黒くざらついた火山の砂。物を磨くのによい。' });
+A('whitesand', '白砂', 'soil', 5, 0.8, { limit: N, rare: 1, src: [S('dig', ['beach'], 0.15)], use: [U('craft', '透明な硝子の材料'), U('luxury', '貴族の庭の敷き砂')], desc: '雪のように白い浜の砂。庭に敷けば見栄えがする。' });
+A('desertsand', '砂漠の砂', 'soil', 5, 0.03, { limit: N, src: [S('dig', ['desert'], 0.95)], use: [U('craft', '砂時計の砂・日干し煉瓦に混ぜる'), U('medicine', '熱した砂の砂風呂')], desc: '風で細かく磨かれた砂。' });
+A('quartzsand', '珪砂', 'soil', 5, 0.5, { limit: N, src: [S('dig', ['river', 'desert'], 0.2)], use: [U('craft', '透明な硝子・磁器の材料')], desc: '石英だけでできた、硝子づくりの上等な砂。' });
+A('starsand', '星砂', 'soil', 0.2, 6, { limit: N, rare: 2, demand: 0, src: [S('gather', ['beach'], 0.03)], use: [U('collect', '小瓶に詰めて飾る'), U('gift', '恋人への贈り物'), U('ritual', '旅の無事を祈るお守り')], desc: '星の形をした小さな砂粒。南の浜でまれに拾える。' });
+A('moldsand', '鋳物砂', 'soil', 5, 0.4, { demand: 1, make: M({ sand: 2, clay: 1 }, 'smith', 1), use: [U('craft', '鐘・鍋・鋳鉄を流し込む型')], desc: '砂と粘土を練り合わせた、鋳物の型を作る砂。' });
+A('leafmold', '腐葉土', 'soil', 4, 0.2, { limit: N, demand: 1, src: [S('dig', ['forest', 'dense', 'jungle'], 0.8)], use: [U('fertilize', '畑と花壇の肥やし')], desc: '落ち葉が朽ちてできた、ふかふかの土。' });
+A('peat', '泥炭', 'soil', 4, 0.3, { limit: 'vein', demand: 1, src: [S('dig', ['swamp', 'tundra'], 0.7)], use: [U('fuel', '乾かして燃やす'), U('fertilize', '砂地の土を良くする')], desc: '沼の底で草が千年かけて積もった黒い土。乾かすと燃える。' });
+A('peatbrick', '泥炭の塊', 'soil', 2, 0.6, { demand: 2, make: M({ peat: 2 }, 'charcoal', 2), use: [U('fuel', '木の少ない土地のかまどの燃料')], desc: '泥炭を切って干した燃料。煙は多いがよく燃える。' });
+A('blacksoil', '黒土', 'soil', 5, 0.3, { limit: N, demand: 2, src: [S('dig', ['grass', 'savanna', 'field'], 0.6)], use: [U('fertilize', '畑をよく肥やす'), U('hobby', '鉢植え')], desc: '草原の下の、よく肥えた黒い土。' });
+A('redsoil', '赤土', 'soil', 5, 0.08, { limit: N, src: [S('dig', ['savanna', 'desert', 'hill', 'jungle'], 0.8)], use: [U('build', '突き固めた土壁'), U('dye', '赤茶の土染め')], desc: '鉄を含んで赤い、乾いた土。' });
+A('loess', '黄土', 'soil', 5, 0.1, { limit: N, src: [S('dig', ['desert', 'grass', 'savanna'], 0.6)], use: [U('build', '版築の壁・洞窟の住まい'), U('fertilize', '水をやれば実りの多い土')], desc: '風に運ばれて積もった黄色い細かい土。' });
+A('volcanicash', '火山灰', 'soil', 3, 0.1, { limit: N, src: [S('dig', ['volcano'], 0.9)], use: [U('build', '石灰と練ると水中でも固まる'), U('fertilize', '畑に混ぜる'), U('craft', '磨き粉')], desc: '火山が吹き上げた細かい灰。' });
+A('saltysoil', '塩を吹いた土', 'soil', 5, 0.1, { limit: N, src: [S('dig', ['desert', 'beach'], 0.4)], use: [U('craft', '水に溶かして煮詰めれば塩がとれる')], desc: '白く塩が浮いた土。畑には向かないが、塩のもとになる。' });
+A('frozensoil', '凍土', 'soil', 6, 0.05, { limit: N, src: [S('dig', ['tundra', 'snow'], 0.8)], use: [U('build', '氷室の壁'), U('fertilize', '溶かして寝かせると肥えた土になる')], desc: '一年じゅう凍った土。' });
+A('mossysoil', '苔むした土', 'soil', 3, 0.3, { limit: N, src: [S('dig', ['dense', 'forest'], 0.5)], use: [U('hobby', '苔庭・盆景'), U('craft', '屋根の苔ぶき')], desc: '苔が根を張った湿った土。' });
+A('swampmud', '沼の泥', 'soil', 6, 0.1, { limit: N, src: [S('dig', ['swamp'], 0.9)], use: [U('medicine', '打ち身に貼る泥の湿布'), U('fertilize', '田畑の肥やし')], desc: '黒く粘る沼の底の泥。' });
+A('hotspringmud', '温泉の泥', 'soil', 4, 1.5, { limit: N, rare: 1, src: [S('dig', ['volcano'], 0.3)], use: [U('medicine', '泥湯・関節の痛みに'), U('luxury', '貴婦人の肌の手入れ')], desc: '温泉の底にたまる灰色の泥。肌がなめらかになるという。' });
+A('holysoil', '聖地の土', 'soil', 1, 8, { limit: 'relic', rare: 2, demand: 0, src: [S('dig', ['ruins'], 0.05), S('loot', ['ruins'], 0.05)], use: [U('ritual', '墓に撒いて死者を弔う・祭壇に供える'), U('magic', '不死の魔物よけ')], desc: '古い聖者の眠る地の土。亡者が嫌うという。' });
+A('cursedsoil', '魔界の土', 'soil', 5, 1, { limit: N, rare: 1, demand: 0, src: [S('dig', ['demoncastle'], 0.9)], use: [U('magic', '闇の錬金の材料'), U('craft', '魔界の黒煉瓦')], desc: '瘴気を含んだ紫がかった土。ふつうの作物は育たない。' });
+A('anthillsoil', '蟻塚の土', 'soil', 4, 0.2, { limit: N, src: [S('dig', ['savanna', 'jungle'], 0.4)], use: [U('build', 'とても固い土壁・かまど')], desc: '蟻が固めた塚の土。練れば石のように固まる。' });
+A('nitersoil', '硝石土', 'soil', 4, 0.5, { limit: 'vein', src: [S('dig', ['cave'], 0.4)], use: [U('craft', '水で煮出して硝石をとる')], desc: '洞窟の奥や古い家畜小屋の下の土。硝石を含む。' });
+A('adobemix', '練り土', 'soil', 6, 0.2, { demand: 1, make: M({ soil: 2, straw: 1, freshwater: 1 }, 'mason', 1), use: [U('craft', '日干し煉瓦の材料'), U('build', '土壁の塗り')], desc: '土に藁と水を混ぜて練ったもの。' });
+A('rammedearth', '版築の土', 'soil', 6, 0.3, { demand: 1, make: M({ loess: 2, gravel: 1, slakedlime: 1 }, 'mason', 1), use: [U('build', '突き固めて城壁や家の壁にする')], desc: '黄土に砂利と石灰を混ぜた、突き固め用の土。' });
+A('pottingsoil', '鉢の土', 'soil', 3, 0.8, { demand: 1, make: M({ blacksoil: 1, leafmold: 1, sand: 1 }, 'gardener', 1), use: [U('hobby', '鉢植え・薬草の苗床'), U('fertilize')], desc: '黒土と腐葉土と砂を合わせた、苗を育てる土。' });
+A('gravesoil', '墓地の土', 'soil', 4, 0.3, { limit: N, demand: 0, src: [S('dig', ['town'], 0.1)], use: [U('magic', '死霊術の材料（禁じられている）'), U('ritual', '弔いの儀式')], desc: '墓地の土。死霊術師が欲しがるので、墓守が見張る。' });
+
+// ===== 水・氷・液体 =====
+A('freshwater', '真水', 'water', 1, 0.02, { limit: N, demand: 3, stack: 10, src: [S('gather', ['river', 'lake', 'town'], 1)], use: [U('drink'), U('craft', '料理・酒造り・練り物に使う')], drink: 25, desc: '川や井戸からくんだ、ふつうの飲み水。' });
+A('riverwater', '川の水', 'water', 1, 0.01, { limit: N, demand: 1, stack: 10, src: [S('gather', ['river'], 1)], use: [U('drink', '煮てから飲むのが安全'), U('craft', '洗い物・水車')], drink: 20, desc: '流れる川の水。そのまま飲むと腹をこわすこともある。' });
+A('wellwater', '井戸水', 'water', 1, 0.02, { limit: N, demand: 3, stack: 10, src: [S('gather', ['town', 'farm'], 1)], use: [U('drink'), U('craft', '酒造り・パン作り')], drink: 25, desc: '夏は冷たく冬は温かい井戸の水。' });
+A('springwater', '泉の水', 'water', 1, 0.1, { limit: N, demand: 2, stack: 10, src: [S('gather', ['forest', 'mountain', 'hill'], 0.6)], use: [U('drink', 'おいしい水'), U('craft', '上等な酒・茶に')], drink: 30, desc: '岩の間から湧く澄んだ水。酒造りに好まれる。' });
+A('rainwater', '雨水', 'water', 1, 0.01, { limit: N, stack: 10, src: [S('gather', ['town', 'farm', 'field', 'grass'], 0.5)], use: [U('drink'), U('craft', '染め物のすすぎ（やわらかい水）')], drink: 22, desc: '樽にためた雨の水。' });
+A('snowmelt', '雪解け水', 'water', 1, 0.05, { limit: N, stack: 10, src: [S('gather', ['snow', 'mountain', 'tundra'], 0.8)], use: [U('drink'), U('craft', '冬の酒の仕込み水')], drink: 25, desc: '春の山から流れてくる冷たい水。' });
+A('glacierwater', '氷河の水', 'water', 1, 0.4, { limit: N, rare: 1, stack: 10, src: [S('gather', ['snow', 'mountain'], 0.2)], use: [U('drink', 'この上なく澄んだ水'), U('luxury', '王族の食卓の水')], drink: 30, desc: '万年氷が溶けた水。王族の食卓に運ばれる。' });
+A('seawater', '海水', 'water', 1, 0.01, { limit: N, demand: 1, stack: 10, src: [S('gather', ['sea', 'beach'], 1)], use: [U('craft', '煮詰めて塩をとる'), U('medicine', '傷を洗う')], desc: 'しょっぱい海の水。飲めないが塩がとれる。' });
+A('deepseawater', '深海の水', 'water', 1, 0.5, { limit: N, rare: 1, stack: 10, src: [S('gather', ['deep'], 0.3)], use: [U('craft', 'まろやかな深海の塩'), U('magic', '水の魔法薬')], desc: '深い海の底からくみ上げた冷たい水。' });
+A('brine', 'かん水', 'water', 1, 0.1, { demand: 1, stack: 10, make: M({ seawater: 3 }, 'saltmaker', 2), src: [S('gather', ['desert'], 0.1)], use: [U('craft', '塩を煮る・漬け物'), U('food', '塩漬けの漬け汁')], desc: '海水を砂にかけて濃くした塩水。' });
+A('saltlakewater', '塩湖の水', 'water', 1, 0.05, { limit: N, stack: 10, src: [S('gather', ['lake', 'desert'], 0.2)], use: [U('craft', '天日で湖塩をとる'), U('medicine', '浮かんで休む湯治')], desc: '内陸の塩の湖の水。人がぷかりと浮かぶ。' });
+A('hotspringwater', '温泉水', 'water', 1, 0.3, { limit: N, rare: 1, stack: 10, src: [S('gather', ['volcano', 'mountain'], 0.4)], use: [U('medicine', '湯治・肌の病'), U('luxury', '湯あみ'), U('craft', '明礬をとる')], desc: '地の底から湧く湯。体の痛みがやわらぐ。' });
+A('sparklingwater', '泡立つ泉の水', 'water', 1, 0.6, { limit: N, rare: 1, stack: 10, src: [S('gather', ['mountain', 'hill'], 0.1)], use: [U('drink', 'しゅわしゅわと泡立つ水'), U('luxury', '貴族のたしなみ'), U('medicine', '胃の薬')], drink: 28, desc: '細かな泡が立つ不思議な泉の水。' });
+A('holyspring', '聖なる泉の水', 'water', 1, 5, { limit: N, rare: 2, stack: 10, src: [S('gather', ['ruins', 'forest'], 0.03)], use: [U('ritual', '清めの儀式'), U('medicine', '病を癒やす'), U('magic', '聖水・聖銀の材料')], drink: 30, fx: { hp: 5 }, desc: '聖者の祈りが宿るという泉の水。亡者を退ける。' });
+A('moonwater', '月夜の泉の水', 'water', 1, 3, { limit: N, rare: 2, stack: 10, src: [S('gather', ['forest', 'lake'], 0.02)], use: [U('magic', '満月の夜にくむと魔力を帯びる'), U('ritual', '占い')], drink: 25, desc: '満月の光が映った夜にだけくめる、ほのかに光る水。' });
+A('dragonspring', '竜の泉の水', 'water', 1, 60, { limit: N, rare: 3, stack: 10, src: [S('gather', ['volcano', 'mountain'], 0.005)], use: [U('magic', '竜鋼を鍛える焼き入れの水'), U('medicine', '瀕死の者を立たせる'), U('trade')], drink: 30, fx: { hp: 30 }, desc: '竜が水を飲む泉。竜の気を帯びて赤く光る。' });
+A('swampwater', '沼の水', 'water', 1, 0.01, { limit: N, stack: 10, src: [S('gather', ['swamp'], 1)], use: [U('fertilize', '田の水'), U('craft', '藍染めのかめ')], desc: '濁った沼の水。飲まないほうがよい。' });
+A('poisonwater', '毒の沼の水', 'water', 1, 0.8, { limit: N, rare: 1, demand: 0, stack: 10, src: [S('gather', ['swamp'], 0.1)], use: [U('craft', '毒矢・害獣よけ'), U('magic', '解毒薬を作る研究の材料'), U('medicine', 'ごく薄めて虫下し')], desc: '毒の沼の緑の水。触れると肌がただれる。' });
+A('miasmawater', '瘴気の水', 'water', 1, 2, { limit: N, rare: 1, demand: 0, stack: 10, src: [S('gather', ['demoncastle'], 0.6)], use: [U('magic', '闇の魔法薬・呪いの研究')], desc: '魔界の水たまりにたまる、黒い靄をまとった水。' });
+A('muddywater', '泥水', 'water', 1, 0.005, { limit: N, demand: 0, stack: 10, src: [S('gather', ['river', 'swamp', 'field'], 1)], use: [U('craft', '甕で澄ませば真水になる・粘土がとれる')], desc: '大雨のあとの濁った水。' });
+A('cavedrip', '洞窟の滴り水', 'water', 1, 0.2, { limit: N, stack: 10, src: [S('gather', ['cave'], 0.5)], use: [U('drink', '石灰を含んだ硬い水'), U('craft', '石灰の結晶を育てる')], drink: 20, desc: '鍾乳洞の天井から落ちる冷たい水。' });
+A('dew', '朝露', 'water', 0.2, 0.5, { limit: N, stack: 20, src: [S('gather', ['grass', 'forest', 'field'], 0.3)], use: [U('magic', '清らかな魔法薬の溶き水'), U('luxury', '化粧水')], drink: 3, desc: '夜明けの草の葉から集めた露。' });
+A('boiledwater', '湯冷まし', 'water', 1, 0.05, { demand: 2, stack: 10, make: M({ riverwater: 1 }, 'cook', 0.5), use: [U('drink', '腹をこわさない安全な水'), U('medicine', '赤子と病人の飲み水')], drink: 25, desc: '一度沸かして冷ました水。' });
+A('distilledwater', '蒸留水', 'water', 1, 0.6, { demand: 1, stack: 10, make: M({ freshwater: 2 }, 'alchemist', 1), use: [U('magic', '錬金術の溶き水'), U('medicine', '目を洗う・薬の調合')], drink: 25, desc: '湯気を集めて冷やした、混じりけのない水。' });
+A('ice', '氷', 'water', 2, 0.3, { limit: N, demand: 1, keep: 2, src: [S('gather', ['lake', 'river', 'snow', 'tundra'], 0.5)], use: [U('tool', '食べ物を冷やして長持ちさせる'), U('luxury', '夏の冷たい飲み物'), U('medicine', '熱を冷ます')], desc: '冬の湖から切り出した氷。氷室に蓄えれば夏まで持つ。' });
+A('snow', '雪', 'water', 1, 0.01, { limit: N, keep: 1, src: [S('gather', ['snow', 'tundra', 'mountain'], 1)], use: [U('drink', '溶かして水にする'), U('build', '雪室・氷室の詰め物')], desc: '降り積もった雪。溶かせば水になる。' });
+A('glacierice', '氷河の青氷', 'water', 2, 4, { limit: N, rare: 2, keep: 3, src: [S('mine', ['snow', 'mountain'], 0.05)], use: [U('luxury', '王族の氷菓子・冷たい酒'), U('magic', '冷気の魔法の触媒')], desc: '何千年もかけて固まった、青く透き通る氷。溶けにくい。' });
+
+// ===== 地から湧く油 =====
+A('crudeoil', '燃える水', 'oil', 1, 1, { limit: 'vein', rare: 1, stack: 10, src: [S('gather', ['desert', 'swamp'], 0.05), S('mine', ['mine'], 0.05)], use: [U('fuel', '煙は多いがよく燃える'), U('craft', '蒸して灯し油にする'), U('medicine', '家畜の皮膚病の塗り薬')], desc: '地面から黒くにじみ出す、火をつけると燃える水。' });
+A('lampoil', '石の灯し油', 'oil', 1, 2.5, { demand: 2, stack: 10, make: M({ crudeoil: 2 }, 'alchemist', 2), use: [U('fuel', '灯火の明かり。煤が少ない')], desc: '燃える水を蒸して澄ませた油。長くきれいに燃える。' });
+A('lightspirit', '揮発油', 'oil', 0.5, 4, { demand: 0, stack: 10, make: M({ crudeoil: 3 }, 'alchemist', 3), use: [U('craft', '染みぬき・樹脂を溶かす'), U('magic', '火の魔法薬')], desc: 'すぐに気化するとても燃えやすい油。火気厳禁。' });
+A('tar', '瀝青', 'oil', 3, 1.5, { limit: 'vein', demand: 1, src: [S('dig', ['desert', 'swamp', 'beach'], 0.1)], use: [U('build', '船底と屋根の水止め'), U('craft', '道の舗装・たいまつ')], desc: '黒く粘る天然の瀝青。船大工の必需品。' });
+A('paraffin', '石蝋', 'oil', 1, 3, { demand: 1, make: M({ oilshale: 3 }, 'alchemist', 3), use: [U('craft', 'ろうそく・防水の塗り'), U('fuel')], desc: '油頁岩から煮出した白い蝋。蜜蝋より安いろうそくになる。' });
