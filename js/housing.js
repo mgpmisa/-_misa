@@ -162,7 +162,7 @@ function progressJobs(sim) {
       // 市場に無い材料は、職人に注文する（鍛冶屋が釘を打つ。できた品は市場に出て、施主が買う）
       for (const [g, n] of left) matterWant(sim, sid, g, n);
       const onlyNails = left.length === 1 && left[0][0] === 'iron_nail';
-      if (!left.length || j.wait >= 4 || (onlyNails && j.wait >= 3)) {
+      if (!left.length || j.wait >= (onlyNails ? 5 : 4)) {   // 釘だけなら、よその町の鍛冶屋から届くのを少し長く待つ
         // 釘が手に入らなければ木の栓で組む。ほかの材料が足りなければ古材で間に合わせる
         const other = left.filter(([g]) => g !== 'iron_nail').map(([g]) => MAT_JP[g]);
         if (left.length) j.makeshift = [left.some(([g]) => g === 'iron_nail') ? (j.poor?.iron_nail ? '釘を買うお金が足りず、木の栓で組んだ' : '釘が手に入らず、木の栓で組んだ') : '', other.length ? `${other.join('と')}がそろわず、古材で間に合わせた` : ''].filter(Boolean).join('。');
