@@ -220,10 +220,11 @@ export function civicOptions(sim, p, add) {
     }
   }
   // 学び舎
-  if (!rest && h >= 9 && h < 15 && age >= 10 && age < 18 && canAcademy(sim, p) && s.type === 'capital' && sim.townBuilding(s, 'academy')) {
+  const fieldHand = p.job === 'farmer' && age >= 14;   // 畑を受け持つ農夫は、働く日の昼は畑に出る
+  if (!rest && !fieldHand && h >= 9 && h < 15 && age >= 10 && age < 18 && canAcademy(sim, p) && s.type === 'capital' && sim.townBuilding(s, 'academy')) {
     add(6 + p.pers.O * 2 + p.pers.C, 'academy', civicPlace(sim, p, 'academy'), R.int(120, 200));
   }
-  if (age >= 12 && age < 21 && ((h >= 15 && h < 18) || (rest && h >= 9 && h < 12)) && canDojo(sim, p) && sim.townBuilding(sim.capitalOf(p) || s, 'dojo')) {
+  if (age >= 12 && age < 21 && (fieldHand ? rest && h >= 9 && h < 12 : (h >= 15 && h < 18) || (rest && h >= 9 && h < 12)) && canDojo(sim, p) && sim.townBuilding(sim.capitalOf(p) || s, 'dojo')) {
     add(3.5 + p.values.courage * 3 + p.values.ambition, 'dojo', civicPlace(sim, p, 'dojo'), R.int(60, 120));
   }
   // 村や港の日曜学校：休みの日の朝、教会で読み書きを教わる

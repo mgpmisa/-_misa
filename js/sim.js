@@ -51,6 +51,8 @@ import { initVillages, ensureVillages, villagesDaily, villagesHourly, villagesPl
 import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
 import { constructOptions, constructDo, constructHourly, constructDaily } from './construct.js'; // 工事の段階・資材の運搬・普請場へ通う（開発部）
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
+import { feedChild, adultShare } from './kinfeed.js';   // 子どもを先に食べさせる（家になければ親が買う・親戚や近所・教会の施し）
+import { initFarmsteads } from './farmstead.js';   // 首都の城壁の外の農家
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
 import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf, huntBounty, isAdventurer, sellMaterials } from './guild.js';
 import { ensureCarry, carryHourly, carryDaily, carryDecide, carryArrive, carryWork, carryWorkMul, carryWalk, carryLoot, carryTreasure, carryDungeon } from './carry.js';
@@ -122,6 +124,7 @@ export class Sim {
     ensureExpansion(this);
     initTribes(this);
     initVillages(this);
+    initFarmsteads(this); // 首都の城壁の外に、畑つきの農家（farmstead.js）
     ensureBuildings(this, true); // 宿屋・浴場・図書館など町の暮らしの建物（buildings.js）
     ensureLeisure(this, true); // 恋と楽しみの場（leisure.js）。大人向けの館は設定が有効なときだけ
     ensureCarry(this, true); // 持ち物の重さと枠・袋やかご・倉庫（carry.js）
@@ -631,7 +634,7 @@ export class Sim {
 
     const mealTime = (h >= 6 && h < 8.5) || (h >= 11.5 && h < 13.5) || (h >= 18 && h < 20);
     // 小さな子は自分で食べ物を探さない。家の蓄えから食べさせてもらう
-    if (age < 6 && n.hunger < 55 && hh.food >= 0.5) { hh.food -= 0.5; n.hunger = Math.min(100, n.hunger + 50); }
+    if (age < 6 && n.hunger < 55) feedChild(this, p, hh);
     if (n.hunger < 60 && hh.food < 1 && hh.stock) cookFromStock(this, hh, hh.members.length * 2);   // 蔵の麦・魚・肉で自炊する
     if (n.hunger < 60 && !bedtime && age >= 6) {
       const sc = (100 - n.hunger) / 14 + (mealTime ? 2.5 : 0);
@@ -895,7 +898,7 @@ export class Sim {
             meal(this, 'bought', GOODS[g].meals);
           }
         }
-        else if (hh.food >= 1) { hh.food -= 1; p.needs.hunger = Math.min(100, p.needs.hunger + 60); }
+        else if (hh.food >= 1) { const part = adultShare(this, p, hh); hh.food -= part; p.needs.hunger = Math.min(100, p.needs.hunger + 60 * part); }
         break;
       case 'askfood': {
         const helper = this.S.people[a.helper];
