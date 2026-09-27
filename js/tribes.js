@@ -13,6 +13,7 @@
 //   tribesHourly(sim)          … newHour の expansionHourly のあと（村に着いたよそ者を見つける）
 //   tribesPlace(sim, p, kind)  … placeFor の頭（祠・集会所へ行かせる）
 //   tribeBirth(sim, c, mother, father) … birth の最後（民族の名前と見た目をつける）
+//   tribeWork(sim, p, dt, eff) … doWork の switch の前（里の仕事の実りを家の蔵と里の蓄えへ。お金は動かない）
 //   話し方：tribeVoice / tribeTail / tribeGreeting / tribeTopic / tribeThoughts（speech.js へ）
 //
 // 状態（古いセーブで欠けていても、ensureTribes / initTribes で作る）
@@ -653,6 +654,8 @@ export function tribesHourly(sim) {
   if (!X || !X.villages.length) return;
   const h = Math.floor(sim.hour());
   guardianWard(sim);
+  // 分け合い：朝から晩まで、蔵の乏しい家に里の蓄えを分ける
+  if (h >= 6 && h <= 20) for (const V of X.villages) if (!V.gone) shareFood(sim, V);
   if (h < 8 || h > 19) return;
   // 村に着いたよそ者（行商人・旅人・冒険者）
   for (const V of X.villages) {
@@ -780,18 +783,65 @@ function commons(sim, V, s) {
   const sm = [0.8, 1, 1.2, 0.6][sim.seasonIdx()];
   // 民族の産物が少しずつ村の蓄えにたまる
   for (const g of t.goods || []) if (m.stock[g] != null && m.stock[g] < GOODS[g].target * 1.6) m.stock[g] += 0.25 * workers * sm;
-  if (m.stock.meat < 6) m.stock.meat += 0.3 * workers * sm;
-  // 分け合い：食べ物に困っている家に、村の蓄えから分ける
-  for (const hh of Object.values(S.households)) {
-    if (hh.s !== V.sid) continue;
-    if (hh.food < hh.members.length * 1.5) {
-      const give = Math.min(hh.members.length * 1.2, (m.stock.meat || 0) * 0.5 + 1);
-      hh.food += give; m.stock.meat = Math.max(0, (m.stock.meat || 0) - give * 0.3);
-    }
-    if (hh.money < 8) hh.money += 3;
-  }
+  // 分け合い：食べ物に困っている家に、里の蓄えから分ける（食べ物もお金も湧かせない。里の仕事でとれた分だけを分ける）
+  shareFood(sim, V);
   // 人が減った村には、奥の集落から親戚の一家が移ってくる
   if (here.length < Math.max(6, V.pop0 * 0.7) && sim.rng.chance(0.08)) kinArrive(sim, V, s);
+}
+// ---------- 里の仕事：とれた獲物・魚・木の実・薬草は、家の蔵と里の蓄えへ（お金は動かない） ----------
+// sim.js の doWork の switch の前で呼ぶ：if (tribeWork(this, p, dt, eff)) return;
+//   本当を返したら、本体の仕事（市場に売ってお金を受け取る処理）はしない。
+//   狩人は偽を返す：本体の「獲物を見つけて戦う」も続けて行う。
+// 出どころ：里の人の働き。行き先：まず働いた人の家の蔵（家族の4食分まで）、残りは里の分け合いの蓄え（村の市場の在庫）。
+const TRIBE_FOOD = { hunter: ['meat', 1.8], fisher: ['fish', 1.7], gatherer: ['fruit', 1.3], farmer: ['wheat', 1.4] };
+const TRIBE_CRAFT = { weaver: ['cloth', 0.25], potter: ['pottery', 0.3], miner: ['ore', 0.9], shaman: ['herbs', 0.5], gatherer: ['herbs', 0.25] };
+// 職人の里でも、手のあいた時に小さな畑と家畜の世話をする（その分の食べ物）
+const TRIBE_SIDE_FOOD = { weaver: 0.6, potter: 0.6, miner: 0.6 };
+const FOODS = ['meat', 'fish', 'bread', 'wheat', 'fruit', 'cured', 'cheese', 'honey'];
+const FOOD_SM = [0.9, 1.1, 1.3, 0.6];   // 春・夏・秋・冬の恵み
+export function tribeWork(sim, p, dt, eff) {
+  const s = sim.town(p.s);
+  if (!s?.tribal || s.annexed != null) return false;
+  const S = sim.S, m = S.towns[p.s], hh = sim.hh(p);
+  if (!m || !hh || !TRIBAL_JOBS.has(p.job)) return false;
+  const si = sim.seasonIdx();
+  const f = TRIBE_FOOD[p.job] || (TRIBE_SIDE_FOOD[p.job] ? ['wheat', TRIBE_SIDE_FOOD[p.job]] : null);
+  if (f) {
+    let g = f[0];
+    if (!GOODS[g]) g = 'wheat';
+    let mult = FOOD_SM[si];
+    if (p.job === 'fisher' && si === 3) mult = 0.5;
+    if (p.job === 'farmer') mult = [0.9, 1.3, 2.4, 0.25][si] * (S.harvest ?? 1);
+    let meals = f[1] * mult * eff;
+    // まず自分の家の蔵へ
+    const want = hh.members.length * 4 - hh.food;
+    if (want > 0 && hh.house != null) { const q = Math.min(want, meals); hh.food += q; meals -= q; }
+    // 残りは里の分け合いの蓄えへ（蓄えがいっぱいなら、とりすぎないで森に残す）
+    if (meals > 0) {
+      const per = GOODS[g].meals || 1, cap = (GOODS[g].target || 10) * 3;
+      if ((m.stock[g] || 0) < cap) m.stock[g] = (m.stock[g] || 0) + meals / per;
+    }
+  }
+  const c = TRIBE_CRAFT[p.job];
+  if (c && GOODS[c[0]] && (m.stock[c[0]] || 0) < (GOODS[c[0]].target || 10) * 2) m.stock[c[0]] = (m.stock[c[0]] || 0) + c[1] * eff;
+  return p.job !== 'hunter';
+}
+// 分け合い：蔵の乏しい家に、里の蓄えの食べ物を分ける（蓄えから減った分だけ家に入る。お金は動かない）
+function shareFood(sim, V) {
+  const S = sim.S, m = S.towns[V.sid];
+  if (!m) return;
+  for (const hh of Object.values(S.households)) {
+    if (hh.s !== V.sid || hh.house == null || !hh.members.length) continue;
+    const n = hh.members.length;
+    if (hh.food >= n * 1.5) continue;
+    for (const g of FOODS) {
+      if (hh.food >= n * 3) break;
+      const per = GOODS[g]?.meals || 0;
+      if (!per || !(m.stock[g] >= 0.5)) continue;
+      const q = Math.min(m.stock[g], (n * 3 - hh.food) / per);
+      m.stock[g] -= q; hh.food += q * per;
+    }
+  }
 }
 function kinArrive(sim, V, s) {
   const S = sim.S, R = sim.rng, t = tribeOfV(V), Y = sim.year();
@@ -1118,6 +1168,9 @@ function tradeExchange(sim, V, k, town) {
   let moved = 0;
   for (const g of t.goods || []) { const n = Math.min(4, (vm.stock[g] || 0) * 0.3); if (n > 0.5) { vm.stock[g] -= n; tm.stock[g] = (tm.stock[g] || 0) + n; moved += n * GOODS[g].base; } }
   for (const g of t.wants || []) { if (!GOODS[g]) continue; const n = Math.min(3, (tm.stock[g] || 0) * 0.2); if (n > 0.3) { tm.stock[g] -= n; vm.stock[g] = (vm.stock[g] || 0) + n; } }
+  // 里の蓄えの食べ物が乏しければ、品と引き換えに町の小麦を持ち帰る（物々交換。持ち帰った分は代金から差し引く）
+  { const pop = sim.living().filter((p) => p.s === V.sid).length, have = FOODS.reduce((a, g) => a + (vm.stock[g] || 0) * (GOODS[g]?.meals || 0), 0), spare = (tm.stock.wheat || 0) - GOODS.wheat.target * 0.5;
+    if (have < pop * 3 && spare > 1 && moved > 0) { const n = Math.min(12, spare * 0.3, moved / GOODS.wheat.base); tm.stock.wheat -= n; vm.stock.wheat = (vm.stock.wheat || 0) + n; moved -= n * GOODS.wheat.base; } }
   { const mc = sim.mcash(town.id); const pay = Math.max(0, Math.min(moved * 0.2, mc.cash)); mc.cash -= pay; vm.fund += pay; }   // 里の品の代金は、町の市場の金庫から里の蓄えへ
   V.att[k] = Math.min(100, V.att[k] + 0.6);
   TS(sim).stats.trades++;

@@ -41,7 +41,7 @@ import { laborDaily, laborRestDay, restDayFor, laborWork, laborWorkMul, laborCan
 import { choreOptions, sleepPlan, choreArrive, choreDo, choreHourly, choreDaily, apprenticeSkill } from './chores.js';
 import { ensureGear, gearCandidates, gearArrive, gearDo, gearHourly, gearDaily, gearWearTool, gearOnDeath, gearDungeonLoot, wearMul } from './gear.js';
 import { rescueStep, rescueHourly, rescueDaily } from './rescue.js';
-import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth } from './tribes.js';
+import { initTribes, ensureTribes, tribesDaily, tribesHourly, tribesPlace, tribeBirth, tribeWork } from './tribes.js';
 import { ensureBuildings, buildingsPlace, buildingsOptions, buildingsArrive, buildingsDo, buildingsWork, buildingsDaily, lodgingKeeper } from './buildings.js';
 import { needsDecide, needsCands, needsArrive, needsHourly } from './needs.js';
 import { divineDaily, divineHourly, divineDecide } from './divine.js';
@@ -991,6 +991,7 @@ export class Sim {
     const eff = (0.6 + p.pers.C * 0.3 + skill * 0.6) * toolMul * hr * weatherWorkMul(this, p) * workMul(p) * underworldWorkMul(p) * healthWorkMul(p) * laborWorkMul(p);
     const occupied = this.S.towns[p.s].occupied;
     if (occupied) return;
+    if (tribeWork(this, p, dt, eff)) return; // 民族の里：とれた物は家の蔵と里の蓄えへ（売らない・お金は動かない）
     switch (p.job) {
       case 'farmer': {
         const q = fieldShare(this, p, 1.1 * sm * this.S.harvest * eff);
