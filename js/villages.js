@@ -1098,6 +1098,20 @@ function upkeep(sim, V, s) {
   if (sim.today % 7 === 3) for (const hh of Object.values(S.households)) if (hh.s === V.sid && hh.money > 40 && !hh.bandits) { const x = (hh.money - 40) * 0.06; hh.money -= x; t.fund += x; }
   // 村の守り手への手当て（村の蓄え → 家計）。蓄えに余裕があるときだけ
   if (sim.today % 3 === 0 && t.fund > 60) for (const p of here) if (p.job === 'vguard') xfer(acct(sim, 's' + V.sid), hhAcct(sim.hh(p)), 1.5);
+  // 村の暮らし：畑・森・川の恵みが村の蓄え（品物）にたまり、食べ物に困った家に分ける
+  const workers = here.filter((p) => sim.ageOf(p) >= 14 && sim.ageOf(p) < 68 && p.job && p.jail == null).length;
+  const sm = [0.8, 1, 1.3, 0.5][sim.seasonIdx()];
+  t.stock.wheat = (t.stock.wheat || 0) + 0.22 * workers * sm;
+  t.stock.meat = (t.stock.meat || 0) + 0.04 * workers * sm;
+  for (const hh of Object.values(S.households)) {
+    if (hh.s !== V.sid || hh.bandits || !hh.members.length) continue;
+    const want = hh.members.length * 2 - (hh.food || 0);
+    if (want <= 0) continue;
+    const give = Math.min(want, (t.stock.wheat || 0) * 0.3 + (t.stock.meat || 0) * 0.3);
+    const fromW = Math.min(give, (t.stock.wheat || 0) * 0.3);
+    t.stock.wheat -= fromW; t.stock.meat = Math.max(0, (t.stock.meat || 0) - (give - fromW));
+    hh.food = (hh.food || 0) + give;
+  }
   // 飢えの見張り
   const pop = Math.max(1, here.length);
   const food = Object.values(S.households).filter((h) => h.s === V.sid).reduce((a, h) => a + (h.food || 0), 0) + (t.stock.wheat || 0) * 0.5 + (t.stock.bread || 0) + (t.stock.meat || 0) + (t.stock.fish || 0);
@@ -1221,7 +1235,7 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     // 盗み
     if (!iAmTown || tq.kind !== 'kingdom') {
       const wealth = (sim._vRich?.get(tsid) || 0) > 2 ? 0.3 : -1;
-      const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 2.5 + R.range(-0.3, 0.3);
+      const sc = bad * 1.25 + need * 1.2 + starving + (p.skill.thief || 0) * 1.5 + (hungry ? 0.4 : 0) - f / 60 - p.values.faith * 0.5 - far + wealth - 3.0 + R.range(-0.3, 0.3);
       out.push({ p, deed: 'steal', to: tsid, sc, why: need || starving ? 'need' : 'greed', spotFn: () => sim.randomNear(ts.x, ts.z, Math.max(2, ts.r - 2)) || { x: ts.x, z: ts.z } });
     }
     // 密猟（狩人・薬草摘み・飢えた村）
@@ -1239,6 +1253,7 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     }
   }
   // 仇討ち：身内を殺した相手が、よその村や町にいる
+  if (p.vAvenge && sim.today - (p.vAvenge.since ?? 0) > 30 && R.chance(p.pers.A * 0.3)) { sim.remember(p, `${p.vAvenge.why || '仇'}のことは、もう胸にしまおうと思った`, { emo: 0.2, imp: 0.6, k: 'feud' }); p.vAvenge = null; }
   const rv = p.revenge != null ? S.people[p.revenge] : null;
   const av = p.vAvenge?.pid != null ? S.people[p.vAvenge.pid] : null;
   for (const tg of [rv, av]) {
@@ -1246,7 +1261,7 @@ function deedOptions(sim, p, pk, sid, hungry, villageSids) {
     const ts = sim.town(tg.s);
     if (!ts || Math.hypot(ts.x - me.x, ts.z - me.z) > 300) continue;
     const hate = -(p.rel[tg.id]?.a ?? -60);
-    const sc = p.values.courage * 1.5 + (1 - p.pers.A) * 1.2 + hate / 60 + p.pers.N * 0.3 - 2.2 + R.range(-0.3, 0.3) - (hasLaw(sim, pk, 'no_blood') ? 3 : 0) + (hasLaw(sim, pk, 'eye_for_eye') ? 0.6 : 0);
+    const sc = p.values.courage * 1.5 + (1 - p.pers.A) * 1.2 + hate / 60 + p.pers.N * 0.3 - 2.7 + R.range(-0.3, 0.3) - (hasLaw(sim, pk, 'no_blood') ? 3 : 0) + (hasLaw(sim, pk, 'eye_for_eye') ? 0.6 : 0);
     out.push({ p, deed: 'avenge', to: tg.s, sc, spot: { x: Math.round(tg.pos.x), z: Math.round(tg.pos.z) }, data: { target: tg.id, why: p.vAvenge?.why || '身内の仇' } });
   }
   // 恋：よその者に心を寄せている
@@ -1526,14 +1541,15 @@ function runIncident(sim, inc) {
       const f = feel(sim, a, b);
       const ratio = strengthOf(sim, a) / strengthOf(sim, b);
       const aq = P(sim, a), bq = P(sim, b);
-      const canRaid = (aq.kind === 'indep' || aq.kind === 'tribal' || aq.kind === 'kingdom' || aq.kind === 'bandit') && !peaceNow(sim, a, b) && (aq.kind !== 'kingdom' || inc.harm >= 5) && bq.kind !== 'kingdom';
+      const canRaid = (aq.kind === 'indep' || aq.kind === 'tribal' || aq.kind === 'kingdom' || aq.kind === 'bandit') && !peaceNow(sim, a, b) && !raidCool(sim, a, b) && (aq.kind !== 'kingdom' || inc.harm >= 5) && bq.kind !== 'kingdom';
+      const tired = raidsBetween(sim, a, b);
       const culAlive = alive(cul) && cul.jail == null && partyKeyOf(sim, cul) === b;
       const mediator = findMediator(sim, a, b);
       const opts = {
-        forgive: m.A * 2 + f / 40 + law(sim, a, 'forgive') - inc.harm * 0.3 - m.N * 0.5 + (allied(sim, a, b) ? 1.5 : 0) - (inc.suspect ? 0 : 0.3),
+        forgive: m.A * 2 + f / 40 + law(sim, a, 'forgive') - inc.harm * 0.3 - m.N * 0.5 + (allied(sim, a, b) ? 1.5 : 0) - (inc.suspect ? 0 : 0.3) + tired * 0.3,
         demand_culprit: culAlive ? 1 + m.C + inc.harm * 0.15 + law(sim, a, 'justice') : null,
         demand_pay: 0.6 + law(sim, a, 'demandPay') + (1 - m.courage) * 0.8 + inc.harm * 0.1 + (inc.amt ? 0.4 : 0),
-        retaliate: canRaid ? m.courage * 1.5 + (1 - m.A) * 1.5 + law(sim, a, 'raid') + inc.harm * 0.25 - f / 50 + (ratio - 1) * 1.2 - 1.2 + (rec(sim, a, b).heat || 0) / 25 : null,
+        retaliate: canRaid ? m.courage * 1.5 + (1 - m.A) * 1.5 + law(sim, a, 'raid') + inc.harm * 0.25 - f / 50 + (ratio - 1) * 1.2 - 1.4 + Math.min(20, rec(sim, a, b).heat || 0) / 40 - tired * 0.6 : null,
         mediate: mediator ? m.A + 0.3 + (Math.abs(f) < 35 ? 0.5 : 0) : null,
       };
       const how = choose(sim, opts);
@@ -1565,10 +1581,11 @@ function runIncident(sim, inc) {
       const a = inc.a, b = inc.b, m = mind(sim, a);
       const ratio = strengthOf(sim, a) / strengthOf(sim, b);
       const aq = P(sim, a), bq = P(sim, b);
-      const canRaid = (aq.kind !== 'town') && bq.kind !== 'kingdom' && !peaceNow(sim, a, b);
+      const canRaid = (aq.kind !== 'town') && bq.kind !== 'kingdom' && !peaceNow(sim, a, b) && !raidCool(sim, a, b);
+      const tired = raidsBetween(sim, a, b);
       const opts = {
-        raid: canRaid ? m.courage * 1.3 + (1 - m.A) * 1.2 + law(sim, a, 'raid') + (ratio - 1) * 1.3 + inc.harm * 0.2 - 0.6 + (aq.kind === 'kingdom' ? 0.8 : 0) : null,
-        grumble: m.A + (1 - m.courage) * 0.8 + (ratio < 0.8 ? 1 : 0) + law(sim, a, 'forgive') * 0.3,
+        raid: canRaid ? m.courage * 1.3 + (1 - m.A) * 1.2 + law(sim, a, 'raid') + (ratio - 1) * 1.3 + inc.harm * 0.2 - 0.8 + (aq.kind === 'kingdom' ? 0.8 : 0) - tired * 0.6 : null,
+        grumble: m.A + (1 - m.courage) * 0.8 + (ratio < 0.8 ? 1 : 0) + law(sim, a, 'forgive') * 0.3 + tired * 0.3,
         allies: alliesOf(sim, a).length ? m.E * 0.8 + 0.5 : null,
       };
       const how = choose(sim, opts);
@@ -1606,6 +1623,9 @@ function runIncident(sim, inc) {
     }
   }
 }
+// この30日に、この二者のあいだで起きた出陣の数（戦に疲れる）
+function raidsBetween(sim, a, b, days = 30) { return XV(sim).raids.filter((q) => sim.today - (q.d0 ?? 0) <= days && ((q.from === a && q.toKey === b) || (q.from === b && q.toKey === a)) && !['aid', 'guard', 'hunt'].includes(q.kind)).length; }
+const raidCool = (sim, a, b) => XV(sim).raids.some((q) => q.from === a && q.toKey === b && sim.today - (q.d0 ?? 0) < 12);
 function findMediator(sim, a, b) {
   const cands = allParties(sim).filter((k) => k !== a && k !== b && !P(sim, k)?.dead && isVillageKey(sim, k));
   let best = null, bs = 20;
@@ -1867,7 +1887,7 @@ function resolveRaid(sim, r, men, tgt) {
   const fence = tq?.kind === 'indep' || tq?.kind === 'tribal' ? 1.15 : 1.05;
   const ratio = A / (D * fence);
   const win = R.chance(clamp(1 / (1 + Math.exp(-(ratio - 1) * 2.4)), 0.05, 0.95));
-  const fury = { raid: 0.09, burn: 0.16, punitive: 0.12, bandit: 0.1, hunger: 0.07 }[r.kind] ?? 0.1;
+  const fury = { raid: 0.05, burn: 0.1, punitive: 0.08, bandit: 0.06, hunger: 0.04 }[r.kind] ?? 0.06;
   const lead = S.people[r.leader];
   const cruel = alive(lead) ? 1.3 - lead.pers.A * 0.6 : 1;
   const deadD = [], deadA = [];
@@ -1914,7 +1934,7 @@ function resolveRaid(sim, r, men, tgt) {
   heatUp(sim, r.from, r.toKey, harm);
   addFeel(sim, r.toKey, r.from, -Math.min(30, harm * 2), `${fromN}が${toN}に${RAID_LABEL[r.kind]}をかけた`, 0.1);
   if (!win) addFeel(sim, r.from, r.toKey, -4, null, 0);
-  if (P(sim, r.from)?.kind !== 'bandit') openIncident(sim, { type: 'raided', a: r.toKey, b: r.from, harm: Math.min(10, harm / 2 + (win ? 1 : 0)), known: true, delay: 2 });
+  if (P(sim, r.from)?.kind !== 'bandit') openIncident(sim, { type: 'raided', a: r.toKey, b: r.from, harm: win ? Math.min(10, harm / 2 + 1) : Math.min(4, harm / 4), known: true, delay: 2 });
   else if (!win) addFeel(sim, r.toKey, r.from, 5, null, 0);
   cleanWanted(sim, r, [...att, ...def]);
   // 帰る
@@ -2314,14 +2334,14 @@ function peaceDaily(sim) {
     if (P(sim, r.a)?.dead || P(sim, r.b)?.dead) continue;
     if (peaceNow(sim, r.a, r.b)) continue;
     if (!(isVillageKey(sim, r.a) || isVillageKey(sim, r.b))) continue;
-    if (r.heat < 3 || sim.today - (r.lastPeace ?? -99) < 8) continue;
+    if (r.heat < 3 || sim.today - (r.lastPeace ?? -99) < 5) continue;
     if (X.raids.some((q) => q.stage !== 'done' && ((q.from === r.a && q.toKey === r.b) || (q.from === r.b && q.toKey === r.a)))) continue;
     // 両方の長がどれだけ和解を望むか（死者が出るほど、疲れて望むようになる）
-    const will = (k, o) => { const m = mind(sim, k); const lost = X.hist.filter((e) => e.keys.includes(k) && e.keys.includes(o) && sim.today - e.d < 40 && /死者[1-9]/.test(e.text)).length; return m.A * 1.1 + lost * 0.35 + (1 - m.ambition) * 0.3 + feel(sim, k, o) / 100 - r.heat / 25 + law(sim, k, 'peace') + R.range(-0.2, 0.2); };
+    const will = (k, o) => { const m = mind(sim, k); const lost = X.hist.filter((e) => e.keys.includes(k) && e.keys.includes(o) && sim.today - e.d < 40 && /死者[1-9]/.test(e.text)).length; return m.A * 1.1 + lost * 0.35 + (1 - m.ambition) * 0.3 + feel(sim, k, o) / 100 - Math.min(30, r.heat) / 40 + raidsBetween(sim, k, o) * 0.15 + law(sim, k, 'peace') + R.range(-0.2, 0.2); };
     const wa = will(r.a, r.b), wb = will(r.b, r.a);
     const med = findMediator(sim, r.a, r.b);
-    if (!((wa > 0.7 && wb > 0.7) || (med && wa + wb > 1.1))) continue;
-    if (!R.chance(0.35)) continue;
+    if (!((wa > 0.55 && wb > 0.55) || (med && wa + wb > 0.8))) continue;
+    if (!R.chance(0.5)) continue;
     r.lastPeace = sim.today;
     const init = wa >= wb ? r.a : r.b, other = init === r.a ? r.b : r.a;
     const m = mind(sim, init);
