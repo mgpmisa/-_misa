@@ -36,7 +36,7 @@ const MORE_PREY = {
   croc: ['goose', 'seagull'],
   tiger: ['wolf', 'crow'],
   bear: ['tiger', 'wolf', 'fox'],                    // クマはトラ（子や弱ったもの）も襲う
-  polarbear: ['seagull'],
+  polarbear: ['seagull'],   // トナカイは狩らない（下の LESS_PREY）
   cat: ['crow', 'bat'],
   // 魔物
   goblin: ['crow', 'turtle', 'slime'],
@@ -54,6 +54,10 @@ for (const [sp, add] of Object.entries(MORE_PREY)) {
   const e = FOOD_WEB[sp] || (FOOD_WEB[sp] = { lv: 2, prey: [] });
   e.prey = [...new Set([...(e.prey || []), ...add])];
 }
+// 実在しない組み合わせを外す：ホッキョクグマは海のアザラシ（ここでは魚とペンギン）を食べ、トナカイはまず狩らない。
+// トラは砂漠にいないのでラクダを狩らない（40日試験でトナカイ・ラクダが1年で半分近くまで減り続けたため）
+const LESS_PREY = { polarbear: ['reindeer'], tiger: ['camel'] };
+for (const [sp, del] of Object.entries(LESS_PREY)) if (FOOD_WEB[sp]?.prey) FOOD_WEB[sp].prey = FOOD_WEB[sp].prey.filter((p) => !del.includes(p));
 // 表に段がない種を足す
 if (!FOOD_WEB.skeleton) for (const sp of ['skeleton', 'skelknight', 'lich', 'mummy', 'pharaoh', 'golem', 'imp', 'demonsoldier', 'demongeneral', 'demonlord']) FOOD_WEB[sp] = { lv: 4, prey: [], need: 0, none: true };
 
