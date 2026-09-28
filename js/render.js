@@ -14,6 +14,7 @@ import * as BN from './bldnew.js'; // 宿屋・浴場・図書館など町の暮
 import * as FG from './foodgfx.js'; // 保存食の工房と屋台・料理屋（看板・煙・吊るした燻製・チーズ棚）
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import * as LG from './leisuregfx.js'; // 歓楽の館の外観（大人向けの設定のときだけ。まとめ描きには入れない）
+import { NestGfx } from './nestgfx.js'; // 生き物の巣（巣穴・洞穴・寝床・木の上の巣など。動物・魔物の担当）
 import { ConstructGfx } from './constructgfx.js'; // 普請場（縄張り・土台・骨組み・足場・資材の山・荷運び）（開発部）
 import { actGfxFrame } from './actgfx.js'; // 畝・切り株と薪・干し物・焚き火・浮き・露店の台など（グラフィック部）
 import { convoyViews } from './logistics.js';
@@ -69,6 +70,7 @@ export class Renderer {
     TH.tribalExtras(this, wx, wz, topY); // 民族の里の柵・焚き火・守り柱
     this.buildMills();
     this.cgfx = new ConstructGfx(this, { wx, wz, topY, SEA_Y });
+    this.ngfx = new NestGfx(this, { wx, wz, topY });   // 生き物の巣（形ごとにまとめて描く）
     this.buildWeather();
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
     this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false;
@@ -1025,7 +1027,8 @@ export class Renderer {
     for (const m of this.mills) m.rotation.z = now * 0.8 * (sim.S.weather === 'rain' ? 1.8 : 1);
     for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
     this.updateConvoys(now);
-    this.cgfx?.update(now, realDt);   // 普請場の姿と、資材を担いで歩く人の荷
+    this.cgfx?.update(now, realDt);
+    this.ngfx?.update();   // 巣が増えた・消えたときだけ並べ直す   // 普請場の姿と、資材を担いで歩く人の荷
     // 雨・雪（カメラの周りだけ）
     const precip = weather === 'rain' || weather === 'snow';
     this.precip.visible = precip;

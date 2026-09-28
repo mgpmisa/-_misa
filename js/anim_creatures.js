@@ -3190,6 +3190,8 @@ export function creatureAnimState(sim, c, ctx = {}) {
     if (d <= 1.5) return 'attack';
     return def.flies && (def.shape === 'bird' || def.shape === 'dragon') ? 'fly' : 'run';
   }
+  const fwA = sim?._fw?.anim(sim, c, !!ctx.moving);   // 食べる・草を食む・追い払われて逃げる（foodweb.js）
+  if (fwA) return fwA;
   const frac = c.maxhp ? c.hp / c.maxhp : 1;
   if (ctx.moving) {
     if (def.shape === 'dragon') return 'fly';

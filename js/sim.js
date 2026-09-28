@@ -38,6 +38,7 @@ import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from
 import { diplomacyDaily, diplomacyHourly, diplomacyStep } from './diplomacy.js';
 import { ensureCoinage, coinageDaily, coinageHourly, coinageThought } from './coinage.js';   // 国ごとの硬貨と両替の商い
 import { monstersDaily, monstersHourly } from './monsters.js';
+import * as FOODWEB from './foodweb.js';   // 食物連鎖・繁殖・満腹度（動物・魔物の担当）
 import { spawnerDaily, spawnerHourly, spawnerDanger, spawnerExplored } from './spawner.js';
 import { elderDaily } from './elder.js';
 import { bankDaily, priceLevel, hhDeposit } from './bank.js';
@@ -89,6 +90,7 @@ const MEM_CAP = 45;
 export class Sim {
   constructor() {
     this.events = [];
+    this._fw = FOODWEB;   // 食物連鎖（foodweb.js）。fauna.js・creatures.js・monsters.js・anim_creatures.js が sim._fw で呼ぶ
     this._anc = new Map();
     this._kin = new Map();
     this._living = null;
@@ -118,6 +120,7 @@ export class Sim {
     initPolitics(this, hist);
     progress('生き物たちを放っています……');
     spawnInitialCreatures(this);
+    FOODWEB.nestsDaily(this);   // 生き物の巣を、住みかの地形に沿って置く（nests.js）
     initProperty(this);
     initUnderworld(this);
     ensureTaxes(this);
@@ -155,6 +158,7 @@ export class Sim {
     this.placeHouse = makeHousePlacer(data.world, this.rng);
     for (const p of this.living()) { p.talk = null; p.fight = null; p.path = p.path || []; }
     for (const c of Object.values(data.creatures)) c.fight = null;
+    if (!data.nests) FOODWEB.nestsDaily(this);   // 古いセーブ：巣を足す（nests.js）
     if (!data.property) initProperty(this);
     if (!data.uw) initUnderworld(this);
     ensureTaxes(this);
@@ -1086,7 +1090,7 @@ export class Sim {
         if (!p.fight && this.rng.chance(0.05 * dt)) {
           let prey = null, bd = 9;
           for (const c of around(this._cgrid || new Map(), p.pos.x, p.pos.z, 9)) {
-            if (c.kind !== 'wild' || c.hp <= 0 || c.atk > p.atk * 1.5 || !canHunt(this, 'human', c.sp)) continue;
+            if (c.kind !== 'wild' || c.hp <= 0 || c.atk > p.atk * 1.5 || !canHunt(this, 'human', c.sp) || !FOODWEB.huntOk(this, c)) continue;   // 子・子連れの母・禁猟の季節は狩らない
             const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
             if (d < bd) { bd = d; prey = c; }
           }
@@ -1095,7 +1099,7 @@ export class Sim {
         stash(this, p, 'meat', 0.12 * eff);   // 罠にかかった兎や鳥（小さな獲物）
         break;
       }
-      case 'fisher': case 'sailor': stash(this, p, 'fish', 1.0 * (si === 3 ? 0.5 : 1) * (this.hasTech(p, 'navigation') ? 1.3 : 1) * eff); break;
+      case 'fisher': case 'sailor': stash(this, p, 'fish', FOODWEB.fish(this, p, 1.0 * (si === 3 ? 0.5 : 1) * (this.hasTech(p, 'navigation') ? 1.3 : 1) * eff)); break;   // 漁場の魚の群れからとる。減った漁場では控える（foodweb.js）
       case 'woodcutter': stash(this, p, 'wood', 1.6 * eff); break;
       case 'miner': {
         stash(this, p, 'ore', 0.9 * eff);
@@ -2031,6 +2035,7 @@ export class Sim {
     creatureDaily(this);
     beastsDaily(this);   // 減りすぎた魔物を呼び戻し、増えすぎた魔物を散らす（beasts.js）
     faunaDaily(this);
+    FOODWEB.foodwebDaily(this);   // 猫がネズミを捕る・魔物の繁殖（foodweb.js）
     rescueDaily(this);
     spawnerDaily(this);   // モンスター脅威度・討伐依頼・冒険者を志す人（spawner.js）
     monstersDaily(this);

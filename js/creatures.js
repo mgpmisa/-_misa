@@ -237,7 +237,7 @@ export function stepCreatures(sim, dt) {
     const cdt = dt * k, chr = cdt / 60;
     const def = SPECIES[c.sp];
     if (c.inDungeon && !c.fight) { if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * chr); continue; }
-    c.hunger = clamp(c.hunger - (PREDATOR.has(c.sp) ? 1.6 : 1) * chr, 0, 100);
+    c.hunger = clamp((c.hunger ?? 80) - (sim._fw ? sim._fw.burn(c, def) : PREDATOR.has(c.sp) ? 1.6 : 1) * chr, 0, 100);   // 体の小さい種ほど早くおなかがすく（foodweb.js）
     if (c.hp < c.maxhp) c.hp = Math.min(c.maxhp, c.hp + 2 * chr);
     if (c.fight) continue;
     c.think = (c.think || 0) - cdt;
@@ -284,7 +284,7 @@ function think(sim, c, def, all, humans) {
       break;
     }
     case 'mouser': {
-      const rat = all.find((o) => o.sp === 'rat' && o.hp > 0 && dist(o, c) < 6);
+      const rat = all.find((o) => o.sp === 'rat' && o.hp > 0 && dist(o, c) < 6 && !sim._fw?.ratsFew(sim, o));   // 最後の2匹は逃げのびる（foodweb.js）
       if (rat) { if (dist(rat, c) < 1.2) startFightLazy(sim, c, rat); else c.goal = { x: rat.pos.x, z: rat.pos.z, run: true }; return; }
       break;
     }
@@ -522,6 +522,7 @@ export function killCreature(sim, c, killer) {
     }
   } else {
     killer.hunger = 100;
+    sim._fw?.onPreyKilled(sim, killer, c);   // 仕留めた獲物をその場で食べる（食べる姿）
     killer.xp = (killer.xp || 0) + 8 + c.lv * 2;
     killer.kills = (killer.kills || 0) + 1;
     evolveCheck(sim, killer);
@@ -569,7 +570,7 @@ export function creatureDaily(sim) {
     const def = SPECIES[sp];
     const n = count[sp] || 0;
     const demonMul = sp === 'imp' || sp === 'demonsoldier' ? (S.demon?.active ? 2.5 : 0.6) : 1;
-    if (n >= target * demonMul || beastsFull(sim, sp)) continue;
+    if (n >= target * demonMul || beastsFull(sim, sp) || sim._fw?.ownsRegen(sp, sim)) continue;   // 野の獣と産む魔物は、湧かずに産んで増える（foodweb.js）
     if (sp === 'rat') {
       const s = R.pick(w.settlements);
       const p = sim.randomNear(s.x, s.z, s.r - 1);
@@ -587,7 +588,7 @@ export function creatureDaily(sim) {
   }
   // 家畜の繁殖
   for (const s of w.settlements) {
-    if (!s.ranch) continue;
+    if (!s.ranch || sim._fw) continue;   // 牧場の家畜は、身ごもって産む（foodweb.js）
     const herd = all.filter((c) => c.owner === s.id && c.range === 0 && c.sp !== 'dog');
     if (herd.length < 10 && herd.length >= 2 && herdUnits(herd) + 1 <= ranchRoom(s) && R.chance(0.3)) {
       const p = R.pick(herd);

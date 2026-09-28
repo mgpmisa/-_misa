@@ -12,6 +12,7 @@ import { startFight } from './society.js';
 import { stash } from './market.js';
 import { matterHunt } from './matter.js';
 import { moneyOut, flow } from './ledger.js';
+import { BREED } from './breeding.js';   // 実在の動物の繁殖・独り立ち・寿命（この世界の暦に直した数字）
 
 // ---------- 渡り鳥（ガン）：data.js に無いので、ここで種を足す ----------
 if (!SPECIES.goose) SPECIES.goose = { name: 'ガン', kind: 'wild', shape: 'bird', col: '#8a7a66', col2: '#f2eee4', size: 0.5, hp: 7, atk: 1, speed: 1.5, diet: 'grass', flies: true };
@@ -28,7 +29,7 @@ const LIFE = {
 };
 // 大人になるまでの日数
 const MATURE = { rabbit: 6, rat: 4, squirrel: 8, frog: 6, chicken: 8, duck: 8, bat: 10, scorpion: 10, snake: 12, fox: 12, owl: 12, crow: 12, parrot: 14, seagull: 14, goose: 14, cat: 12, dog: 14, penguin: 16 };
-const matureOf = (sp) => MATURE[sp] ?? ((SPECIES[sp]?.size || 1) >= 1.2 ? 30 : 20);
+const matureOf = (sp) => BREED[sp]?.ind ?? MATURE[sp] ?? ((SPECIES[sp]?.size || 1) >= 1.2 ? 30 : 20);
 // 一度に生まれる子の数
 const LITTER = { rabbit: [2, 4], rat: [2, 4], squirrel: [2, 3], fox: [2, 4], wolf: [2, 4], boar: [2, 4], dog: [2, 4], cat: [2, 3], pig: [2, 4], bear: [1, 2], polarbear: [1, 2], tiger: [1, 3], snake: [2, 3], frog: [2, 4], owl: [1, 3], crow: [2, 3], goose: [2, 3], chicken: [2, 4], duck: [2, 4], seagull: [1, 2], eagle: [1, 2], croc: [2, 3], turtle: [2, 3], scorpion: [2, 3], parrot: [1, 2] };
 // 群れで暮らす種（序列がある）
@@ -104,7 +105,7 @@ const isAnimal = (c) => { const d = SPECIES[c?.sp]; return !!d && !d.monster && 
 const alive = (S, c) => !!c && c.hp > 0 && S.creatures[c.id] === c;
 const cr = (S, id) => (id != null ? S.creatures[id] : null);
 const d2 = (a, b) => Math.hypot(a.pos.x - b.pos.x, a.pos.z - b.pos.z);
-const lifeDays = (sp) => (LIFE[sp] || 10) * DAYS_PER_YEAR;
+const lifeDays = (sp) => (BREED[sp]?.life || LIFE[sp] || 10) * DAYS_PER_YEAR;
 const power = (c) => c.lv * 10 + c.atk;
 const isLive = (c) => SPECIES[c.sp].kind === 'livestock';
 const juvKids = (S, c) => (c.young || []).map((id) => S.creatures[id]).filter((k) => k && k.hp > 0 && k.juv);
@@ -330,7 +331,7 @@ export function faunaThink(sim, c, def, all, humans) {
   // 眠る（夜行性は昼に、ほかは夜に）。お腹がすいていたら眠らずに探す
   const h = sim.hour();
   const night = h >= 21 || h < 5;
-  const sleepy = NOCT.has(c.sp) ? h >= 8 && h < 17 : c.sp === 'wolf' ? h >= 11 && h < 15 : night;
+  const sleepy = NOCT.has(c.sp) || c.sp === 'wolf' ? h >= 8 && h < 17 : night;   // オオカミも夜行性：昼は森の奥のねぐらで眠り、夜に狩る（nests.js）
   if (sleepy && c.hunger > 35 && !c.forage && !c.raid) {
     if (isLive(c)) {
       const s = c.owner != null ? sim.town(c.owner) : null;
@@ -352,6 +353,8 @@ export function faunaThink(sim, c, def, all, humans) {
   }
   // 牧場の家畜は、飢えて人里へ降りた獣でなければ狙わない（柵・牧夫・犬がいるので近寄りがたい）
   if (def.kind === 'wild' && preyFor(c.sp).length && c.hunger < 45 && huntByWeb(sim, c, def, all)) return true;
+  // おなかがすいたら：仕留めた獲物を食べる・草を食む・餌の多い所へ移る・畑から追い払われる（foodweb.js）
+  if (sim._fw && sim._fw.think(sim, c, def, all, humans)) return true;
   // 数の減った獲物は、天敵から早めに逃げる（安全弁：狩られにくくする）
   if (def.kind === 'wild' && trophicLevel(c.sp) <= 2 && isRare(sim, c.sp)) {
     for (const o of all) {
@@ -771,6 +774,7 @@ function traps(sim, animals, h) {
       if (c.hp <= 0 || !S.creatures[c.id]) continue;
       const def = SPECIES[c.sp];
       if (def.kind !== 'wild' || def.flies || def.swims || def.size > 1.05 || NO_TRAP.has(c.sp)) continue;
+      if (sim._fw && (c.juv || c.preg || juvKids(S, c).length || sim._fw.closedSeason(sim, c.sp))) continue;   // 罠も、子・子連れ・禁猟の季節は外す
       if (Math.abs(c.pos.x - t.x) > 1.8 || Math.abs(c.pos.z - t.z) > 1.8) continue;
       if (c.trapWise) {
         if (R.chance(0.15)) {
@@ -1164,6 +1168,7 @@ function pairUp(sim, animals, si) {
 }
 
 function breed(sim, animals, si, dos) {
+  if (sim._fw) return sim._fw.breedAnimals(sim, animals, si);   // 実在の妊娠期間・生まれる数・満腹度で産む（foodweb.js）
   const S = sim.S, R = sim.rng, F = S.fauna;
   const count = {};
   for (const c of animals) count[c.sp] = (count[c.sp] || 0) + 1;
@@ -1567,9 +1572,10 @@ export function faunaHtml(sim, c) {
   if (c.rank && c._gsize > 1) rows.push(['群れの序列', c.rank === 1 ? `長（${c._gsize}頭の群れ）` : `${c._gsize}頭中${c.rank}番目${c.rank === c._gsize ? '（末席）' : ''}`]);
   if (c.outcast) rows.push(['群れ', 'はぐれ者']);
   const hunger = c.hunger < 10 ? '飢えている' : c.hunger < 25 ? '痩せて腹をすかせている' : c.hunger < 55 ? '少し腹がへっている' : '満ち足りている';
-  rows.push(['腹ぐあい', hunger]);
+  rows.push(['腹ぐあい', sim._fw ? sim._fw.hungerText(c) : hunger]);
   const state = c.hibernate ? '冬眠している' : c.mourn ? '主人の墓のそばを離れない' : c.mig && !c.mig.arrived ? (c.sp === 'goose' ? '渡りの途中' : '季節の移動中') : c.forage ? `飢えて${esc(sim.town(c.forage.sid)?.name || '人里')}の近くに降りてきている` : c.sleeping ? '眠っている' : c.juv ? '親について歩いている' : '';
-  if (state) rows.push(['いま', state]);
+  const st2 = state || sim._fw?.doingText(sim, c);
+  if (st2) rows.push(['いま', st2]);
   if (isLive(c)) {
     const hh = S.households[c.keeper];
     const head = hhMembers(sim, hh)[0];
@@ -1648,7 +1654,7 @@ export function trophicLevel(sp) { return FOOD_WEB[sp]?.lv ?? (SPECIES[sp]?.mons
 // 狩ってよいか：表にあり、数が減りすぎていない（安全弁）。desperate なら安全弁を無視する
 export function canHunt(sim, predSp, preySp, desperate = false) {
   if (!preyFor(predSp).includes(preySp)) return false;
-  if (!desperate && isRare(sim, preySp)) return false;
+  if (!desperate && (isRare(sim, preySp) || sim._fw?.rareMonster(sim, preySp))) return false;
   // 人は獲物を狩り尽くさない：目安の7割を下回った種は狩らない（猟師の掟）
   if (predSp === 'human') { const t = popTarget(sim, preySp); if (t && speciesCount(sim, preySp) < t * 0.7) return false; }
   return true;
@@ -1681,10 +1687,10 @@ export function habitatArea(sim, sp) {
 const WIDE = W > CORE, AREA_X = (W * H) / (CORE * CORE), WIDE_CAP = 0.8;
 export function popTarget(sim, sp) {
   if (sp === 'goose') return Math.max(10, Math.round(14 * (WIDE ? AREA_X * WIDE_CAP : W * H / 25600)));
-  const d = DENSITY[sp];
+  const d = DENSITY[sp] != null ? DENSITY[sp] * (sim._fw?.spawnMul(sp) ?? 1) : null;   // 上の段ほど少なく（foodweb.js）
   if (d == null) return POP[sp] ?? null;
   const t = Math.max(2, Math.round(habitatArea(sim, sp) * d / 1000));
-  return WIDE && POP[sp] ? Math.min(t, Math.max(2, Math.round(POP[sp] * AREA_X * WIDE_CAP))) : t;
+  return WIDE && POP[sp] ? Math.min(t, Math.max(2, Math.round(POP[sp] * AREA_X * WIDE_CAP * (sim._fw?.spawnMul(sp) ?? 1)))) : t;
 }
 export function isRare(sim, sp) {
   const t = popTarget(sim, sp);

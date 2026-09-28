@@ -792,7 +792,7 @@ export class UI {
     const k = w.kingdomOf[t.z * W + t.x];
     const near = Object.values(this.sim.S.creatures).filter((c) => !c.dormant && Math.hypot(c.pos.x - t.x, c.pos.z - t.z) < 6);
     return `<div class="pname">${esc(this.sim.placeName(t.x, t.z))}</div><div class="psub">${esc(TILE_NAME[tt])}・標高${w.hgt[t.z * W + t.x]}${k >= 0 ? `・${esc(KINGDOMS[k].name)}の領地` : k === -1 ? '・どの国にも属さない' : ''}</div>
-      ${near.length ? `<div class="section"><h4>近くにいる生き物</h4>${near.slice(0, 12).map((c) => `<span class="link" data-cid="${c.id}">${esc(c.name)}</span>`).join('、')}</div>` : ''}${constructTileHTML(this.sim, t.x, t.z, esc, (q, n) => this.pLink(q, n))}`;
+      ${this.sim._fw?.nestTileHtml(this.sim, t.x, t.z, esc) || ''}${near.length ? `<div class="section"><h4>近くにいる生き物</h4>${near.slice(0, 12).map((c) => `<span class="link" data-cid="${c.id}">${esc(c.name)}</span>`).join('、')}</div>` : ''}${constructTileHTML(this.sim, t.x, t.z, esc, (q, n) => this.pLink(q, n))}`;
   }
 
   familyHtml(p) {

@@ -938,6 +938,8 @@ export function monsterThink(sim, c, def, all, humans) {
   }
   // 夜：昼に動く種は住処で眠る
   if (DIURNAL.has(c.sp) && isNight(sim)) { if (dHome > 3) goHome(false); else c.goal = null; return true; }
+  // 昼：夜に動く種（不死者・蜘蛛・ゴブリン）は住処で眠る（nests.js）
+  if (sim._fw?.monsterSleeps(sim, c)) { if (dHome > 3) goHome(false); else c.goal = null; return true; }
   // 仇を見つけたら襲う
   if (c.avenge != null) {
     const foe = humans.find((h) => h.id === c.avenge && h.inside == null && Math.hypot(h.pos.x - c.pos.x, h.pos.z - c.pos.z) < 10);
@@ -1438,7 +1440,11 @@ export function monsterDetail(sim, c) {
   const nm = (id) => { const o = S.creatures[id]; return o ? o.given || o.name : '（亡き者）'; };
   if (c.given) rows.push(['名前', c.given]);
   rows.push(['知能', ['獣なみ', '低い', 'ふつう', '高い', 'きわめて高い'][Math.min(4, Math.floor((c.intel ?? intelOf(c)) * 5))]]);
-  if (SPECIES[c.sp].diet !== 'none') rows.push(['空腹', c.hunger > 70 ? '満腹' : c.hunger > 40 ? 'ふつう' : c.hunger > 15 ? '空腹' : '飢えている']);
+  if (SPECIES[c.sp].diet !== 'none') {
+    rows.push(['満腹度', sim._fw ? sim._fw.hungerText(c) : c.hunger > 70 ? '満腹' : c.hunger > 40 ? 'ふつう' : c.hunger > 15 ? '空腹' : '飢えている']);
+    const doing = sim._fw?.doingText(sim, c);
+    if (doing) rows.push(['いま', doing]);
+  }
   const info = monsterInfo(sim, c);
   if (info) rows.push(['所属', info]);
   if (c.home) rows.push(['住処', c.home.bld != null && sim.building(c.home.bld) ? sim.building(c.home.bld).name : sim.placeName(c.home.x, c.home.z)]);
