@@ -114,6 +114,15 @@ export class Sim {
       speciesMemory: {}, gatesOpened: true,
     };
     this.placeHouse = makeHousePlacer(world, rng);
+    // 歴史は「年の数え」で14歳に職を与えるが、始まりの日（春1日）ではまだ誕生日前で13歳の子がいる。
+    // 14歳未満は職を持たせず、childhood.js の推定経験で14歳の誕生日の職選びを迎える
+    for (const p of Object.values(S.people)) {
+      if (p.deathYear != null || !p.job || this.ageOf(p) >= 14) continue;
+      p.job = null;
+      const early = (m) => !/^14歳で.*(修業|見習い)/.test(m.txt || '');   // 「14歳で見習いになった」の思い出も消す
+      if (p.notes) p.notes = p.notes.filter(early);
+      if (p.memories) p.memories = p.memories.filter(early);
+    }
     progress('人々の暮らしを整えています……');
     this.formHouseholds();
     this.initTowns();

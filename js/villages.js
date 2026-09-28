@@ -602,7 +602,7 @@ function populate(sim, V, s, goal) {
   const weights = Object.entries(K.jobs);
   const count = {};
   for (const p of people) {
-    const age = Y - p.birthYear;
+    const age = sim.ageOf(p);   // 年の数えではなく今日の年齢（誕生日前の13歳に職を持たせない）
     let job = null;
     if (p === chief) job = 'vchief';
     else if (age >= 14 && age < 68) job = pickJob(sim, weights, count, p);
