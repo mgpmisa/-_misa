@@ -1,0 +1,38 @@
+name: デスクトップ版を作る（Windows インストーラーの ZIP）
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/bold-fermat-qqbrbp]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: 道具を入れる（NSIS と、exe にアイコンを書くための wine64）
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nsis wine64 zip
+      - name: 作る
+        working-directory: desktop
+        run: |
+          npm ci --no-audit --no-fund
+          node prepare.cjs
+          npx electron-builder --win dir --x64
+          makensis -INPUTCHARSET UTF8 installer.nsi
+      - name: ZIP にまとめる
+        run: |
+          V=$(node -p "require('./desktop/package.json').version")
+          echo "V=$V" >> $GITHUB_ENV
+          mkdir -p out/Eldeland-$V
+          cp desktop/dist/Eldeland-Setup-$V.exe out/Eldeland-$V/
+          cp "desktop/booth/はじめにお読みください.txt" out/Eldeland-$V/
+          cd out && zip -q -r -9 Eldeland-$V.zip Eldeland-$V
+      - name: ダウンロードのページ（Release）に置く
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          TAG=desktop-v$V
+          gh release view $TAG >/dev/null 2>&1 || gh release create $TAG --target "$GITHUB_SHA" --title "エルデラント年代記 Windows版 $V" --notes "BOOTH にアップロードする ZIP です。中身：インストーラー（exe）と、はじめにお読みください.txt"
+          gh release upload $TAG out/Eldeland-$V.zip --clobber
