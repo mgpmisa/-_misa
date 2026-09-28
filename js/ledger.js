@@ -54,6 +54,7 @@ export function moneyTotal(sim) {
   }
   if (S.diplo) {
     for (const r of S.diplo.roads || []) P.街道と関所 += num(r.fund);
+    for (const v of Object.values(S.diplo.fund || {})) P.街道と関所 += num(v);   // 国ごとの街道の蓄え（diplomacy.js の collect が通行料の4割を入れる）
     for (const g of S.diplo.gates || []) P.街道と関所 += num(g.box);
   }
   for (const c of S.convoys || []) P.荷車の箱 += num(c.cash);

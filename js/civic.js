@@ -165,6 +165,7 @@ export function civicPlace(sim, p, kind) {
       return kind === 'academy' ? sim.placeFor(p, 'magictower') : sim.placeFor(p, 'barracks');
     }
     case 'field': {
+      { const fp = p.job === 'farmer' && sim._farm ? sim._farm.place(sim, p) : null; if (fp) return fp; }   // 刈り入れ・種まき・耕す区画へ（farming.js）
       const f = w.fields.filter((q) => q.s === p.s);
       if (f.length) return { ...R.pick(f) };
       // 自分の町に畑がなければ、同じ国のいちばん近い町の畑へ出作りに行く

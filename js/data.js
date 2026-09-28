@@ -192,7 +192,7 @@ export const DESIRES = {
 
 // 研究（国ごとに発見していく）
 export const TECHS = [
-  { id: 'rotation', name: '輪作農法', cost: 60, desc: '畑の実りが増える' },
+  { id: 'rotation', name: '輪作農法', cost: 60, desc: '四圃輪作（小麦→蕪→大麦→牧草）で休耕がなくなり、冬の餌と肥やしが増える' },
   { id: 'steel', name: '鋼の製法', cost: 90, desc: '武器と道具が強くなる' },
   { id: 'medicine', name: '薬草学', cost: 80, desc: '病で死ぬ人が減る' },
   { id: 'telescope', name: '望遠鏡', cost: 100, desc: '魔物の襲来を早く察知できる' },

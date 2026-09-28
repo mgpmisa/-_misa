@@ -51,10 +51,11 @@ import C15 from './catalog/gear5.js';
 import C16 from './catalog/arcane.js';
 import C17 from './catalog/arcane2.js';
 import C18 from './catalog/arcane3.js';
+import C19 from './catalog/farm.js';   // 畑でしか育たない魔法の作物（farming.js）
 
 // ---------- 一覧を読み込む（読み込んだとき一度だけ） ----------
 export const MAT = new Map();
-for (const list of [C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C14, C15, C16, C17, C18]) for (const it of list) if (!MAT.has(it.id)) MAT.set(it.id, it);
+for (const list of [C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11, C12, C13, C14, C15, C16, C17, C18, C19]) for (const it of list) if (!MAT.has(it.id)) MAT.set(it.id, it);
 const LEGACY = new Set([...Object.keys(GOODS), ...Object.keys(ITEMS)]);   // 今の仕組みが作る品（ここでは作らない）
 export const CAT_JP = { earth: '大地・鉱物', plant: '植物', beast: '動物・魔物', food: '食べ物・飲み物', gear: '道具・装備', arcane: '魔法・宝・趣味' };
 export const HOW_JP = { dig: '掘る', mine: '採掘', chop: '木を切る', gather: '摘む・拾う', harvest: '畑で収穫', fish: '釣り・漁', hunt: '狩る', milk: '家畜から', craft: '作る', cook: '料理', brew: '醸す', loot: '宝箱・遺跡', trade: '遠い国の商人', forage: '野で探す' };
@@ -277,7 +278,8 @@ export function matterWork(sim, p, dt, eff) {
   if (hows && R.chance(0.55)) {
     const ons = onKeysAt(sim, p.pos.x, p.pos.z, p.job === 'fisher' || p.job === 'sailor' || p.job === 'diver' ? 3 : 2);
     if (p.inside != null) { const b = sim.building(p.inside); if (b?.type === 'mine') { ons.add('mine'); ons.add('cave'); ons.add('mountain'); } }
-    const list = MATTER_HOOK.urban?.(sim, p) ? urbanList(hows, ons, p.job) : candidates(hows, ons);
+    let list = MATTER_HOOK.urban?.(sim, p) ? urbanList(hows, ons, p.job) : candidates(hows, ons);
+    if (MATTER_HOOK.gatherFilter) list = MATTER_HOOK.gatherFilter(sim, p, list);   // 農夫は、区画に植えている作物のわら・葉などだけ（farming.js）
     const x = pickWeighted(R, list, (c) => (hh.stock?.[c.id] || 0) < 30);
     if (x) {
       const it = MAT.get(x.id);
@@ -672,7 +674,7 @@ function matterPrices(sim) {
       const s = m.stock[g] || 0;
       if (s < 0.01) { if (!(m.lots?.[g]?.length)) { delete m.stock[g]; delete m.price[g]; if (m.lots) delete m.lots[g]; } continue; }
       // 傷む物は市場でも傷む
-      if (it.keep) m.stock[g] = s * (1 - Math.min(0.5, 1 / it.keep) * 0.6);
+      if (it.keep) m.stock[g] = s * (1 - Math.min(0.5, 1 / (it.keep * (MATTER_HOOK.keepMul?.(sim, sid) || 1))) * 0.6);   // 氷室のある町は3倍長持ち（regions.js）
       const gd = matterGood(g);
       const tgt = gd.target * pf;
       const hi = 2 + (it.rare || 0) * 1.5;

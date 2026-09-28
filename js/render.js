@@ -15,6 +15,7 @@ import * as FG from './foodgfx.js'; // 保存食の工房と屋台・料理屋�
 import * as BG from './bldgfx.js'; // 建物の看板・種類ごとの形・煙（グラフィック部）
 import * as LG from './leisuregfx.js'; // 歓楽の館の外観（大人向けの設定のときだけ。まとめ描きには入れない）
 import { NestGfx } from './nestgfx.js'; // 生き物の巣（巣穴・洞穴・寝床・木の上の巣など。動物・魔物の担当）
+import { FarmGfx } from './farmgfx.js'; // 畑の区画の作物と育ち具合・休耕地・放牧・果樹園・氷室（開発部）
 import { ConstructGfx } from './constructgfx.js'; // 普請場（縄張り・土台・骨組み・足場・資材の山・荷運び）（開発部）
 import { actGfxFrame } from './actgfx.js'; // 畝・切り株と薪・干し物・焚き火・浮き・露店の台など（グラフィック部）
 import { convoyViews } from './logistics.js';
@@ -71,6 +72,7 @@ export class Renderer {
     this.buildMills();
     this.cgfx = new ConstructGfx(this, { wx, wz, topY, SEA_Y });
     this.ngfx = new NestGfx(this, { wx, wz, topY });   // 生き物の巣（形ごとにまとめて描く）
+    this.fgfx = new FarmGfx(this, { wx, wz, topY });   // 畑の区画（作物×育ち具合ごとにまとめて描く）
     this.buildWeather();
     this.selRing = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.42, 16), new THREE.MeshBasicMaterial({ color: '#ffe066', transparent: true, opacity: 0.9, depthWrite: false }));
     this.selRing.rotation.x = -Math.PI / 2; this.selRing.visible = false;
@@ -153,6 +155,7 @@ export class Renderer {
     const w = this.sim.S.world;
     // 地面・木・畑の作物・川は区画ごとに描く（terrain_chunks.js）
     this.chunks = new TerrainChunks(this.scene, w, TEX, { groundKey: (t, x, z) => this.groundKey(t, x, z), crystalMat: this.mats.crystal, getExplored: () => this.sim.S.explored });
+    if (this.sim.S.farm) FarmGfx.hideChunkCrops(this.chunks);   // 畑の作物は farmgfx.js が区画ごとに描く（古い一色の麦の箱は描かない）
     this.treeMats = this.chunks.treeMats;
     // 海
     this.waterTex = TEX.water.clone(); this.waterTex.needsUpdate = true;
@@ -1028,6 +1031,7 @@ export class Renderer {
     for (const b of this.boats) { b.position.y = SEA_Y + Math.sin(now * 1.5 + b.position.x) * 0.05; b.rotation.z = Math.sin(now + b.position.z) * 0.05; }
     this.updateConvoys(now);
     this.cgfx?.update(now, realDt);
+    this.fgfx?.update(now);   // 畑は記録が変わったときだけ並べ直す。魔法の作物は光を揺らす
     this.ngfx?.update();   // 巣が増えた・消えたときだけ並べ直す   // 普請場の姿と、資材を担いで歩く人の荷
     // 雨・雪（カメラの周りだけ）
     const precip = weather === 'rain' || weather === 'snow';

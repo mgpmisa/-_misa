@@ -40,8 +40,8 @@ const FAMILY_USE = { milk: 1, b_goat_milk: 1, egg: 1, b_duck_egg: 0.5, cabbage: 
 // 季節（0春 1夏 2秋 3冬）ごとの菜園の野菜
 const GARDEN = [['onion', 'pea', 'cabbage'], ['cabbage', 'carrot', 'pea', 'onion'], ['turnip', 'cabbage', 'carrot', 'onion'], []];
 const GARDEN_Q = [1.5, 3, 4, 0];
-const BERRY = [['strawberry'], ['raspberry', 'blackberry', 'strawberry'], ['blackberry', 'raspberry'], []];
-const BERRY_DAY = [6, 16, 12, 0];   // 村ごとの1日の実りの量
+const BERRY = [['strawberry'], ['raspberry', 'blackberry', 'strawberry', 'currant', 'elderflower'], ['blackberry', 'raspberry', 'elderberry', 'hazelnut', 'rosehip', 'lingonberry'], ['rosehip', 'sloe']];   // 冬は霜のあとの野ばらの実とスロー（開発部）
+const BERRY_DAY = [6, 16, 12, 3];   // 村ごとの1日の実りの量
 // おかず（町の人がついでに買う物）
 const SIDE = ['milk', 'b_goat_milk', 'egg', 'b_duck_egg', 'cabbage', 'turnip', 'carrot', 'onion', 'pea', 'raspberry', 'blackberry', 'strawberry', 'cheese', 'butter'];
 const RURAL_JOBS = new Set(['farmer', 'rancher', 'shepherd', 'beekeeper', 'gatherer', 'hunter', 'woodcutter', 'charcoal', 'miller', 'fisher', 'pioneer']);

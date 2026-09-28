@@ -22,6 +22,7 @@
 //
 // 娯楽（湯・芝居・歌・踊り・賭け事）と裁き・処刑は、ほかの社員の持ち場なので、ここでは何も返さない（LEAVE）。
 
+import { installFarmActs, farmMotionOf, FARM_PROPS, FARM_HEADS } from './farmanim.js';   // 畑仕事の動き（開発部）
 // 行動の種類のうち、ほかの社員（娯楽・裁き・造幣・両替・職場の蔵・建築）が動きを決めるもの
 const LEAVE = new Set(['bathe', 'show', 'watchplay', 'perform', 'act', 'tavern', 'festival', 'ldance', 'ltryst', 'wedding', 'funeral',
   'trial', 'execution', 'pillory', 'scaffold', 'escort', 'mint', 'exchange', 'changer', 'build', 'construct', 'restock', 'shelve']);
@@ -330,6 +331,7 @@ export function installActs(K) {
   Object.assign(K.OBJ, makeObjs(K));
   const M = makeMotions(K);
   for (const [k, v] of Object.entries(M)) if (!K.WORK[k]) K.WORK[k] = v;
+  installFarmActs(K); Object.assign(PROPS, FARM_PROPS); Object.assign(HEADS, FARM_HEADS);   // 鋤・肥やし・束運び・脱穀（farmanim.js）
   JM = K.JOB_MOTION || null;
 }
 export const ACT_MOTIONS = ['sow', 'weed', 'water', 'reap', 'feed', 'spin', 'weave', 'wicker', 'twist', 'handover', 'buy', 'hawk', 'laugh', 'nod', 'stretch', 'search', 'offer', 'whisper', 'meditate', 'cheerup', 'tamp', 'draw', 'hang', 'net', 'pluck', 'gaze', 'sitrest'];
@@ -352,6 +354,7 @@ function jobWork(sim, p, a, t) {
     case 'farmer': {
       const si = sim.seasonIdx ? sim.seasonIdx() : 0;
       if (!out) return null;
+      { const fm = farmMotionOf(sim, p); if (fm) return fm; }   // 区画の段階に合わせた仕事（farming.js が決める）
       if (si === 0) return u < 0.55 ? 'work:sow' : 'work:hoe';
       if (si === 1) return u < 0.4 ? 'work:weed' : u < 0.7 ? 'work:water' : 'work:hoe';
       if (si === 2) return u < 0.6 ? 'work:reap' : u < 0.8 ? 'work:lift' : 'work:hoe';

@@ -85,6 +85,10 @@ const POLICY_DESC = {
 const PACT_NAME = { trade: '交易協定', jointroad: '街道の共同建設', alliance: '同盟', aid: '援助', tribute: '貢ぎ物' };
 const RES_GROUP = { food: '食料', wood: '木材', stone: '石', ore: '鉄', monster: '魔物素材', other: 'その他' };
 const FOOD = new Set(['wheat', 'bread', 'fish', 'meat', 'honey']);
+// 国どうしの取り引きに足す品（regions.js が入れる：goods＝日持ちする食べ物の一覧、gd＝品の決まり）
+export const DIPLO_HOOK = {};
+const gdx = (g) => GOODS[g] || DIPLO_HOOK.gd?.(g);
+const tradeGoods = () => (DIPLO_HOOK.goods ? [...Object.keys(GOODS), ...DIPLO_HOOK.goods] : Object.keys(GOODS));
 const inb = (x, z) => x >= 0 && z >= 0 && x < W && z < H;
 const cheb = (ax, az, bx, bz) => Math.max(Math.abs(ax - bx), Math.abs(az - bz));
 const r0 = (v) => Math.round(v);
@@ -94,7 +98,7 @@ const title = (p) => (p?.sex === 'f' ? '女王' : '王');
 const isKid = (k) => k != null && k >= 0;
 
 function groupOf(g) {
-  if (FOOD.has(g)) return 'food';
+  if (FOOD.has(g) || (!GOODS[g] && (DIPLO_HOOK.gd?.(g)?.meals || 0) > 0)) return 'food';
   if (g === 'wood') return 'wood';
   if (g === 'stone') return 'stone';
   if (g === 'ore') return 'ore';
@@ -103,7 +107,7 @@ function groupOf(g) {
   if (G?.cat === 'food' || G?.cat === 'delicacy') return 'food';
   return 'other';
 }
-const gname = (g) => GOODS[g]?.name || g;
+const gname = (g) => gdx(g)?.name || g;
 
 // ---------- 状態 ----------
 export function ensureDiplomacy(sim) {
@@ -1008,9 +1012,9 @@ function bestOffer(sim, seller, buyer, pact) {
       const dist = Math.hypot(st.x - bt.x, st.z - bt.z);
       const road = linked(sim, st.id, bt.id);
       if (!road && dist > NOROAD_MAX) continue;
-      for (const g of Object.keys(GOODS)) {
+      for (const g of tradeGoods()) {
         if (ms.stock?.[g] == null || mb.stock?.[g] == null) continue;
-        const tg = GOODS[g].target || 1;
+        const tg = gdx(g)?.target || 1;
         const spare = ms.stock[g] - tg * (eager ? 0.9 : 1.1);
         const want = tg * (eager ? 1.4 : 1.1) - mb.stock[g];
         if (spare < 3 || want < 3) continue;
@@ -1053,7 +1057,7 @@ function startDeal(sim, o) {
   for (const g of D.gates) {
     if (g.k === bk) continue;
     if (!pts.some((q) => Math.abs(q.x - g.x) <= 1.8 && Math.abs(q.z - g.z) <= 1.8)) continue;
-    const f = feeFor(sim, g, 'cart', o.qty * (GOODS[o.good].base || 1), bk);
+    const f = feeFor(sim, g, 'cart', o.qty * (gdx(o.good)?.base || 1), bk);
     tolls += f.fixed + f.customs;
   }
   if (o.gain - tolls * (1 / Math.max(0.05, o.rate)) <= 2) { D.cool[o.key] = sim.today + 5; return false; }   // 通行料が高すぎると交易をやめる

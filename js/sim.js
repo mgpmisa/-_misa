@@ -62,6 +62,8 @@ import { guildDaily, takeQuest, questPlace, reportQuest, completeQuest, questOf,
 import { ensureCarry, carryHourly, carryDaily, carryDecide, carryArrive, carryWork, carryWorkMul, carryWalk, carryLoot, carryTreasure, carryDungeon } from './carry.js';
 import { ensureLedger, ledgerDaily, moneyIn, flow, meal, newcomerMoney } from './ledger.js';
 import { ensureMarket, marketBuy, marketDeliver, stash, cookFromStock, marketCandidates, marketArrive, marketDaily, marketHourly } from './market.js';
+import { ensureRegions, regionsDaily } from './regions.js';   // 地域の型と特産・氷室・狩りの許し（開発部）
+import { ensureFarming, farmingDaily, farmWork } from './farming.js';   // 畑の区画・作物・地力・輪作・農夫の1年（開発部）
 import { initFoodflow, foodflowCandidates, foodflowArrive, foodflowHourly, foodflowDaily, sideDish } from './foodflow.js';   // 乳・菜園・ベリーを売る・農家の家畜・5日に1度の市（経済部）
 import { accrueWage, paydayDaily } from './payday.js';
 import { partyDecide, partyCands, partyAfterDecide, partySpeedMul, partyLifeDaily, partyLifeHourly } from './partylife.js';
@@ -151,6 +153,8 @@ export class Sim {
     ensureFormation(this); // 隊列と職業の補正（formation.js）
     this.seedMarkets();
     initFoodflow(this); // 村と首都の外の農家に、乳牛か山羊と鶏を持たせる（foodflow.js）。古いセーブには足さない
+    ensureRegions(this, true); // 町ごとの地域の型・牧畜の村の羊・氷室（regions.js）
+    ensureFarming(this, true); // 畑の区画と作物・去年の蓄え（farming.js）
     ensureCoinage(this); // 国ごとの硬貨の名前と意匠（coinage.js）
     computeDanger(this);
     this.pushLog(`${ERA}${this.year()}年 春。${WORLD_NAME}大陸の一日が始まる。`, 'event');
@@ -186,6 +190,8 @@ export class Sim {
     ensureFormation(this); // 古いセーブ：隊列と職業の補正の記録（formation.js）
     ensureCarry(this); // 古いセーブ：持ち物の重さと枠・袋やかご
     this.seedMarkets();
+    ensureRegions(this); // 古いセーブ：地域の型・氷室（regions.js）
+    ensureFarming(this); // 古いセーブ：畑の区画を作り、去年の蓄えを納屋へ（farming.js）
     ensureCoinage(this); // 古いセーブ：国ごとの硬貨（coinage.js）
     computeDanger(this);
     return true;
@@ -1097,6 +1103,7 @@ export class Sim {
     if (workshopWork(this, p, dt, eff)) return; // 職場を持つ職人：材料を職場の蔵へ仕入れ、職場の蔵で作り、店先の棚に並べる（workshop.js）
     switch (p.job) {
       case 'farmer': {
+        if (farmWork(this, p, dt, eff, hh)) break;   // 区画ごとに 耕す → 種まき → 世話 → 刈り入れ（farming.js）。区画のない家だけ下の今までの処理
         // 収穫した麦は家の蔵へ（小作は地主に麦で納める）。家の食べ物が足りなければ、そのまま自炊にまわす
         // 農夫ひとりは一家の畑を受け持つ。町の食べ物は湧かなくなったので、畑の実りで町まで養えるだけ採れる
         const q = fieldShare(this, p, 4.05 * sm * this.S.harvest * eff * ((hh.fertUntil ?? -1) >= this.today ? 1.2 : 1));
@@ -1109,7 +1116,8 @@ export class Sim {
           let prey = null, bd = 9;
           for (const c of around(this._cgrid || new Map(), p.pos.x, p.pos.z, 9)) {
             if (c.kind !== 'wild' || c.hp <= 0 || c.atk > p.atk * 1.5 || !canHunt(this, 'human', c.sp) || !FOODWEB.huntOk(this, c)) continue;   // 子・子連れの母・禁猟の季節は狩らない
-            const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+            if (this._rg && !this._rg.huntOk(this, p, c)) continue;   // 王の森の鹿は、狩りの許しを買った狩人だけ（regions.js）
+            const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z) * (this._rg?.preyMul ? this._rg.preyMul(this, c) : 1);   // 季節の獲物（夏は雄鹿・秋は猪）を先に狙う
             if (d < bd) { bd = d; prey = c; }
           }
           if (prey) startFight(this, p, prey);
@@ -2047,6 +2055,8 @@ export class Sim {
     mintDaily(this);   // 造幣所の1日の締め・給料日の手間賃・預かり証（mintflow.js）
     marketDaily(this);
     foodflowDaily(this);
+    regionsDaily(this);   // 氷室の氷と預け賃・狩りの許し・新しい村の地域の型（regions.js）
+    farmingDaily(this);   // 畑が育つ・実る・次の作付け・地力・納屋から家の蔵と市場へ（farming.js）
     matterDaily(this);   // 世界の物（matter.js）
     housingDaily(this);   // 手狭な家の建て増し・引っ越し・独り立ち（housing.js）
     foodshopDaily(this);   // 保存食の工房と屋台・料理屋の働き手の補充・外食の記録（foodshop.js）
