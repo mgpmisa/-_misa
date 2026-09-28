@@ -32,6 +32,7 @@ import { lawDaily, lawHourly, lawDecide } from './justice.js';   // 裁きと公
 import { growthHourly, growthDaily, growthTalk, growthLevelCheck, moveMul, workMul, healMul, tradeMul } from './growth.js';
 import { healthDaily, healthHourly, healthArrive, sickAction, healthDecide, healthSpeedMul, healthWorkMul, onDeath } from './health.js';
 import { civicPlace, civicOptions, civicWork, civicArrive, civicDo, civicDaily, civicFirstJob } from './civic.js';
+import { childOptions, childDo, childHourly, childDaily, childFirstJob } from './childhood.js';   // 子どもの経験と職業（開発部）
 import { stepConvoys, logisticsHourly, startTradeConvoy, canTrade, findSeaTrade } from './logistics.js';
 import { taxesDaily, taxesHourly, taxCandidates, taxArrive, tariff, ensureTaxes } from './taxes.js';
 import { ensureExpansion, expansionDaily, expansionHourly, expansionPlace } from './expansion.js';
@@ -720,9 +721,8 @@ export class Sim {
     if (h >= 7 && h < 19.5) add((100 - n.pleasure) / 32 + p.pers.O * 1.1 + (100 - n.sloth) / 60, 'stroll', this.strollSpot(p), R.int(20, 60));
     const recentGrief = p.memories.some((m) => m.k === 'death' && this.today - m.t < 10);
     if (h >= 7 && h < 19) add(p.values.faith * 2 + (rest && h < 12 ? 3 : 0) + (recentGrief ? 2 : 0) + (job === 'priest' ? 1 : 0) + (n.survival < 60 ? 1.5 : 0), 'pray', this.placeFor(p, 'church'), R.int(20, 50));
-    if (age >= 6 && age < 14 && h >= 8 && h < 12 && !rest && !bedtime) add(5 + p.pers.C * 2, 'school', this.placeFor(p, 'school'), R.int(90, 180));
     if (age >= 68 && h >= 9 && h < 17) add(2.5 + p.pers.E * 2, 'storytell', this.placeFor(p, 'plaza'), R.int(40, 90));
-    if (age < 13 && h >= 7.5 && h < 19) add(3.5 + (100 - n.pleasure) / 25, 'play', R.chance(0.6) ? this.placeFor(p, 'plaza') : this.randomNear(s.x, s.z, s.r, (t) => t !== T.BLD) || this.placeFor(p, 'plaza'), R.int(30, 90));
+    if (age < 3 && h >= 7.5 && h < 19) add(3.5 + (100 - n.pleasure) / 25, 'play', R.chance(0.6) ? this.placeFor(p, 'plaza') : this.randomNear(s.x, s.z, s.r, (t) => t !== T.BLD) || this.placeFor(p, 'plaza'), R.int(30, 90));
     if (['soldier', 'knight', 'adventurer'].includes(job) && h >= 7 && h < 18 && workAge) add(2 + p.values.ambition * 2 + (100 - n.esteem) / 40, 'train', this.placeFor(p, job === 'adventurer' ? 'guild' : 'barracks'), R.int(60, 120));
     add(1.2 + (1 - p.pers.E) + (100 - n.sloth) / 18 + (p.hp < p.maxhp * 0.7 ? 2 : 0), 'rest', this.placeFor(p, 'home'), R.int(30, 80));
 
@@ -731,6 +731,7 @@ export class Sim {
     buildingsOptions(this, p, add);
     constructOptions(this, p, add);   // 普請場へ通う・資材を運ぶ（construct.js）
     careerOptions(this, p, add);
+    childOptions(this, p, cands, add);   // 子どもの遊び・手伝い・駄賃仕事・学び舎（払っていない子の学園・道場は外す）（childhood.js）
     financeCandidates(this, p, add);
     marketCandidates(this, p, add);
     foodflowCandidates(this, p, add);   // 菜園・ベリー摘み・近くの町の市へ売りに行く（foodflow.js）
@@ -837,14 +838,14 @@ export class Sim {
     if (c.type === 'trade') { if (!startTradeConvoy(this, p, c.trade)) p.action = null; return; }
     if (p.inside && c.place && c.place.bld === p.inside) {
       // 同じ建物の中で次の行動に移る（出入口でちらつかない）
-      p.action = { type: c.type, dur: c.dur, bld: p.inside, phase: 'walk', untilHour: c.untilHour, friend: c.friend, helper: c.helper, food: c.food, quest: c.quest, trade: c.trade, dest: c.dest, intimacy: c.intimacy, crimeTarget: c.crimeTarget, startNeeds: { ...p.needs }, startMood: p.mood };
+      p.action = { type: c.type, dur: c.dur, bld: p.inside, phase: 'walk', untilHour: c.untilHour, friend: c.friend, helper: c.helper, food: c.food, quest: c.quest, trade: c.trade, dest: c.dest, intimacy: c.intimacy, crimeTarget: c.crimeTarget, k: c.k, startNeeds: { ...p.needs }, startMood: p.mood };
       p.path = [];
       this.arrive(p);
       p.thought = null;
       return;
     }
     if (p.inside) { const b = this.building(p.inside); p.pos = { x: b.door.x, z: b.door.z }; p.inside = null; }
-    p.action = { type: c.type, dur: c.dur, until: null, bld: c.place?.bld ?? null, phase: 'walk', untilHour: c.untilHour, friend: c.friend, helper: c.helper, food: c.food, quest: c.quest, trade: c.trade, dest: c.dest, intimacy: c.intimacy, crimeTarget: c.crimeTarget, inn: c.place?.inn, startNeeds: { ...p.needs }, startMood: p.mood };
+    p.action = { type: c.type, dur: c.dur, until: null, bld: c.place?.bld ?? null, phase: 'walk', untilHour: c.untilHour, friend: c.friend, helper: c.helper, food: c.food, quest: c.quest, trade: c.trade, dest: c.dest, intimacy: c.intimacy, crimeTarget: c.crimeTarget, k: c.k, inn: c.place?.inn, startNeeds: { ...p.needs }, startMood: p.mood };
     const tgt = c.place || { x: Math.round(p.pos.x), z: Math.round(p.pos.z) };
     p.action.tx = tgt.x; p.action.tz = tgt.z;
     p.path = null; // 経路は順番待ちで計算する
@@ -1455,6 +1456,7 @@ export class Sim {
     if (!list.length) return;
     for (const p of list) this.hourlyPerson(p);
     growthHourly(this, list);
+    childHourly(this, list);   // 子どもの経験をためる（childhood.js）
   }
 
   doAction(p, dt) {
@@ -1508,6 +1510,7 @@ export class Sim {
         break;
       }
       case 'storytell': this.tellStories(p, this.nearby(p, 5)); n.esteem += 3 * hr; break;
+      case 'kid': childDo(this, p, dt); break;   // 子どもの行動：礼金・駄賃・危険・思い出（childhood.js）
     }
     laborDo(this, p, dt);
     if (!p.action) return;
@@ -1953,13 +1956,14 @@ export class Sim {
       this.news('今日は収穫祭。夕方から各地の広場でかがり火が焚かれる', 1);
     }
     calendarDaily(this);
+    childDaily(this);   // 家の段階・季節の月謝・奨学と拾い上げ・一度きりの出来事（childhood.js）
     // 誕生日・仕事・引退
     for (const p of this.living()) {
       if (p.birthDay !== doy) continue;
       const age = this.ageOf(p);
       if (age < 14) this.remember(p, `${age}歳の誕生日を家族に祝ってもらった`, { emo: 0.7, imp: 0.45 });
       if (age === 14 && !p.job) {
-        p.job = civicFirstJob(this, p);
+        p.job = childFirstJob(this, p) || civicFirstJob(this, p);   // 子どもの経験と才能で選ぶ（childhood.js）。経験のない子は今までどおり
         p.skill[p.job] = apprenticeSkill(p);
         p.rank = p.rank === 'royal' || p.rank === 'noble' ? p.rank : JOBS[p.job].rank;
         this.remember(p, `14歳になり、${JOBS[p.job].name}の見習いを始めた`, { emo: 0.5, imp: 0.8 });

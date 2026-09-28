@@ -22,6 +22,7 @@
 // お金の出入りはない（職業は見た目と戦い方の小さな差だけ）。
 import { JOBS } from './data.js';
 import { teamHeal } from './partylife.js';
+import { kidClassBonus, kidHeroic } from './childhood.js';   // 子どものころの経験（経験/40）を職業の選びに上乗せ
 
 export const ADV_CLASSES = {
   swordsman: { name: '剣士', role: '前衛', look: '青い上着に鉢巻き、背丈ほどの大剣' },
@@ -90,7 +91,7 @@ function pickClass(sim, p) {
   let best = null, bs = -Infinity;
   for (const k of Object.keys(score)) {
     if (!(k in bias)) continue;
-    const v = score[k] + bias[k] + h01(p.id, k.length * 31 + k.charCodeAt(0)) * 1.6;
+    const v = score[k] + bias[k] + h01(p.id, k.length * 31 + k.charCodeAt(0)) * 1.6 + kidClassBonus(p, k);
     if (v > bs) { bs = v; best = k; }
   }
   return best || 'swordsman';
@@ -102,7 +103,7 @@ function heroWorthy(sim, p) {
   if (p.holy || p.eq?.weapon?.id === 'holysword') return true;
   const crusade = p.crusade != null ? (sim.S.parties || []).find((x) => x.id === p.crusade && !x.done) : null;
   if (crusade && crusade.members[0] === p.id) return true;
-  return (p.fame || 0) >= 160 && (p.advRank || 0) >= 5 && (p.values?.courage ?? 0) > 0.6;
+  return (p.fame || 0) >= (kidHeroic(p) ? 120 : 160) && (p.advRank || 0) >= 5 && (p.values?.courage ?? 0) > 0.6;   // 度胸・人望・武の3つとも40以上で育った子は、勇者に選ばれやすい
 }
 
 export function advClassOf(sim, p) {

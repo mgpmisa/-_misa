@@ -361,10 +361,10 @@ export function partiesDaily(sim) {
     if (advs.length < 6 + Math.min(6, openQ / 2) && R.chance(0.3)) sim.adventurerArrives(cap);
     if (R.chance(0.08)) {
       const kingdomTowns = S.world.settlements.filter((s) => s.kingdom === cap.kingdom && !((s.tribal || s.indep) && s.annexed == null)).map((s) => s.id);
-      const y = sim.living().find((p) => kingdomTowns.includes(p.s) && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 24 && p.spouseId == null && p.values.courage > 0.6 && p.values.ambition > 0.55 && !['king', 'royal', 'noble'].includes(p.rank) && !isAdventurer(p) && !JOBS[p.job]?.guardTown && R.chance(0.3));
+      const y = sim.living().find((p) => kingdomTowns.includes(p.s) && sim.ageOf(p) >= 16 && sim.ageOf(p) <= 24 && p.spouseId == null && ((p.values.courage > 0.6 && p.values.ambition > 0.55) || (p.kid?.guild != null && ['adventurer', 'warrior', 'archer'].includes(p.aspire))) && !['king', 'royal', 'noble'].includes(p.rank) && !isAdventurer(p) && !JOBS[p.job]?.guardTown && R.chance(0.3));
       if (y) {
         const from = sim.town(y.s);
-        y.formerJob = y.job; y.job = R.pick(['adventurer', 'warrior', 'archer']); y.rank = 'adventurer'; y.skill[y.job] = 0.15;
+        y.formerJob = y.job; y.job = ['adventurer', 'warrior', 'archer'].includes(y.aspire) ? y.aspire : R.pick(['adventurer', 'warrior', 'archer']); y.rank = 'adventurer'; y.skill[y.job] = 0.15;
         if (y.s !== cap.id) {
           const inn = sim.townBuilding(cap, 'tavern');
           const id = S.nextHh++;

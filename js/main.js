@@ -5,6 +5,7 @@ import { UI } from './ui.js';
 import { markTilesChanged } from './pathfar.js';
 import { justiceFxFrame } from './justicefx.js';   // 広場の処刑台（3D）
 import './anim_justice.js';   // 連行・裁き・群衆・刑場の人の動き（ドット絵）
+import './anim_kids.js';   // 子どもの遊び・手伝い・学びの動き（チャンバラ・木登り・石投げ・虫取り…）
 
 const MIN_PER_SEC = 2; // 1倍速のとき、現実の1秒 = 世界の2分
 const STEP_MIN = 0.5;  // 世界は0.5分きざみの「歩」で進める（ヘッドレス試験と同じきざみ）

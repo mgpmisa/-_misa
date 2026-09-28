@@ -44,6 +44,7 @@ import { tribesNationHTML, tribeLabel } from './tribes.js';
 import { villagesNationHTML, villageLabel, villageOriginHTML } from './villages.js';
 import { spawnerNationHTML, spawnerWorldHTML, spawnerBuildingHTML } from './spawner.js';
 import { CAREER_LABEL, CAREER_GO, CAREER_PREF, careerCard } from './career.js';
+import { kidActText, childCardHtml } from './childhood.js';   // 子どもの行動の表示・人物欄「子ども時代」
 import { estateOf, wealthOfHousehold, headOf, spendable } from './property.js';
 import { partyRole } from './guild.js';
 import { RANKS_ADV, QUEST_TYPE_NAME, isAdventurer, advRank } from './guild.js';
@@ -86,6 +87,7 @@ Object.assign(ACTION_LABEL, UW_ACTION_LABEL); Object.assign(ACTION_GO, UW_ACTION
 Object.assign(ACTION_LABEL, LEISURE_LABEL); Object.assign(ACTION_GO, LEISURE_GO); Object.assign(PREF_LABEL, LEISURE_PREF);
 Object.assign(ACTION_LABEL, { sickbed: '病で床に伏せっている', nurse: '家族を看病している', housecall: '病人を往診している', grave: '墓参りをしている' }); Object.assign(ACTION_GO, { sickbed: '家へ帰って休もうとしている', nurse: '看病しに家へ帰るところ', housecall: '病人の家へ往診に向かっている', grave: '墓地へ向かっている' }); Object.assign(PREF_LABEL, { sickbed: '療養', nurse: '看病', housecall: '往診', grave: '墓参り' });
 Object.assign(ACTION_LABEL, CIVIC_LABEL); Object.assign(ACTION_GO, CIVIC_GO); Object.assign(PREF_LABEL, CIVIC_PREF);
+Object.assign(ACTION_LABEL, { kid: '遊んでいる' }); Object.assign(ACTION_GO, { kid: '遊びに行くところ' }); Object.assign(PREF_LABEL, { kid: '子どもの遊びと手伝い' });
 Object.assign(ACTION_LABEL, CONS_LABEL); Object.assign(ACTION_GO, CONS_GO); Object.assign(PREF_LABEL, CONS_PREF);
 Object.assign(ACTION_LABEL, GEAR_LABEL); Object.assign(ACTION_GO, GEAR_GO); Object.assign(PREF_LABEL, GEAR_PREF);
 Object.assign(ACTION_LABEL, { escort: '荷車を護衛している', sail: '船に乗り組んでいる' }); Object.assign(PREF_LABEL, { escort: '護衛', sail: '船旅' });
@@ -562,6 +564,7 @@ export class UI {
     if (p.talk) { const o = this.sim.S.people[p.talk.a === p.id ? p.talk.b : p.talk.a]; return short ? '会話中' : `${o ? o.given : '誰か'}と話している`; }
     const a = p.action;
     if (!a) return '考えごと中';
+    if (a.type === 'kid') return kidActText(this.sim, p, a, short);   // チャンバラ・店番・手習い…（childhood.js）
     if (a.phase === 'walk') return short ? '移動中' : ACTION_GO[a.type] || '歩いている';
     if (a.type === 'work') return short ? '仕事中' : `${JOBS[p.job]?.name ?? ''}の仕事をしている`;
     const t = ACTION_LABEL[a.type] || '過ごしている';
@@ -703,6 +706,7 @@ export class UI {
         <dl class="kv" style="margin-top:8px"><dt>体力</dt><dd>${Math.round(p.hp)}/${p.maxhp}　Lv${p.lv}　攻${p.atk} 守${p.def}</dd>${healthLabel(p) ? `<dt>からだと心</dt><dd>${esc(healthLabel(p))}</dd>` : ''}${needsLabel(p) ? `<dt>欲求のつらさ</dt><dd>${esc(needsLabel(p))}</dd>` : ''}<dt>家の蓄え</dt><dd>${Math.round(hh?.money || 0)}銅貨・食糧 ${Math.floor(hh?.food || 0)}食分</dd>${p.pregnant ? '<dt>身ごもり</dt><dd>お腹に子どもがいる</dd>' : ''}<dt>名声</dt><dd>${Math.round(p.fame)}</dd>
         </dl></div>`;
       if (p.deathYear == null) h += growthHtml(sim, p) || '';
+      if (p.deathYear == null) h += childCardHtml(sim, p, esc);   // 子ども時代：伸びた経験・通った学び舎・出来事（childhood.js）
       if (p.deathYear == null) h += formationBonusHtml(sim, p);   // 職業の補正（formation.js）
       if (p.deathYear == null) h += gearHtml(sim, p, esc);
       // 装備と所持品
