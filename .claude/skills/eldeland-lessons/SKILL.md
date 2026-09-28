@@ -156,3 +156,4 @@ description: エルデラント年代記の開発で学んだ教訓集。過去�
 - 「手に負えない縄張りへ行かない」禁止が、家の中での食べる・眠るまで止め、家に食べ物があるのに餓死した（deadly.js）。禁止は「外から中へ向かう行動」だけにし、今いる場所でする行動は止めない。
 - 帳簿の合計に入っていないお金の置き場所（例：国ごとの街道の蓄え）は、関所ができるまで表に出ない。新しいお金の置き場所を作ったら ledger.js の合計に必ず足す。
 - 重さを測るときは、HEAD と新しい版を同じ時に並べて回して比べる（機械が混んでいると3〜4倍に見える）。
+- Electron 化：file:// だと ES Modules と IndexedDB が動かない。protocol.handle で app:// を作って読み込む。Linux で Windows のインストーラーを作るとき、electron-builder の nsis は 32ビットの wine が要るので、win-unpacked を作ってから makensis（Linux 版）で自前の installer.nsi にかける。手順は docs/デスクトップ版の作り方.md。

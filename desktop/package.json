@@ -1,0 +1,58 @@
+{
+  "name": "eldeland-chronicle",
+  "productName": "エルデラント年代記",
+  "version": "1.0.0",
+  "description": "剣と魔法の大陸で、住人たちが自分の目的で生きる様子を眺めるゲーム",
+  "author": "ミサp",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "prepare-app": "node prepare.cjs",
+    "start": "node prepare.cjs && electron .",
+    "dist": "node prepare.cjs && electron-builder --win dir --x64 && makensis -INPUTCHARSET UTF8 installer.nsi"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "jp.misap.eldeland",
+    "productName": "エルデラント年代記",
+    "artifactName": "Eldeland-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "app/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": true,
+      "icon": "build/icon.png",
+      "executableName": "Eldeland"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "エルデラント年代記",
+      "language": "1041",
+      "installerLanguages": [
+        "ja_JP"
+      ],
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    }
+  }
+}
