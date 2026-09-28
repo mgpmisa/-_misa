@@ -520,6 +520,13 @@ export class Sim {
   // 売り買いの代金は、買い手 → 品の持ち主へ動く（market.js）。古いセーブの金庫は町の商人へ返す
   seedMarkets() { ensureMarket(this); ensureShops(this); ensureMatter(this); ensureLedger(this); ensureWorkshop(this); }
   marketHasFood(sid) { const m = this.S.towns[sid]; return ['bread', 'fish', 'wheat', 'meat'].some((g) => m.stock[g] >= 1); }
+  // 宿の食事に出せる品：主の蔵 → 市場の順。パン・魚・肉がなければ、主が麦を粥に炊く（出せる品がないのに宿へ通い続けていた）
+  // 市場の麦は20以上あるときだけ使う（少ないときは、朝に家族の分を買いに来る家に残す。宿が夜に食べ尽くすと小さな子が飢えた）
+  innFood(sid, kh) {
+    const m = this.S.towns[sid];
+    const FOODS = ['bread', 'fish', 'meat', 'wheat'];
+    return (kh && FOODS.find((x) => wsHave(this, kh, x) >= 1)) || FOODS.find((x) => (m.stock[x] || 0) >= (x === 'wheat' ? 20 : 1)) || null;
+  }
   updatePrices() {
     for (const [sid, m] of Object.entries(this.S.towns)) for (const [k, g] of Object.entries(GOODS)) {
       const L = priceLevel(this, +sid);
@@ -668,7 +675,7 @@ export class Sim {
       const innMeal = this.price('bread', p.s) * 2 + 1;
       if (hh.food >= 1 && hh.house != null) add(sc, 'eat', this.placeFor(p, 'home'), 30);
       else if (hh.money >= this.price('bread', p.s) && h >= 6 && h < 21 && this.marketHasFood(p.s)) add(sc + 0.5, 'shop', this.placeFor(p, 'market'), 20, { food: true });
-      else if (spendable(this, p) >= innMeal && this.townBuilding(this.town(p.s), 'tavern')) add(sc + 0.3, 'eat', this.placeFor(p, 'tavern'), 30, { food: 'inn' });
+      else if (spendable(this, p) >= innMeal && this.townBuilding(this.town(p.s), 'tavern') && this.innFood(p.s, this.hh(this.innkeeperOf(p.s, p.id) || {}))) add(sc + 0.3, 'eat', this.placeFor(p, 'tavern'), 30, { food: 'inn' });
       else if (n.hunger < 35) add(sc + (job === 'beggar' ? 2 : 0), 'beg', this.placeFor(p, 'plaza'), 60);
     }
     const workAge = age >= 14 && age <= 67 && job;
@@ -909,21 +916,22 @@ export class Sim {
           // 宿の食事：客は宿屋の主に払う。主は自分の蔵の品か、市場で仕入れた品（代金は品の持ち主へ）で料理を出す
           const m = this.market(p.s);
           const keeper = this.innkeeperOf(p.s, p.id), kh = keeper && this.hh(keeper);
-          const FOODS = ['bread', 'fish', 'meat'];
-          const g = (kh && FOODS.find((x) => wsHave(this, kh, x) >= 1)) || FOODS.find((x) => m.stock[x] >= 1);
+          const g = this.innFood(p.s, kh);
+          const n = 1, fill = g === 'wheat' ? 60 : 30 * (GOODS[g]?.meals || 0);   // 麦は主が粥に炊く（家で炊くのと同じ腹もち）
           if (g && kh && kh !== hh) {
             const cost = Math.round(m.price[g] * 1.6 + 1);
             if (spendable(this, p) >= cost) {
               pay(this, p, cost); kh.money += cost;
               flow(this, '宿の客', '宿屋の主人', cost, '宿の食事');
-              if (wsTake(this, kh, g, 1, '宿の客', cost) < 1) marketBuy(this, p.s, g, 1, kh, { force: true });   // 宿の蔵の品か、市場で仕入れる
-              p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
+              const own = wsTake(this, kh, g, n, '宿の客', cost);
+              if (own < n) marketBuy(this, p.s, g, n - own, kh, { force: true });   // 宿の蔵の品か、市場で仕入れる（主 → 品の持ち主）
+              p.needs.hunger = Math.min(100, p.needs.hunger + fill);
               meal(this, 'inn', GOODS[g].meals);
             }
-          } else if (g && hh && marketBuy(this, p.s, g, 1, hh, { whole: true }) >= 1) {
-            // 宿の主がいない：客が市場の屋台で買って、その場で食べる
-            p.needs.hunger = Math.min(100, p.needs.hunger + 30 * GOODS[g].meals);
-            meal(this, 'bought', GOODS[g].meals);
+          } else if (g && hh) {
+            // 宿の主がいない：客が市場の屋台で買って、その場で食べる（客 → 品の持ち主）
+            const got = marketBuy(this, p.s, g, n, hh, { whole: true });
+            if (got >= 1) { p.needs.hunger = Math.min(100, p.needs.hunger + fill); meal(this, 'bought', GOODS[g].meals); }
           }
         }
         else if (hh.food >= 1) { const part = adultShare(this, p, hh); hh.food -= part; p.needs.hunger = Math.min(100, p.needs.hunger + 60 * part); }
