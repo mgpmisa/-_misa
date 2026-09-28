@@ -139,6 +139,7 @@ export function deadlyCands(sim, p, cands) {
   if (!zones(sim).length) return;
   for (const c of cands) {
     if (c.score <= -99 || EXEMPT.has(c.type) || !c.place || c.place.x == null) continue;
+    if (p.pos && Math.abs(c.place.x - p.pos.x) <= 2 && Math.abs(c.place.z - p.pos.z) <= 2) continue;   // いまいる場所でする行動（家の中で食べる・眠る）は止めない
     if (unsafeFor(sim, p, c.place.x, c.place.z)) { c.score = -99; c.deadly = true; }
   }
 }
